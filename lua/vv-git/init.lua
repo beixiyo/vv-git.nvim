@@ -20,6 +20,7 @@ local Help = require('vv-git.help')
 local Loader = require('vv-git.loader')
 local Autocmds = require('vv-git.autocmds')
 local Guard = require('vv-git.guard')
+local Editor = require('vv-utils.editor')
 
 local M = {}
 
@@ -524,8 +525,7 @@ M._yank_abs_path = State.guarded(function(state)
   end
 
   local abs = vim.fs.normalize(state.git_root .. '/' .. relpath)
-  vim.fn.setreg('+', abs)
-  vim.notify('Copied: ' .. abs)
+  Editor.copy_path({ path = abs, title = 'vv-git' })
 end)
 
 ---@param name 'toggle_stage'|'discard'
