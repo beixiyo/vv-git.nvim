@@ -25,11 +25,12 @@ local M = {}
 
 ---@class VVGitConfig
 ---@field width integer
----@field single_col_threshold integer  -- 最小支持的终端列数；小于此值时 open 会 notify 并中止，已打开状态下会 notify 关闭
+---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移
 ---@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用
 ---@field fold_unchanged boolean  -- diff 视图默认折叠未改动代码
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X
 ---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l
+---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡）
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -37,6 +38,7 @@ local defaults = {
   fold_unchanged = true,
   diff_fill = ' ',
   preview = true,
+  inline_diff_max_lines = 10000,
 }
 
 M._config = vim.deepcopy(defaults)
@@ -203,17 +205,8 @@ function M.open()
     State.clear()
   end
 
-  -- 终端太窄时 _apply_layout 会在打开瞬间自动隐藏 panel + a_win，用户体感像"按了没反应"。
-  -- 先给出明确提示再中止；用户可以手动 :VVGit 或拉宽终端重试
-  local min_cols = M._config.single_col_threshold
-  if vim.o.columns < min_cols then
-    vim.notify(
-      string.format('[vv-git] Terminal too narrow: %d columns (need >= %d). Widen your terminal and try again.',
-        vim.o.columns, min_cols),
-      vim.log.levels.WARN
-    )
-    return
-  end
+  -- 不再因为窄终端拒绝打开：宽度不够时 _activate / _preview 会自动走 single 路径，
+  -- diff 视图降级为单栏（仅 b 侧）；用户拉宽后下次 j/k 切文件或 resize 自动升回 dual
 
   local root = detect_git_root()
   if not root then
@@ -361,6 +354,10 @@ M._collapse = State.guarded(function(state)
   LeftRender.render(state)
 end)
 
+-- 当前终端宽度是否容不下 dual diff（panel + a_win + b_win）→ 触发单栏降级
+---@return boolean
+local function is_narrow() return vim.o.columns < M._config.single_col_threshold end
+
 -- preview：j/k 光标移动触发。只处理文件行；header/目录行保留上一次预览不动
 -- 复用 RightView.show 内置的 req_id 竞态守卫 + 相同 path/section 短路，快速 j/k 不会抖
 M._preview = State.guarded(function(state)
@@ -376,7 +373,7 @@ M._preview = State.guarded(function(state)
     return
   end
   state.cur_path = node.relpath
-  RightView.show(state, node, id.section)
+  RightView.show(state, node, id.section, is_narrow())
 end)
 
 -- <CR>/o/l：文件 → 打开 diff；目录 → 折叠切换；section header → 忽略
@@ -401,29 +398,45 @@ M._activate = State.guarded(function(state, expand_only)
       and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
     return
   end
-  RightView.show(state, node, id.section)
+  RightView.show(state, node, id.section, is_narrow())
 end)
 
--- M.open 入口已拒绝窄终端（notify + 中止）；这里只处理「已打开后被拉窄」
--- 之前尝试过在窄屏下降级为单栏模式（隐藏 panel / 关 a_win），但与 WinClosed →
--- ensure_invariant 的交互链路会把插件误杀，留下残缺布局。索性统一策略：
--- 窄终端 = 不支持 diff 视图 → notify 关闭整个 tab，用户拉宽后重开
+-- VimResized → 评估当前 view 是否需要在 dual ↔ single 之间迁移
 --
--- 注：VimResized 在 doautocmd / 连续拉拽时可能短时间内多次触发，用
--- state._closing_narrow 作为一次性 flag，避免同一次窄化事件刷多条 notify
-M._apply_layout = State.guarded(function(state)
+-- 不变式安全：panel 始终保留，`ensure_invariant` 的「panel OR view」条件总成立——
+-- 不会出现前任那次「连 panel 也藏」导致 WinClosed → ensure_invariant 误杀 tab 的失败链路
+--
+-- 去抖：拖拽 resize 过程中 VimResized 一秒能触发十几次。「want vs current 一致」短路
+-- 已能跳过同状态重 show，但「在阈值附近来回拖拽」会每次都跨阈值重 show（每次伴随
+-- git show 子进程 + vim.diff，5-50ms）。挂个 50ms 定时器把连续事件折成一次
+--
+-- 短路条件：
+--   - 没有 view：仅有 panel，无需调整
+--   - intrinsic_single：A/D/?? 这类文件本身就该单栏，宽度变化不影响
+--   - want vs current 一致：resize 抖动时 mode 已经匹配，不重 show
+local function do_apply_layout(state)
   if not state.git_root then return end
-  if vim.o.columns < M._config.single_col_threshold then
-    if state._closing_narrow then return end
-    state._closing_narrow = true
-    vim.notify(
-      string.format('[vv-git] Terminal shrunk below %d columns (now %d). Closing vv-git; widen your terminal and press <leader>gd to reopen.',
-        M._config.single_col_threshold, vim.o.columns),
-      vim.log.levels.WARN
-    )
-    -- schedule 让当前 autocmd 链先跑完再关 tab，避免同步 close 触发二次 autocmd 风暴
-    vim.schedule(function() M.close() end)
-  end
+  local view = state.view
+  if not view or not view.node then return end
+  if view.intrinsic_single then return end
+
+  local want_single = is_narrow()
+  local is_now_single = (view.mode == 'single')
+  if want_single == is_now_single then return end
+
+  -- 复用 RightView.show 的完整路由：传 force_single 后，路由表自动选 single 或 dual
+  RightView.show(state, view.node, view.section, want_single)
+end
+
+M._apply_layout = State.guarded(function(state)
+  if state._resize_timer then pcall(state._resize_timer.close, state._resize_timer) end
+  state._resize_timer = vim.uv.new_timer()
+  if not state._resize_timer then do_apply_layout(state); return end
+  state._resize_timer:start(50, 0, vim.schedule_wrap(function()
+    if state._resize_timer then pcall(state._resize_timer.close, state._resize_timer) end
+    state._resize_timer = nil
+    if State.has() then do_apply_layout(State.get()) end
+  end))
 end)
 
 M._commit = State.guarded(function(state)

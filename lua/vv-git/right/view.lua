@@ -11,6 +11,7 @@
 
 local api = vim.api
 local Git = require('vv-git.git')
+local InlineDiff = require('vv-git.inline_diff')
 
 local M = {}
 
@@ -296,13 +297,20 @@ end
 ---@param state table
 ---@param node table  tree node（leaf file）
 ---@param section 'staged'|'unstaged'
-function M.show(state, node, section)
+---@param force_single boolean?  true → 强制走单栏分支（窄终端降级用）；正常 dual diff 时为 false/nil
+function M.show(state, node, section, force_single)
   if node.is_dir then return end
   local xy = node.xy or ''
   if Git.is_conflict(xy) then
     vim.notify('[vv-git] Conflict file v1 is not supported yet; please use git mergetool or other tools', vim.log.levels.WARN)
     return
   end
+
+  -- 文件本身就是单栏（A/D/??/*D）→ 任何宽度下都不会升回 dual，记下来给
+  -- _apply_layout 判断「resize 后是否需要重渲染」，避免对这类文件做无意义的重 show
+  local intrinsic_single =
+    (section == 'staged' and (xy:sub(1, 1) == 'A' or xy:sub(1, 1) == 'D' or xy == '??'))
+    or (section == 'unstaged' and (xy == '??' or xy:sub(2, 2) == 'D'))
 
   -- 异步竞态守卫：每次 show 分配单调递增 req_id。快速切换文件时，嵌套 git show
   -- 回调可能乱序到达，用 req_id 确认当前请求仍是最新才继续。否则 scratch buf
@@ -314,6 +322,11 @@ function M.show(state, node, section)
   -- 切换前的 b_buf：切到不同文件后需从旧 b_buf 拆掉 q/gf，避免它在 bufferline 里被
   -- 其它窗口打开时仍响应（a_buf 是 bufhidden=wipe，自动清理无需额外处理）
   local prev_b_buf = state.view and state.view.b_buf
+  -- 切换前若挂着 inline diff 的 TextChanged autocmd，先拆掉再切；否则旧 buf 上的
+  -- 定时器还会触发，把已经替换走的 a_lines 应到新 buf 上
+  if state.view and state.view._inline_cleanup then
+    pcall(state.view._inline_cleanup)
+  end
 
   -- 公共守卫：回调进来时 req_id 错位或 tab 关了 → 丢弃结果
   -- 只 wipe vv-git 自建的 scratch；工作区 buf 可能别人还在用，不能动
@@ -335,10 +348,15 @@ function M.show(state, node, section)
 
   -- 前向声明：render_* 互相调用（降级时）需要先声明才能跨向引用
   local render_single_worktree, render_single_rev
+  local render_single_rev_with_inline, render_single_worktree_with_inline
   local render_dual_rev_rev, render_dual_rev_worktree
 
   -- 单栏挂载：只 b_win + b_buf；不动 diff opts
-  local function attach_single(b_buf)
+  -- a_lines（可选）：传入则在 b_buf 上叠 inline diff（行级 add/change + 删除虚拟行）。
+  -- 仅 force_single 的常规改动文件会传；intrinsic_single（A/D/?? 等）不传，保持空白
+  ---@param b_buf integer
+  ---@param a_lines string[]?
+  local function attach_single(b_buf, a_lines)
     local b_win = ensure_windows(state, false)
     if not b_win then
       wipe_scratch({ b_buf })
@@ -347,6 +365,7 @@ function M.show(state, node, section)
     state.view = {
       mode = 'single', section = section, path = node.relpath,
       b_win = b_win, b_buf = b_buf,
+      node = node, intrinsic_single = intrinsic_single,
     }
     api.nvim_win_set_buf(b_win, b_buf)
     clear_diff_winopts(b_win)
@@ -354,6 +373,35 @@ function M.show(state, node, section)
     install_right_keymaps(b_buf)
     -- scratch buffer（只读 rev 视图）也阻止 Insert mode
     if vim.b[b_buf].vv_git_scratch then block_insert_mode(b_buf) end
+
+    -- inline diff：worktree b_buf（unstaged，可编辑）→ 挂 live 钩子；scratch b_buf
+    -- （staged，固定）→ 一次性 apply 即可
+    -- opts.b_win + opts.fold_unchanged：让 InlineDiff 同时给 b_win 创建 manual fold，
+    -- 仿 dual mode 的 foldmethod=diff 自动折叠未改动行
+    if a_lines then
+      -- InlineDiff 会改 foldmethod/foldlevel/foldcolumn 等 win-local 选项；先 save 一下
+      -- b_win 的原值，让后续 close / 切回 dual 时 clear_diff_winopts 能正确还原成用户初值
+      save_winopts(b_win)
+      local cfg = handlers.get_config()
+      local opts = {
+        b_win = b_win,
+        fold_unchanged = cfg.fold_unchanged ~= false,
+      }
+      local max = cfg.inline_diff_max_lines or 10000
+      -- M.apply / attach_live 都返回首个 hunk 的 b 侧目标行，省得再跑一遍 vim.diff。
+      -- 无 hunk（罕见，理论不会进 force_single 路径）→ first 为 nil，保持光标在 1
+      local first
+      if vim.b[b_buf].vv_git_scratch then
+        first = InlineDiff.apply(b_buf, a_lines, api.nvim_buf_get_lines(b_buf, 0, -1, false), max, opts)
+      else
+        state.view._inline_cleanup, first = InlineDiff.attach_live(b_buf, a_lines, max, opts)
+      end
+      if first and api.nvim_win_is_valid(b_win) then
+        pcall(api.nvim_win_set_cursor, b_win, { first, 0 })
+        api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
+      end
+    end
+
     focus_back_to_panel()
   end
 
@@ -371,6 +419,7 @@ function M.show(state, node, section)
       mode = 'diff2', section = section, path = node.relpath,
       a_win = a_win, a_buf = a_buf,
       b_win = b_win, b_buf = b_buf,
+      node = node, intrinsic_single = intrinsic_single,
     }
     apply_diff_winopts(a_win, a_buf, WINHL_A)
     apply_diff_winopts(b_win, b_buf, WINHL_B)
@@ -388,11 +437,20 @@ function M.show(state, node, section)
         end
       end
       -- scrollbind/cursorbind 不会主动对齐"已有"的视口与光标，只在后续滚动时同步
-      -- 首次进入需手动把 a_win 的光标对到 b_win 同一行，再 syncbind 对齐 scroll
+      -- 首次进入：自动跳到第一个变更位置（hunks 由 vim.diff 算，不依赖 ]c 的边界行为）
+      -- 没 hunk → 保持 b_win 当前光标（通常是 1）。再把 a_win 光标对到 b_win 同一行，syncbind 对齐 scroll
       if api.nvim_win_is_valid(a_win) and api.nvim_win_is_valid(b_win) then
-        local row = api.nvim_win_get_cursor(b_win)[1]
+        local b_lines = api.nvim_buf_get_lines(b_buf, 0, -1, false)
+        local a_lines = api.nvim_buf_get_lines(a_buf, 0, -1, false)
+        local first = InlineDiff.first_hunk_b_line(a_lines, b_lines)
+        local row = first or api.nvim_win_get_cursor(b_win)[1]
+        local b_max = api.nvim_buf_line_count(b_buf)
         local a_max = api.nvim_buf_line_count(a_buf)
+        pcall(api.nvim_win_set_cursor, b_win, { math.min(row, b_max), 0 })
         pcall(api.nvim_win_set_cursor, a_win, { math.min(row, a_max), 0 })
+        if first then
+          api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
+        end
         api.nvim_win_call(b_win, function() pcall(vim.cmd, 'syncbind') end)
       end
     end)
@@ -455,23 +513,61 @@ function M.show(state, node, section)
     end)
   end
 
+  -- force_single 专用：staged 时拿 a_rev 内容做 inline diff，b 显示 b_rev 的 scratch
+  -- 取 a_rev 失败 → 静默降级为无 inline 的 single（保持文件可见，丢失 hl 提示）
+  -- 两次 git show 互不依赖，并发发起 + barrier 合流（仿 render_dual_rev_rev），
+  -- 比串行省一次 RTT；快速 j/k 切 staged 文件每次省 5-50ms
+  render_single_rev_with_inline = function(a_rev, b_rev)
+    local a_lines, b_buf, a_done, b_done = nil, nil, false, false
+    local function finalize()
+      if not (a_done and b_done) then return end
+      if not alive({ b_buf }) then return end
+      if not b_buf then
+        render_single_worktree()  -- b 侧拿不到（二进制 / 删了等）→ 整体降级到 worktree
+        return
+      end
+      attach_single(b_buf, a_lines)  -- a_lines 拿不到也无妨：attach_single 收 nil 时跳过 inline
+    end
+    Git.show(state.git_root, a_rev, node.relpath, function(lines)
+      a_lines = lines; a_done = true; finalize()
+    end)
+    create_rev_buffer(state.git_root, b_rev, node.relpath, function(buf)
+      b_buf = buf; b_done = true; finalize()
+    end)
+  end
+
+  -- force_single 专用：unstaged 时拿 a_rev 内容做 inline diff，b 是 worktree（可编辑）
+  render_single_worktree_with_inline = function(a_rev)
+    Git.show(state.git_root, a_rev, node.relpath, function(a_lines)
+      if not alive({}) then return end
+      attach_single(get_worktree_buffer(abspath), a_lines)
+    end)
+  end
+
   -- 路由表：按 section + xy 分派
+  -- force_single：窄终端 fallback 时，正常 dual 路径降级为 single + inline diff——
+  -- staged 显示 :0:（已暂存版）+ vs HEAD 内联高亮；
+  -- unstaged 显示 worktree（用户当前可编辑版）+ vs :0: 内联高亮（worktree b_buf 编辑会触发去抖重渲染）
   if section == 'staged' then
     local x = xy:sub(1, 1)
     if x == 'A' or xy == '??' then
-      render_single_rev(':0')           -- HEAD 无此文件
+      render_single_rev(':0')                          -- HEAD 无此文件，无对比基线
     elseif x == 'D' then
-      render_single_rev('HEAD')         -- :0 无，显示被删前
+      render_single_rev('HEAD')                        -- :0 无，显示被删前
+    elseif force_single then
+      render_single_rev_with_inline('HEAD', ':0')      -- 窄屏降级：b=:0:，inline diff vs HEAD
     else
-      render_dual_rev_rev('HEAD', ':0') -- 正常 staged diff
+      render_dual_rev_rev('HEAD', ':0')                -- 正常 staged diff
     end
   else -- unstaged
     if xy == '??' then
-      render_single_worktree()           -- :0 无此文件
+      render_single_worktree()                         -- :0 无此文件，无对比基线
     elseif xy:sub(2, 2) == 'D' then
-      render_single_rev(':0')            -- 工作区已删
+      render_single_rev(':0')                          -- 工作区已删，无 b 侧
+    elseif force_single then
+      render_single_worktree_with_inline(':0')         -- 窄屏降级：b=worktree，inline diff vs :0:
     else
-      render_dual_rev_worktree(':0')     -- 正常 unstaged diff
+      render_dual_rev_worktree(':0')                   -- 正常 unstaged diff
     end
   end
 end
@@ -480,6 +576,8 @@ end
 function M.close(state)
   local view = state.view
   if not view then return end
+  -- inline diff 的 TextChanged autocmd + extmark 在自家 namespace，关 view 必须显式拆
+  if view._inline_cleanup then pcall(view._inline_cleanup) end
   if view.a_win and api.nvim_win_is_valid(view.a_win) then
     pcall(api.nvim_win_close, view.a_win, true)
   end
