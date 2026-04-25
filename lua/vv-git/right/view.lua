@@ -65,6 +65,31 @@ local RIGHT_KEYS_SPEC = {
   { 'Y',  function() handlers.on_yank_abs_path() end,  'yank_abs_path' },
 }
 
+-- fold 键全部包到 buffer-local，用 `:normal!`（带 !）跑 vanilla 实现，绕过用户的
+-- 全局 ufo 映射（zR / zM / zr / zm）。仿 diffview.nvim：sindrets/diffview.nvim
+-- lua/diffview/actions.lua compat_fold。
+--
+-- 为什么必须绕开 ufo：
+--   ufo.openAllFolds 只跑 `:%foldopen!`，不动 foldlevel。我们 apply_diff_winopts
+--   把 foldlevel 锁在 0，:%foldopen! 后 fold "看起来" 开了但 foldlevel 仍为 0；
+--   后续任何让 vim 重新评估折叠状态的事件（TTY 重绘、scroll 进入新行、第三方
+--   WinScrolled 回调等）都会让所有折叠瞬间塌回去。`:normal! zR` 是 vanilla
+--   实现：把 foldlevel 抬到 buffer 最深 fold 层级 → 不会 snap-back。
+--
+-- 为什么全列而不是只 zR/zM：未列出的 zr/zm/za/zo/zc/... 仍会被 ufo 全局映射拦走，
+-- 存在同类 snap-back 风险。一次性全包，免得用户用 `za` 又踩一次坑。
+local FOLD_CMDS = {
+  'za', 'zA', 'ze', 'zE', 'zo', 'zc', 'zO', 'zC',
+  'zr', 'zm', 'zR', 'zM', 'zv', 'zx', 'zX', 'zn', 'zN', 'zi',
+}
+for _, cmd in ipairs(FOLD_CMDS) do
+  RIGHT_KEYS_SPEC[#RIGHT_KEYS_SPEC + 1] = {
+    cmd,
+    function() pcall(vim.cmd, 'normal! ' .. cmd) end,
+    'fold ' .. cmd,
+  }
+end
+
 ---@param buf integer?
 local function install_right_keymaps(buf)
   if not buf or not api.nvim_buf_is_valid(buf) then return end
