@@ -13,6 +13,7 @@ local M = {}
 local cur = nil -- { buf, win }
 
 local function close()
+  vim.cmd('stopinsert')
   if not cur then return end
   if cur.win and api.nvim_win_is_valid(cur.win) then
     pcall(api.nvim_win_close, cur.win, true)
@@ -27,6 +28,7 @@ end
 ---@param commit_all boolean
 ---@param on_success fun()?
 local function submit(git_root, commit_all, on_success)
+  vim.cmd('stopinsert')
   if not cur or not cur.buf or not api.nvim_buf_is_valid(cur.buf) then return end
   local lines = api.nvim_buf_get_lines(cur.buf, 0, -1, false)
   local msg = table.concat(lines, '\n')
