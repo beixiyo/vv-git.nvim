@@ -169,8 +169,8 @@ local function install_keymaps(state)
   map('g?',            function() Help.open(state) end,            'help')
 
   -- 阻止 Insert mode：buftype=nofile + modifiable=false 下进入 Insert 无意义
-  -- 排除已映射为功能键的 s/c/R，只屏蔽纯 Insert 入口
-  for _, key in ipairs({ 'i', 'I', 'a', 'A', 'o', 'O', 's', 'S', 'C' }) do
+  -- 排除已映射为功能键的 o/s/c/R，只屏蔽纯 Insert 入口
+  for _, key in ipairs({ 'i', 'I', 'a', 'A', 'O', 'S', 'C' }) do
     vim.keymap.set('n', key, '<Nop>', { buffer = buf, nowait = true })
   end
 
@@ -472,7 +472,7 @@ local git_net = State.guarded(function(state, action)
     local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
     local prefix = ok and ('[vv-git] ' .. action .. ' succeeded') or ('[vv-git] ' .. action .. ' failed')
     vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
-    if ok and action == 'pull' then M.refresh() end
+    if ok then M.refresh() end
   end)
 end)
 
