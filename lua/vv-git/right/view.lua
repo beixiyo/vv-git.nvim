@@ -61,9 +61,10 @@ local FILETYPE_A = 'vv-git-a'
 -- 右侧 diff 窗口的 buffer-local 快捷键（show 时装到 a_buf / b_buf，close 时拆）
 -- 回调走注入的 handlers，view 不再反向 require init
 local RIGHT_KEYS_SPEC = {
-  { 'q',  function() handlers.on_close() end,          'close' },
-  { 'gf', function() handlers.on_goto_file() end,      'goto_file' },
-  { 'Y',  function() handlers.on_yank_abs_path() end,  'yank_abs_path' },
+  { 'q',     function() handlers.on_close() end,          'close' },
+  { '<Esc>', function() handlers.on_close() end,          'close' },
+  { 'gf',    function() handlers.on_goto_file() end,      'goto_file' },
+  { 'Y',     function() handlers.on_yank_abs_path() end,  'yank_abs_path' },
 }
 
 -- fold 键全部包到 buffer-local，用 `:normal!`（带 !）跑 vanilla 实现，绕过用户的
