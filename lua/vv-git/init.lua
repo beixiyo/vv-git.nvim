@@ -73,19 +73,23 @@ function M.setup(opts)
     })
   end
 
-  -- diffopt 细粒度匹配：没 linematch 时整块变化会被当成全量替换
-  -- 用户别处若已设 linematch:N，再 append 'linematch:60' 会产生重复条目
-  -- （观察到过 `...linematch:40,linematch:60` 的实际日志）。nvim 对重复
-  -- linematch 的生效顺序不稳定，先全剔除再写入保证只有一份
+  -- diffopt 细粒度匹配：
+  --   linematch:60 — 整块变化被拆成更小 add+delete 对，行级对应更准
+  --   inline:char  — nvim 0.11+ 字符级 intra-line diff（DiffText / DiffTextAdd 高亮组）
+  --                  默认值 'simple' 只标"首个差异字符 → 末个差异字符"，看起来像整段染色
+  --                  没这一项，VSCode 风"具体改了哪几个字深色"的体验完全做不出
+  --
+  -- 同名条目去重：nvim 对重复 linematch:N / inline:X 的生效顺序不稳定，先剔除再写入
   pcall(function()
     local parts = vim.split(vim.o.diffopt, ',', { plain = true })
     local kept = {}
     for _, p in ipairs(parts) do
-      if p ~= '' and not p:match('^linematch:') then
+      if p ~= '' and not p:match('^linematch:') and not p:match('^inline:') then
         kept[#kept + 1] = p
       end
     end
     kept[#kept + 1] = 'linematch:60'
+    kept[#kept + 1] = 'inline:char'
     vim.o.diffopt = table.concat(kept, ',')
   end)
   -- 横向滚动同步（默认 scrollopt=ver,jump 只同步垂直 + jump）

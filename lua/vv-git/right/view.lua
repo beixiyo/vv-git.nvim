@@ -39,11 +39,14 @@ local function fold_unchanged_enabled()
 end
 
 -- a 侧：新增当删除显示 + 整行/词级 = 红系
+-- DiffTextAdd 在 nvim 0.11+ 的 inline:char/word 模式下用：标"对侧没有对应原文的字符"
+-- 不映射会 fall-through 到全局默认色，破坏 a/b 两侧"红系/绿系"的对比节奏
 local WINHL_A = table.concat({
   'DiffAdd:VVGitDiffAddAsDelete',
   'DiffDelete:VVGitDiffDeleteDim',
   'DiffChange:VVGitDiffChangeDelete',
   'DiffText:VVGitDiffTextDelete',
+  'DiffTextAdd:VVGitDiffTextAddDelete',
   'Folded:VVGitFold',
 }, ',')
 
@@ -53,6 +56,7 @@ local WINHL_B = table.concat({
   'DiffDelete:VVGitDiffDeleteDim',
   'DiffChange:VVGitDiffChange',
   'DiffText:VVGitDiffText',
+  'DiffTextAdd:VVGitDiffTextAdd',
   'Folded:VVGitFold',
 }, ',')
 

@@ -28,22 +28,31 @@ local function build_specs()
   local base = normal.bg and string.format('#%06x', normal.bg) or '#1e1e1e'
   local function mix(argb) return mix_over(argb, base) end
 
-  -- 整行
+  -- 整行 / 词级：alpha 与 vsc-theme (beixiyo/vsc-theme) 原版一致
+  --   line: 0x21 (add) / 0x55 (del)
+  --   word: 0x22 / 0x22 —— 叠在整行色上，对比靠"双层叠加"产生（VSC 模型）
+  -- 之前为了"看得清"拉到 0x99/0xaa，结果颜色过饱和浮夸，回到原版数值
   local add_line = mix('#8cc26521')
   local del_line = mix('#50101555')
-  -- 词级：叠在整行色上
   local add_text = mix_over('#85e73422', add_line)
   local del_text = mix_over('#ed344322', del_line)
 
   return {
     -- diff 主体（b 侧/绿系由 VVGitDiffAdd/Change/Text 提供；a 侧/红系由
     -- VVGitDiffAddAsDelete/ChangeDelete/TextDelete 提供；DiffDelete 两侧都 dim）
-    VVGitDiffAdd            = { bg = add_line },
-    VVGitDiffChange         = { bg = add_line },
-    VVGitDiffText           = { bg = add_text },
-    VVGitDiffAddAsDelete    = { bg = del_line },
-    VVGitDiffChangeDelete   = { bg = del_line },
-    VVGitDiffTextDelete     = { bg = del_text },
+    --
+    -- DiffTextAdd 是 nvim 0.11+ 配合 diffopt:inline:char/word 引入的新组：
+    --   在 changed line 内，"对侧无对应原文"的纯增 / 纯删字符走它，"两侧都有但内容不同"
+    --   的字符走 DiffText。视觉上同色即可——区分意义不大，缺映射会 fall-through 到全局
+    --   默认色，破坏深 / 浅对比节奏
+    VVGitDiffAdd            = { bg = add_text },   -- pure-add line: bright green
+    VVGitDiffChange         = { bg = add_line },   -- changed line context: light green
+    VVGitDiffText           = { bg = add_text },   -- intra-line added chars: bright green
+    VVGitDiffTextAdd        = { bg = add_text },
+    VVGitDiffAddAsDelete    = { bg = del_text },   -- pure-delete line: bright red
+    VVGitDiffChangeDelete   = { bg = del_line },   -- changed line context: light red
+    VVGitDiffTextDelete     = { bg = del_text },   -- intra-line deleted chars: bright red
+    VVGitDiffTextAddDelete  = { bg = del_text },
     VVGitDiffDeleteDim      = { fg = '#636b78' },
 
     -- 左栏
@@ -67,9 +76,19 @@ local function build_specs()
   }
 end
 
+-- diff 主体的颜色组要"权威"，每次 setup / ColorScheme 都覆盖；其余偏 UI 风格的
+-- 组（panel / commit / fold）才用 default=true，让用户的 colorscheme 能自定义
+--
+-- 之前所有组都加 default=true，导致同一会话里改 alpha 后再 setup 时新色值是 no-op
+-- （:hi default 语义就是"已存在就不覆盖"），必须 nvim 重启才生效。
+--
+-- 用前缀匹配区分两类：VVGitDiff* 强制 set；其余（VVGitPanel*/VVGitFold/VVGitCommit*）
+-- 走 default。比维护一张白名单更稳——新增 diff 色组不会忘记同步
 local function apply()
   for name, spec in pairs(build_specs()) do
-    if spec.default == nil then spec.default = true end
+    if spec.default == nil and not name:match('^VVGitDiff') then
+      spec.default = true
+    end
     vim.api.nvim_set_hl(0, name, spec)
   end
 end
