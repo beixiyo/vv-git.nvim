@@ -26,6 +26,7 @@
 
 ### Fixed
 
+- **修复 Changes（unstaged）文件预览无代码着色**：`get_worktree_buffer` 通过 `bufadd` + `bufload` 加载 buffer 时，在 `vim.schedule_wrap` 异步回调上下文中 FileType autocmd 链未完整触发 treesitter；而 `create_rev_buffer`（staged 路径）显式调用了 `vim.treesitter.start` 所以不受影响。新增 `ensure_buf_highlighting` 在 `attach_single` 和 `attach_dual` 统一兜底 filetype 检测 + treesitter attach
 - 修复 `p` (push) 成功后，左侧面板未自动刷新导致未推送 commit 数量没更新的问题
 - 修复 `s` (切换暂存状态) 和 `o` (打开文件) 快捷键被意外添加到 `<Nop>` 禁用列表导致无法使用的问题
 - **diff 视图 zR/zM 折叠 snap-back**：用户全局 `zR`/`zM` 映射到 nvim-ufo 时，ufo 的 `:%foldopen!` 不动 `foldlevel`，TTY 重绘 / 第三方插件 `WinScrolled` 回调会让所有折叠瞬间塌回去。在 a_buf / b_buf 上 buffer-local 包装全部 18 个 fold 命令为 `vim.cmd("normal! ...")`，用 `:normal!` 绕过用户映射跑 vanilla 实现

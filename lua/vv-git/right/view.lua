@@ -73,17 +73,17 @@ local RIGHT_KEYS_SPEC = {
 
 -- fold 键全部包到 buffer-local，用 `:normal!`（带 !）跑 vanilla 实现，绕过用户的
 -- 全局 ufo 映射（zR / zM / zr / zm）。仿 diffview.nvim：sindrets/diffview.nvim
--- lua/diffview/actions.lua compat_fold。
+-- lua/diffview/actions.lua compat_fold
 --
 -- 为什么必须绕开 ufo：
 --   ufo.openAllFolds 只跑 `:%foldopen!`，不动 foldlevel。我们 apply_diff_winopts
 --   把 foldlevel 锁在 0，:%foldopen! 后 fold "看起来" 开了但 foldlevel 仍为 0；
 --   后续任何让 vim 重新评估折叠状态的事件（TTY 重绘、scroll 进入新行、第三方
 --   WinScrolled 回调等）都会让所有折叠瞬间塌回去。`:normal! zR` 是 vanilla
---   实现：把 foldlevel 抬到 buffer 最深 fold 层级 → 不会 snap-back。
+--   实现：把 foldlevel 抬到 buffer 最深 fold 层级 → 不会 snap-back
 --
 -- 为什么全列而不是只 zR/zM：未列出的 zr/zm/za/zo/zc/... 仍会被 ufo 全局映射拦走，
--- 存在同类 snap-back 风险。一次性全包，免得用户用 `za` 又踩一次坑。
+-- 存在同类 snap-back 风险。一次性全包，免得用户用 `za` 又踩一次坑
 local FOLD_CMDS = {
   'za', 'zA', 'ze', 'zE', 'zo', 'zc', 'zO', 'zC',
   'zr', 'zm', 'zR', 'zM', 'zv', 'zx', 'zX', 'zn', 'zN', 'zi',
@@ -238,7 +238,7 @@ local function clear_diff_winopts(win)
   restore_winopts(win)
 end
 
--- 创建某 rev 的只读 scratch buffer（内容来自 `git show rev:relpath`）。
+-- 创建某 rev 的只读 scratch buffer（内容来自 `git show rev:relpath`）
 -- 双侧用：staged 视图的 a/b 都用它（HEAD / :0:）；unstaged 视图的 a 也用它（:0:）
 ---@param rev string     'HEAD' | ':0' | 任意 git rev 语法
 ---@param relpath string
@@ -258,7 +258,10 @@ local function create_rev_buffer(root, rev, relpath, cb)
     local ft = vim.filetype.match({ filename = relpath, buf = buf }) or FILETYPE_A
     api.nvim_set_option_value('filetype', ft, { buf = buf })
     -- 主动 attach treesitter：用户的 FileType autocmd 会跳过 buftype ~= '' 的 buffer
-    pcall(vim.treesitter.start, buf)
+    -- bigfile 跳过：minified 大文件走 treesitter 会让 diff 切换卡住
+    if ft ~= 'bigfile' then
+      pcall(vim.treesitter.start, buf)
+    end
     -- 打标：后续 wipe_scratch 靠这个判断"这是 vv-git 自建的 scratch，可以删"，
     -- 不再用 bufhidden == 'wipe' 去旁敲侧击（工作区 buf 若被第三方设成 wipe 会误杀）
     vim.b[buf].vv_git_scratch = true
@@ -277,9 +280,9 @@ local function wipe_scratch(bufs)
 end
 
 -- 获取/加载工作区文件的真实 buffer（unstaged 视图的 b 侧用；可编辑，保存即走 BufWritePost）
--- bufadd 本身就是"存在则复用，不存在则建"的 exact-match 语义，无需先 bufnr 探测。
+-- bufadd 本身就是"存在则复用，不存在则建"的 exact-match 语义，无需先 bufnr 探测
 -- 之前用 vim.fn.bufnr(abspath) 会按 regex 匹配 buffer 名，另一个 buf 名如果恰好
--- 以 abspath 为子串，会被误判为命中。
+-- 以 abspath 为子串，会被误判为命中
 ---@param abspath string
 ---@return integer buf
 local function get_worktree_buffer(abspath)
@@ -288,6 +291,28 @@ local function get_worktree_buffer(abspath)
     vim.fn.bufload(buf)
   end
   return buf
+end
+
+-- 确保 buffer 有语法高亮：filetype 检测 + treesitter attach
+-- create_rev_buffer 对 scratch buf 显式做了这两步；worktree buf 依赖 FileType autocmd
+-- 链触发，但 bufload 在 vim.schedule_wrap 回调内执行时 autocmd 链不一定完整走完——
+-- 这里统一兜底，idempotent 不会重复 attach
+---@param buf integer
+---@param relpath? string  提供时用作 filetype.match 的 filename（worktree buf 的 buf name
+---                         是绝对路径，filetype.match 一样能匹配，但传 relpath 与 create_rev_buffer 对齐）
+local function ensure_buf_highlighting(buf, relpath)
+  if not buf or not api.nvim_buf_is_valid(buf) then return end
+  local ft = vim.bo[buf].filetype
+  if ft == '' then
+    local name = relpath or api.nvim_buf_get_name(buf)
+    ft = vim.filetype.match({ filename = name, buf = buf }) or ''
+    if ft ~= '' and ft ~= 'bigfile' then
+      api.nvim_set_option_value('filetype', ft, { buf = buf })
+    end
+  end
+  if ft ~= '' and ft ~= 'bigfile' then
+    pcall(vim.treesitter.start, buf)
+  end
 end
 
 -- 按 section 路由：
@@ -319,7 +344,7 @@ function M.show(state, node, section, force_single)
 
   -- 异步竞态守卫：每次 show 分配单调递增 req_id。快速切换文件时，嵌套 git show
   -- 回调可能乱序到达，用 req_id 确认当前请求仍是最新才继续。否则 scratch buf
-  -- （bufhidden=wipe 因从未挂到窗口而不会触发）需要手动删掉防漏。
+  -- （bufhidden=wipe 因从未挂到窗口而不会触发）需要手动删掉防漏
   local req_id = (state._show_req_id or 0) + 1
   state._show_req_id = req_id
 
@@ -357,7 +382,7 @@ function M.show(state, node, section, force_single)
   local render_dual_rev_rev, render_dual_rev_worktree
 
   -- 单栏挂载：只 b_win + b_buf；不动 diff opts
-  -- a_lines（可选）：传入则在 b_buf 上叠 inline diff（行级 add/change + 删除虚拟行）。
+  -- a_lines（可选）：传入则在 b_buf 上叠 inline diff（行级 add/change + 删除虚拟行）
   -- 仅 force_single 的常规改动文件会传；intrinsic_single（A/D/?? 等）不传，保持空白
   ---@param b_buf integer
   ---@param a_lines string[]?
@@ -374,6 +399,7 @@ function M.show(state, node, section, force_single)
     }
     api.nvim_win_set_buf(b_win, b_buf)
     clear_diff_winopts(b_win)
+    ensure_buf_highlighting(b_buf, node.relpath)
     if prev_b_buf and prev_b_buf ~= b_buf then remove_right_keymaps(prev_b_buf) end
     install_right_keymaps(b_buf)
     -- scratch buffer（只读 rev 视图）也阻止 Insert mode
@@ -393,7 +419,7 @@ function M.show(state, node, section, force_single)
         fold_unchanged = cfg.fold_unchanged ~= false,
       }
       local max = cfg.inline_diff_max_lines or 10000
-      -- M.apply / attach_live 都返回首个 hunk 的 b 侧目标行，省得再跑一遍 vim.diff。
+      -- M.apply / attach_live 都返回首个 hunk 的 b 侧目标行，省得再跑一遍 vim.diff
       -- 无 hunk（罕见，理论不会进 force_single 路径）→ first 为 nil，保持光标在 1
       local first
       if vim.b[b_buf].vv_git_scratch then
@@ -428,6 +454,8 @@ function M.show(state, node, section, force_single)
     }
     apply_diff_winopts(a_win, a_buf, WINHL_A)
     apply_diff_winopts(b_win, b_buf, WINHL_B)
+    ensure_buf_highlighting(a_buf, node.relpath)
+    ensure_buf_highlighting(b_buf, node.relpath)
     if prev_b_buf and prev_b_buf ~= b_buf then remove_right_keymaps(prev_b_buf) end
     install_right_keymaps(a_buf)
     install_right_keymaps(b_buf)
