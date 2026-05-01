@@ -6,6 +6,8 @@ local HelpPanel = require('vv-utils.help_panel')
 local M = {}
 
 local ACTIONS = {
+  next_item     = { cat = 'Navigate', icon = '' },
+  prev_item     = { cat = 'Navigate', icon = '' },
   open          = { cat = 'Navigate', icon = '' },
   close_node    = { cat = 'Navigate', icon = '' },
   toggle_fold   = { cat = 'Navigate', icon = '' },

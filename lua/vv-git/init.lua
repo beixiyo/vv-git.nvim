@@ -144,6 +144,42 @@ local function scroll_diff(keys)
 end
 
 ---@param state table
+---@param direction 'j'|'k'
+local function navigate(state, direction)
+  if not state.panel or not state.panel.win then return end
+  if not vim.api.nvim_win_is_valid(state.panel.win) then return end
+  local id_by_line = state.panel.id_by_line
+  if not id_by_line then return end
+
+  local lnums = {}
+  for lnum, _ in pairs(id_by_line) do
+    lnums[#lnums + 1] = lnum
+  end
+  if #lnums == 0 then return end
+  table.sort(lnums)
+
+  local cur = vim.api.nvim_win_get_cursor(state.panel.win)[1]
+
+  if direction == 'j' then
+    for _, lnum in ipairs(lnums) do
+      if lnum > cur then
+        vim.api.nvim_win_set_cursor(state.panel.win, { lnum, 0 })
+        return
+      end
+    end
+    vim.api.nvim_win_set_cursor(state.panel.win, { lnums[1], 0 })
+  else
+    for i = #lnums, 1, -1 do
+      if lnums[i] < cur then
+        vim.api.nvim_win_set_cursor(state.panel.win, { lnums[i], 0 })
+        return
+      end
+    end
+    vim.api.nvim_win_set_cursor(state.panel.win, { lnums[#lnums], 0 })
+  end
+end
+
+---@param state table
 local function install_keymaps(state)
   local buf = state.panel.buf
   local function map(lhs, fn, action)
@@ -152,6 +188,10 @@ local function install_keymaps(state)
       desc = 'vv-git: ' .. action,
     })
   end
+  map('j',             function() navigate(state, 'j') end,       'next_item')
+  map('k',             function() navigate(state, 'k') end,       'prev_item')
+  map('<C-n>',         function() navigate(state, 'j') end,       'next_item')
+  map('<C-p>',         function() navigate(state, 'k') end,       'prev_item')
   map('q',             function() M.close() end,                   '__close')
   map('<Esc>',         function() M.close() end,                   '__close')
   map('R',             function() M.refresh() end,                 'refresh')

@@ -53,7 +53,7 @@ require('vv-git').setup({
 
 - 左栏：commit 浮窗 + 变更文件树（staged / unstaged 两 section，支持文件夹折叠）
 - 右栏：双栏 diff（宽度 ≥ 阈值）/ 单栏 + inline diff（< 阈值；自动计算 hunks，加 / 改整行染色 + 删行 virt_lines 在原位上方显示）
-- 自动跳到第一个变更位置（dual / single 都生效）+ `zz` 居中
+- 自动跳到第一个变更位置（dual / single 都生效）+ `zz` 居中；初次打开默认光标在 Changes（unstaged）而非 Staged Changes
 - 自动折叠未改动代码（dual：foldmethod=diff；single：foldmethod=manual，未改动行 ±6 行外折叠）
 - 文件夹级 stage/unstage 递归操作
 - 右侧 b 窗口可编辑，`:w` 后重算 diff 刷新树；单栏 unstaged 模式编辑后 200ms 自动重算 inline diff
@@ -75,6 +75,8 @@ require('vv-git').setup({
 
 | 键 | 行为 |
 |----|------|
+| `j` / `<C-n>` | 下一项（到底循环回顶部） |
+| `k` / `<C-p>` | 上一项（到顶循环回底部） |
 | `<CR>` / `l` / `o` / `<2-LeftMouse>` | 打开 diff |
 | `gf`       | 脱离 diff 视图，在原主窗口普通打开该文件 |
 | `h`        | 折叠 / 收起当前 |

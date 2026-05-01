@@ -270,7 +270,14 @@ function M.render(state)
         end
       end
     end
-    -- 第一个文件行
+    -- 优先落在 Changes（unstaged）的第一个文件行
+    for lnum = 1, #lines do
+      local id = id_by_line[lnum]
+      if id and id.node and not id.node.is_dir and id.section == 'unstaged' then
+        pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
+        return
+      end
+    end
     for lnum = 1, #lines do
       local id = id_by_line[lnum]
       if id and id.node and not id.node.is_dir then
