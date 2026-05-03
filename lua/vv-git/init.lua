@@ -32,6 +32,7 @@ local M = {}
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X
 ---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡）
+---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -40,6 +41,7 @@ local defaults = {
   diff_fill = ' ',
   preview = true,
   inline_diff_max_lines = 10000,
+  right_click = 'toggle_stage',
 }
 
 M._config = vim.deepcopy(defaults)
@@ -179,6 +181,16 @@ local function navigate(state, direction)
   end
 end
 
+-- 光标行对应的 id（section_header 或 { section, node }）
+---@param state table
+---@return table?
+local function id_under_cursor(state)
+  if not state.panel or not state.panel.win then return nil end
+  if not vim.api.nvim_win_is_valid(state.panel.win) then return nil end
+  local lnum = vim.api.nvim_win_get_cursor(state.panel.win)[1]
+  return state.panel.id_by_line and state.panel.id_by_line[lnum]
+end
+
 ---@param state table
 local function install_keymaps(state)
   local buf = state.panel.buf
@@ -188,6 +200,7 @@ local function install_keymaps(state)
       desc = 'vv-git: ' .. action,
     })
   end
+
   map('j',             function() navigate(state, 'j') end,       'next_item')
   map('k',             function() navigate(state, 'k') end,       'prev_item')
   map('<C-n>',         function() navigate(state, 'j') end,       'next_item')
@@ -198,7 +211,28 @@ local function install_keymaps(state)
   map('<CR>',          function() M._activate() end,               'open')
   map('o',             function() M._activate() end,               'open')
   map('l',             function() M._activate(true) end,           'expand')
-  map('<2-LeftMouse>', function() M._activate() end,               'open')
+  map('<LeftRelease>', function()
+    local id = id_under_cursor(state)
+    if id and id.node and id.node.is_dir then M._toggle_fold() end
+  end,                                                              'click_toggle')
+
+  if M._config.right_click then
+    local rc_action = M._config.right_click
+    map('<RightMouse>', function()
+      local pos = vim.fn.getmousepos()
+      if pos.line > 0 and state.panel and state.panel.win then
+        pcall(vim.api.nvim_win_set_cursor, state.panel.win, { pos.line, 0 })
+      end
+      M._action(rc_action)
+    end,                                                            rc_action)
+
+    -- 屏蔽默认右键 visual 选区行为（含双击/三击）
+    for _, key in ipairs({ '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
+      vim.keymap.set({ 'n', 'x' }, key, '<Nop>', { buffer = buf, silent = true })
+    end
+    vim.keymap.set('x', '<RightMouse>', '<Esc>', { buffer = buf, silent = true })
+  end
+
   map('gf',            function() M._goto_file() end,              'goto_file')
   map('Y',             function() M._yank_abs_path() end,           'yank_abs_path')
   map('<Tab>',         function() M._toggle_fold() end,            'toggle_fold')
@@ -225,16 +259,6 @@ local function install_keymaps(state)
     callback = State.guarded(function(s) M._preview() end),
     desc = 'vv-git: preview on cursor move',
   })
-end
-
--- 光标行对应的 id（section_header 或 { section, node }）
----@param state table
----@return table?
-local function id_under_cursor(state)
-  if not state.panel or not state.panel.win then return nil end
-  if not vim.api.nvim_win_is_valid(state.panel.win) then return nil end
-  local lnum = vim.api.nvim_win_get_cursor(state.panel.win)[1]
-  return state.panel.id_by_line and state.panel.id_by_line[lnum]
 end
 
 function M.open()

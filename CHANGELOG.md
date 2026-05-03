@@ -4,6 +4,7 @@
 
 ### Added
 
+- **鼠标操作**：单击（`<LeftRelease>`）展开/收起目录；右键（`<RightMouse>` + `getmousepos()`）执行可配置 action（默认 `toggle_stage`），屏蔽右键 visual 选区（含双击/三击）。配置项 `right_click`（`string|false`）
 - **j/k 循环导航**：`j`/`k`/`<C-n>`/`<C-p>` 在可交互行间跳转，到边缘自动循环回绕，跳过空行和非交互行
 - **默认光标在 Changes**：初次渲染时光标优先定位到 Changes（unstaged）区域的第一个文件，而非 Staged Changes
 - Added `<Esc>` mapping to close the panel and diff view.
