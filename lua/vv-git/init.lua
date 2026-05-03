@@ -402,9 +402,10 @@ end)
 M._toggle_fold = State.guarded(function(state)
   local id = id_under_cursor(state)
   if not id or not id.node or not id.node.is_dir then return end
-  -- 三值 toggle：nil(展开) ↔ true(折叠)；`or nil` 把 false 归一为 nil，保持表稀疏
-  state.folds[id.node.relpath] = not state.folds[id.node.relpath] or nil
+  local fold_key = (id.section or '') .. ':' .. id.node.relpath
+  state.folds[fold_key] = not state.folds[fold_key] or nil
   state.cur_path = id.node.relpath
+  state.cur_section = id.section
   LeftRender.render(state)
 end)
 
@@ -412,15 +413,18 @@ end)
 M._collapse = State.guarded(function(state)
   local id = id_under_cursor(state)
   if not id or not id.node then return end
-  local target_path
-  if id.node.is_dir and not state.folds[id.node.relpath] then
-    target_path = id.node.relpath
+  local section = id.section or ''
+  local fold_key
+  if id.node.is_dir and not state.folds[section .. ':' .. id.node.relpath] then
+    fold_key = section .. ':' .. id.node.relpath
   else
-    target_path = vim.fs.dirname(id.node.relpath)
-    if target_path == '.' or target_path == '' then return end
+    local parent = vim.fs.dirname(id.node.relpath)
+    if parent == '.' or parent == '' then return end
+    fold_key = section .. ':' .. parent
   end
-  state.folds[target_path] = true
-  state.cur_path = target_path
+  state.folds[fold_key] = true
+  state.cur_path = fold_key:match(':(.+)$') or id.node.relpath
+  state.cur_section = id.section
   LeftRender.render(state)
 end)
 
@@ -443,6 +447,7 @@ M._preview = State.guarded(function(state)
     return
   end
   state.cur_path = node.relpath
+  state.cur_section = id.section
   RightView.show(state, node, id.section, is_narrow())
 end)
 
@@ -456,12 +461,14 @@ M._activate = State.guarded(function(state, expand_only)
   if not node then return end
   if node.is_dir then
     -- expand_only 且已展开 → no-op；其余情况正常 toggle
-    if not expand_only or state.folds[node.relpath] then
+    local fold_key = (id.section or '') .. ':' .. node.relpath
+    if not expand_only or state.folds[fold_key] then
       M._toggle_fold()
     end
     return
   end
   state.cur_path = node.relpath
+  state.cur_section = id.section
   -- 同一文件同一 section → 短路，避免 a_buf 重建导致语法丢失
   local view = state.view
   if view and view.path == node.relpath and view.section == id.section
@@ -601,7 +608,10 @@ end)
 M._action = State.guarded(function(state, name)
   local id = id_under_cursor(state)
   if not id then return end
-  if id.node then state.cur_path = id.node.relpath end
+  if id.node then
+    state.cur_path = id.node.relpath
+    state.cur_section = id.section
+  end
   -- 动作后光标策略：render 优先在原 section 向下找下一个节点，
   -- 避免 stage 后跟着文件跳到另一分类打断工作流
   if id.node and id.section and state.panel and state.panel.win

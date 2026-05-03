@@ -4,14 +4,15 @@
 local Tree = require('vv-git.tree')
 local Icons = require('vv-git.icons')
 local Panel = require('vv-git.left.panel')
+local ui_icons = require('vv-icons').raw.ui
 
 local M = {}
 
 M.ns = vim.api.nvim_create_namespace('vv-git-panel')
 
 local INDENT_STEP = '  '
-local ARROW_OPEN = ''
-local ARROW_CLOSE = ''
+local ARROW_OPEN = ui_icons.fold_open.glyph
+local ARROW_CLOSE = ui_icons.fold_closed.glyph
 local ARROW_COLS = 2
 -- nerd font 多数 2 cols；若 MiniIcons 返回 1-col 字符，pad_to_cols 会补空格
 -- 已知局限：>2 col 的 icon 不会被截断，可能与邻行错位（实际很罕见）
@@ -42,7 +43,7 @@ local function build_row(opts)
   local icon_block = pad_to_cols(icon, ICON_COLS)
 
   local name = opts.display_name
-  local line = prefix .. arrow_block .. icon_block .. ' ' .. name
+  local line = prefix .. arrow_block .. icon_block .. name
 
   local extmarks = {}
   local col = #prefix
@@ -69,7 +70,7 @@ local function build_row(opts)
       opts = { end_col = col + #icon, hl_group = icon_hl },
     }
   end
-  col = col + #icon_block + 1
+  col = col + #icon_block
 
   extmarks[#extmarks + 1] = {
     col = col,
@@ -189,7 +190,14 @@ function M.build(state)
     }
     id_by_line[#lines] = { section_header = section_id }
 
-    local rows = Tree.flatten(side_root, folds, { group_empty_dirs = true })
+    -- fold key 加 section 前缀，避免 staged/unstaged 同名目录共享折叠状态
+    local scoped_folds = {}
+    for k, v in pairs(folds) do
+      local s, p = k:match('^(.-):(.*)')
+      if s == section_id then scoped_folds[p] = v end
+    end
+
+    local rows = Tree.flatten(side_root, scoped_folds, { group_empty_dirs = true })
     for _, r in ipairs(rows) do
       local node = r.node
       local letter, hl
@@ -202,7 +210,7 @@ function M.build(state)
       local line, ems = build_row({
         depth = r.depth + 1, -- section 内再缩进一层
         is_dir = node.is_dir,
-        is_open = node.is_dir and not folds[node.relpath],
+        is_open = node.is_dir and not scoped_folds[node.relpath],
         has_children = r.has_children,
         display_name = r.display_name,
         node = node,
@@ -262,7 +270,18 @@ function M.render(state)
     end
 
     local cur_path = state.cur_path
+    local cur_section = state.cur_section
     if cur_path then
+      -- 优先匹配同 section 同 path
+      if cur_section then
+        for lnum, id in pairs(id_by_line) do
+          if id.node and id.node.relpath == cur_path and id.section == cur_section then
+            pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
+            return
+          end
+        end
+      end
+      -- fallback：忽略 section
       for lnum, id in pairs(id_by_line) do
         if id.node and id.node.relpath == cur_path then
           pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
