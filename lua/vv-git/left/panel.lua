@@ -42,6 +42,9 @@ function M.open_split(buf, opts)
   local prev = vim.api.nvim_get_current_win()
   vim.cmd('topleft vsplit')
   local win = vim.api.nvim_get_current_win()
+  vim.wo[win].diff = false
+  vim.wo[win].scrollbind = false
+  vim.wo[win].cursorbind = false
   vim.api.nvim_win_set_width(win, opts.width)
   vim.api.nvim_win_set_buf(win, buf)
   apply_win_opts(win)

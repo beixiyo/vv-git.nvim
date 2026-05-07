@@ -24,6 +24,9 @@ local Editor = require('vv-utils.editor')
 
 local M = {}
 
+local Fs = require('vv-utils.fs')
+local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
+
 ---@class VVGitConfig
 ---@field width integer
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移
@@ -49,6 +52,9 @@ M._config = vim.deepcopy(defaults)
 ---@param opts VVGitConfig?
 function M.setup(opts)
   M._config = vim.tbl_deep_extend('force', defaults, opts or {})
+
+  local persisted = Fs.load_json(PERSIST_FILE)
+  if persisted.width then M._config.width = persisted.width end
 
   HL.setup()
 
@@ -103,6 +109,16 @@ function M.setup(opts)
     on_refresh          = function() M.refresh() end,
     on_apply_layout     = function() M._apply_layout() end,
     on_ensure_invariant = function() M._ensure_invariant() end,
+  })
+
+  vim.api.nvim_create_autocmd('VimLeavePre', {
+    callback = function()
+      if not State.has() then return end
+      local s = State.get()
+      if s._panel_width then
+        Fs.save_json(PERSIST_FILE, { width = s._panel_width })
+      end
+    end,
   })
 end
 
@@ -305,6 +321,17 @@ function M.open()
     win = panel_win,
     main_win = main_win,
   }
+  state._panel_width = M._config.width
+
+  vim.api.nvim_create_autocmd('WinResized', {
+    callback = function()
+      if not State.has() then return true end
+      local s = State.get()
+      if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
+        s._panel_width = vim.api.nvim_win_get_width(s.panel.win)
+      end
+    end,
+  })
 
   install_keymaps(state)
 
@@ -319,6 +346,11 @@ end
 -- 关闭 vv-git：只触发 tabclose；状态清理统一由 TabClosed autocmd 负责（单一来源）
 -- 这样 :wq / :q / <C-w>q / <leader>b 等所有退出路径都能被回收，不再产生孤儿 tab
 M.close = State.guarded(function(state)
+  if state._panel_width then
+    M._config.width = state._panel_width
+    Fs.save_json(PERSIST_FILE, { width = state._panel_width })
+  end
+
   local tp = state.tabpage
   local prev_tab = state.prev_tab
 
@@ -383,7 +415,6 @@ M.toggle_panel = State.guarded(function(state)
     if main and vim.api.nvim_win_is_valid(main) then
       pcall(vim.api.nvim_set_current_win, main)
     end
-    state._panel_width = vim.api.nvim_win_get_width(win)
     Panel.close_win(win)
     state.panel.win = nil
     state._panel_hidden = true

@@ -18,6 +18,9 @@
 - **单栏 worktree 实时刷新**：unstaged 单栏的 worktree b_buf 上挂 `TextChanged` 200ms 去抖，编辑后 inline diff 跟着 hunks 重算
 - 配置项 `inline_diff_max_lines`（默认 10000）：超过此行数跳过 inline 渲染，避免大文件 vim.diff 卡顿
 
+- **Panel 宽度持久化**：调整左栏宽度后跨 session 记住，通过 `WinResized` 实时跟踪 + `VimLeavePre` / `M.close` 写入 `stdpath('data')/vv-git.json`
+- **Panel 防 V 模式**：`open_split` 立即清除从 diff 窗口继承的 `diff`/`scrollbind`/`cursorbind`，屏蔽 panel buffer 的 `v`/`V`/`<C-v>`
+
 ### Changed
 
 - `single_col_threshold` 语义：从「< 此值时拒绝打开 / 关 tab」改为「< 此值时降级为单栏」；保留配置名但语义升级
