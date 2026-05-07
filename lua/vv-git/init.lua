@@ -383,11 +383,12 @@ M.toggle_panel = State.guarded(function(state)
     if main and vim.api.nvim_win_is_valid(main) then
       pcall(vim.api.nvim_set_current_win, main)
     end
+    state._panel_width = vim.api.nvim_win_get_width(win)
     Panel.close_win(win)
     state.panel.win = nil
     state._panel_hidden = true
   else
-    Panel.open_split(state.panel.buf, { width = M._config.width })
+    Panel.open_split(state.panel.buf, { width = state._panel_width or M._config.width })
     state.panel.win = vim.api.nvim_get_current_win()
     state._panel_hidden = false
     LeftRender.render(state)
