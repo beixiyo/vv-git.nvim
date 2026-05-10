@@ -132,6 +132,36 @@ local function detect_git_root()
   return vim.fs.normalize(result[1])
 end
 
+---@param root string
+---@return string? relpath
+local function get_current_relpath(root)
+  local buf = vim.api.nvim_get_current_buf()
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name == "" or not root then return nil end
+  name = vim.fs.normalize(name)
+  if name:sub(1, #root) == root then
+    local rel = name:sub(#root + 2)
+    if rel ~= "" then return rel end
+  end
+  return nil
+end
+
+-- 确保目标路径的所有父目录都处于展开状态
+local function ensure_unfolded(state, relpath)
+  if not relpath or not state.folds then return end
+  local parts = vim.split(relpath, '/', { plain = true })
+  local accum = ''
+  for i = 1, #parts - 1 do
+    accum = accum == '' and parts[i] or (accum .. '/' .. parts[i])
+    -- state.folds 存储的是已折叠的路径，key 格式为 "section:relpath"
+    for k, _ in pairs(state.folds) do
+      if k:match(':(.*)$') == accum then
+        state.folds[k] = nil
+      end
+    end
+  end
+end
+
 -- 预转 <C-e>/<C-y> 的 termcode，给 scroll_diff 走 `normal!` 用
 local CE_KEY = vim.api.nvim_replace_termcodes('<C-e>', true, false, true)
 local CY_KEY = vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
@@ -282,7 +312,13 @@ function M.open()
   if State.has() then
     local s = State.get()
     if s.tabpage and vim.api.nvim_tabpage_is_valid(s.tabpage) then
+      local rel_path = get_current_relpath(s.git_root)
       vim.api.nvim_set_current_tabpage(s.tabpage)
+      if rel_path then
+        s.cur_path = rel_path
+        ensure_unfolded(s, rel_path)
+        LeftRender.render(s)
+      end
       if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
         vim.api.nvim_set_current_win(s.panel.win)
       end
@@ -300,6 +336,7 @@ function M.open()
     return
   end
 
+  local rel_path = get_current_relpath(root)
   local prev_tab = vim.api.nvim_get_current_tabpage()
 
   -- 开专属 tab（`tab split` 复制当前 buffer 进新 tab 作为起始窗口）
@@ -316,6 +353,8 @@ function M.open()
   state.tabpage = tabpage
   state.prev_tab = prev_tab
   state.git_root = root
+  state.cur_path = rel_path
+  ensure_unfolded(state, rel_path)
   state.panel = {
     buf = panel_buf,
     win = panel_win,
