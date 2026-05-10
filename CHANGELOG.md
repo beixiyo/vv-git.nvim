@@ -4,6 +4,7 @@
 
 ### Added
 
+- **文件夹状态图标**：Git 面板中的目录图标现在支持“展开”与“收起”状态切换，视觉表现与 `vv-explorer` 及 `snacks.nvim` 完全同步
 - **鼠标操作**：单击（`<LeftRelease>`）展开/收起目录；右键（`<RightMouse>` + `getmousepos()`）执行可配置 action（默认 `toggle_stage`），屏蔽右键 visual 选区（含双击/三击）。配置项 `right_click`（`string|false`）
 - **j/k 循环导航**：`j`/`k`/`<C-n>`/`<C-p>` 在可交互行间跳转，到边缘自动循环回绕，跳过空行和非交互行
 - **默认光标在 Changes**：初次渲染时光标优先定位到 Changes（unstaged）区域的第一个文件，而非 Staged Changes
@@ -23,6 +24,8 @@
 
 ### Changed
 
+- **图标系统重构**：`icons.lua` 现已接入 `vv-icons` 增强接口，支持 `open` 和 `empty` 状态传递
+- **兼容性增强**：在支持增强图标的同时，保留了对 `_G.MiniIcons` 全局标准接口的探测与回退逻辑
 - `single_col_threshold` 语义：从「< 此值时拒绝打开 / 关 tab」改为「< 此值时降级为单栏」；保留配置名但语义升级
 - `M.open` 入口取消「窄屏拒绝」分支：现在任何宽度都能打开
 - `_apply_layout` 加 50ms 去抖：拖拽 resize 不再每帧触发 git show + vim.diff

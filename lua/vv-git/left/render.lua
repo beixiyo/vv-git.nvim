@@ -39,6 +39,7 @@ local function build_row(opts)
     name = opts.display_name:match('[^/]+$') or opts.display_name,
     is_dir = opts.is_dir,
     open = opts.is_open,
+    has_children = opts.has_children,
   })
   local icon_block = pad_to_cols(icon, ICON_COLS)
 
