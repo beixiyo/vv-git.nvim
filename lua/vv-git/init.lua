@@ -646,6 +646,17 @@ M._goto_file = State.guarded(function(state)
   end
 
   M.close()   -- 会关整个 vv-git tab，并跳回 prev_tab
+
+  -- close 跳回 prev_tab 后，当前窗口可能是 winfixbuf 面板（如 vv-explorer）
+  local win = vim.api.nvim_get_current_win()
+  if vim.wo[win].winfixbuf then
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if not vim.wo[w].winfixbuf and vim.api.nvim_win_get_config(w).relative == '' then
+        vim.api.nvim_set_current_win(w)
+        break
+      end
+    end
+  end
   vim.cmd('edit ' .. vim.fn.fnameescape(abspath))
   if row then
     pcall(vim.api.nvim_win_set_cursor, 0, { row, 0 })
