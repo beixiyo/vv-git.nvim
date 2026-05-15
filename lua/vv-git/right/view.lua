@@ -212,7 +212,12 @@ local function apply_diff_winopts(win, buf, winhl)
   if api.nvim_get_option_value('diff', { win = win }) then
     api.nvim_set_option_value('diff', false, { win = win })
   end
-  api.nvim_win_set_buf(win, buf)
+  -- pcall: nvim_win_set_buf 可能因 E828（undo 目录不可写）等非致命错误抛异常，
+  -- 但 buffer 实际已切换成功，不应中断 diff 视图
+  local ok, err = pcall(api.nvim_win_set_buf, win, buf)
+  if not ok then
+    if not tostring(err):find('E828') then error(err) end
+  end
   api.nvim_set_option_value('diff', true, { win = win })
   api.nvim_set_option_value('scrollbind', true, { win = win })
   api.nvim_set_option_value('cursorbind', true, { win = win })
@@ -397,7 +402,10 @@ function M.show(state, node, section, force_single)
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single,
     }
-    api.nvim_win_set_buf(b_win, b_buf)
+    local ok, err = pcall(api.nvim_win_set_buf, b_win, b_buf)
+    if not ok then
+      if not tostring(err):find('E828') then error(err) end
+    end
     clear_diff_winopts(b_win)
     ensure_buf_highlighting(b_buf, node.relpath)
     if prev_b_buf and prev_b_buf ~= b_buf then remove_right_keymaps(prev_b_buf) end
