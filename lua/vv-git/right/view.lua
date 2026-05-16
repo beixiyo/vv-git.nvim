@@ -375,6 +375,14 @@ function M.show(state, node, section, force_single)
   end
 
   local function focus_back_to_panel()
+    local rw = state._reshow_restore_win
+    if rw then
+      state._reshow_restore_win = nil
+      if api.nvim_win_is_valid(rw) then
+        api.nvim_set_current_win(rw)
+      end
+      return
+    end
     local pw = state.panel and state.panel.win
     if pw and api.nvim_win_is_valid(pw) then
       api.nvim_set_current_win(pw)

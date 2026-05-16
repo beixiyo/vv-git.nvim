@@ -11,7 +11,7 @@ local Guard = require('vv-git.guard')
 
 local M = {}
 
----@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun() }
+---@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun() }
 function M.setup(handlers)
   local aug = vim.api.nvim_create_augroup('VVGit', { clear = true })
 
@@ -28,6 +28,23 @@ function M.setup(handlers)
       vim.schedule(function()
         state._refresh_scheduled = false
         handlers.on_refresh()
+      end)
+    end),
+  })
+
+  -- gitsigns stage/unstage/reset_hunk 不写文件（不触发 BufWritePost），
+  -- 但会发 User GitSignsChanged；监听它来刷新左栏 + 重渲染右侧 diff
+  vim.api.nvim_create_autocmd('User', {
+    group = aug,
+    pattern = 'GitSignsChanged',
+    callback = State.guarded(function(state)
+      if not state.git_root then return end
+      if state._refresh_scheduled then return end
+      state._refresh_scheduled = true
+      vim.schedule(function()
+        state._refresh_scheduled = false
+        handlers.on_refresh()
+        handlers.on_reshow_view()
       end)
     end),
   })

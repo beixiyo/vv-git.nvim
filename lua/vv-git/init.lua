@@ -109,6 +109,7 @@ function M.setup(opts)
     on_refresh          = function() M.refresh() end,
     on_apply_layout     = function() M._apply_layout() end,
     on_ensure_invariant = function() M._ensure_invariant() end,
+    on_reshow_view      = function() M._reshow_view() end,
   })
 
   vim.api.nvim_create_autocmd('VimLeavePre', {
@@ -502,6 +503,17 @@ end)
 -- 当前终端宽度是否容不下 dual diff（panel + a_win + b_win）→ 触发单栏降级
 ---@return boolean
 local function is_narrow() return vim.o.columns < M._config.single_col_threshold end
+
+-- 强制重渲染当前右侧 diff（绕过 _preview/_activate 的 same-path 短路）
+-- 保留用户当前焦点窗口，不跳回 panel
+M._reshow_view = State.guarded(function(state)
+  local view = state.view
+  if not view or not view.node then return end
+  local node, section = view.node, view.section
+  state.view.path = nil
+  state._reshow_restore_win = vim.api.nvim_get_current_win()
+  RightView.show(state, node, section, is_narrow())
+end)
 
 -- preview：j/k 光标移动触发。只处理文件行；header/目录行保留上一次预览不动
 -- 复用 RightView.show 内置的 req_id 竞态守卫 + 相同 path/section 短路，快速 j/k 不会抖
