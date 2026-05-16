@@ -44,3 +44,23 @@
 | `preview` | `boolean` | `true` | 光标在左栏移动时自动刷新右侧 diff，无需手动 `<CR>` |
 | `inline_diff_max_lines` | `integer` | `10000` | 单栏模式下 `vim.diff` 最大支持行数，超过只显示文本不画高亮 |
 | `right_click` | `string \| false` | `'toggle_stage'` | 右键触发的 action 名（如 `'yank_abs_path'`），`false` 禁用 |
+
+
+## 快捷键
+
+左栏面板内生效：
+
+| 键 | 说明 |
+|------|------|
+| `gf` | 跳转到文件 |
+| `Y` | 复制文件绝对路径 |
+| `<Tab>` | 展开 / 折叠目录 |
+| `h` | 折叠当前节点 |
+| `-` | 切换 stage / unstage |
+| `d` | 撤销更改（discard），确认后生效 |
+| `c` | 提交（commit） |
+| `p` | 推送（push） |
+| `P` | 拉取（pull） |
+| `<C-e>` | 向下滚动 diff |
+| `<C-y>` | 向上滚动 diff |
+| `g?` | 显示帮助 |

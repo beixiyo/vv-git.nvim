@@ -147,60 +147,56 @@ function M.discard(state, id)
       .. string.format('\n⚠ %d untracked file(s) will be permanently deleted!', #untracked)
   end
 
-  vim.ui.select({ 'Discard', 'Cancel' }, {
-    prompt = prompt_msg,
-  }, function(choice)
-    if choice ~= 'Discard' then return end
+  local choice = vim.fn.confirm(prompt_msg, '&Yes\n&No', 2)
+  if choice ~= 1 then return end
 
-    local function on_done()
-      refresh(state, function()
-        -- 如果 discard 的文件正在 b_win 显示，reload buffer
-        local view = state.view
-        if view and view.b_buf and vim.api.nvim_buf_is_valid(view.b_buf) then
-          pcall(vim.api.nvim_buf_call, view.b_buf, function()
-            vim.cmd('silent! checktime')
-          end)
-        end
-      end)
-    end
+  local function on_done()
+    refresh(state, function()
+      local view = state.view
+      if view and view.b_buf and vim.api.nvim_buf_is_valid(view.b_buf) then
+        pcall(vim.api.nvim_buf_call, view.b_buf, function()
+          vim.cmd('silent! checktime')
+        end)
+      end
+    end)
+  end
 
-    local function do_discard_tracked(after)
-      if #tracked == 0 then after(); return end
-      Git.discard(state.git_root, tracked, function(ok, err)
-        if not ok then
-          vim.notify('[vv-git] discard failed: ' .. (err or ''), vim.log.levels.ERROR); return
-        end
-        after()
-      end)
-    end
+  local function do_discard_tracked(after)
+    if #tracked == 0 then after(); return end
+    Git.discard(state.git_root, tracked, function(ok, err)
+      if not ok then
+        vim.notify('[vv-git] discard failed: ' .. (err or ''), vim.log.levels.ERROR); return
+      end
+      after()
+    end)
+  end
 
-    local function do_discard_untracked(after)
-      if #untracked == 0 then after(); return end
-      Git.discard_untracked(state.git_root, untracked, function(ok, err)
-        if not ok then
-          vim.notify('[vv-git] delete untracked failed: ' .. (err or ''), vim.log.levels.ERROR); return
-        end
-        after()
-      end)
-    end
+  local function do_discard_untracked(after)
+    if #untracked == 0 then after(); return end
+    Git.discard_untracked(state.git_root, untracked, function(ok, err)
+      if not ok then
+        vim.notify('[vv-git] delete untracked failed: ' .. (err or ''), vim.log.levels.ERROR); return
+      end
+      after()
+    end)
+  end
 
-    local function do_discard_all()
-      do_discard_tracked(function()
-        do_discard_untracked(on_done)
-      end)
-    end
+  local function do_discard_all()
+    do_discard_tracked(function()
+      do_discard_untracked(on_done)
+    end)
+  end
 
-    if is_staged then
-      Git.unstage(state.git_root, paths, function(ok, err)
-        if not ok then
-          vim.notify('[vv-git] unstage failed: ' .. (err or ''), vim.log.levels.ERROR); return
-        end
-        do_discard_all()
-      end)
-    else
+  if is_staged then
+    Git.unstage(state.git_root, paths, function(ok, err)
+      if not ok then
+        vim.notify('[vv-git] unstage failed: ' .. (err or ''), vim.log.levels.ERROR); return
+      end
       do_discard_all()
-    end
-  end)
+    end)
+  else
+    do_discard_all()
+  end
 end
 
 return M
