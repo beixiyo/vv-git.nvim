@@ -38,6 +38,7 @@
 
 ### Fixed
 
+- **修复 renamed 文件暂存报错**：从 Changes 区按 `-` 暂存 renamed 文件时，`collect()` 无条件将 rename 旧路径附加到 `git add` 参数，但旧文件已不存在导致 `fatal: pathspec did not match any files`。改为仅在 unstage 路径（`side == 'staged'`）时附加旧路径
 - **修复 Changes（unstaged）文件预览无代码着色**：`get_worktree_buffer` 通过 `bufadd` + `bufload` 加载 buffer 时，在 `vim.schedule_wrap` 异步回调上下文中 FileType autocmd 链未完整触发 treesitter；而 `create_rev_buffer`（staged 路径）显式调用了 `vim.treesitter.start` 所以不受影响。新增 `ensure_buf_highlighting` 在 `attach_single` 和 `attach_dual` 统一兜底 filetype 检测 + treesitter attach
 - 修复 `p` (push) 成功后，左侧面板未自动刷新导致未推送 commit 数量没更新的问题
 - 修复 `s` (切换暂存状态) 和 `o` (打开文件) 快捷键被意外添加到 `<Nop>` 禁用列表导致无法使用的问题

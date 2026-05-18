@@ -24,9 +24,9 @@ local function collect(state, id)
 
   if not paths then return nil, nil end
 
-  -- 如果要处理的路径中包含 rename 的新路径，把旧路径也带上
-  -- 否则 git restore --staged 会遗漏对旧路径的 restore，导致旧路径的 deletion 状态残留
-  if state.index and state.index.rename_map then
+  -- unstage rename 时需要把旧路径也带上，否则 git restore --staged 会遗漏旧路径的 deletion 状态
+  -- stage 时不能带旧路径：旧文件已不存在，git add 会报 pathspec not found
+  if side == 'staged' and state.index and state.index.rename_map then
     local old_paths = {}
     local prefix_len = #state.git_root + 2
 
