@@ -114,7 +114,18 @@ function M.discard(state, id)
   local side, paths = collect(state, id)
   if not paths or #paths == 0 then return end
 
-  -- 收集每个路径对应的 xy 状态
+  -- staged 区：d = unstage（与 VSCode 行为一致），不做 discard
+  if side == 'staged' then
+    Git.unstage(state.git_root, paths, function(ok, err)
+      if not ok then
+        vim.notify('[vv-git] unstage failed: ' .. (err or ''), vim.log.levels.ERROR); return
+      end
+      refresh(state)
+    end)
+    return
+  end
+
+  -- unstaged 区：d = discard（弹确认框）
   local xy_map = {}
   if id.section_header then
     local root_node = state.tree[id.section_header]
@@ -124,25 +135,18 @@ function M.discard(state, id)
   end
 
   local untracked, tracked = split_by_tracked(paths, xy_map)
-  local has_untracked = #untracked > 0
 
-  local is_staged = side == 'staged'
   local prompt_msg
   if id.section_header then
-    prompt_msg = is_staged
-      and string.format('Are you sure you want to unstage and discard ALL %d staged file(s)?', #paths)
-      or string.format('Are you sure you want to discard ALL %d unstaged file(s)?', #paths)
+    prompt_msg = string.format('Are you sure you want to discard ALL %d unstaged file(s)?', #paths)
   else
     local label = id.node.is_dir
         and string.format('directory %s (%d files)', id.node.relpath, #paths)
         or id.node.relpath
-    prompt_msg = is_staged
-        and string.format('Are you sure you want to unstage and discard %s?', label)
-        or string.format('Are you sure you want to discard %s?', label)
+    prompt_msg = string.format('Are you sure you want to discard %s?', label)
   end
 
-  -- 未跟踪文件无法通过 git 恢复，追加警告
-  if has_untracked then
+  if #untracked > 0 then
     prompt_msg = prompt_msg
       .. string.format('\n⚠ %d untracked file(s) will be permanently deleted!', #untracked)
   end
@@ -181,22 +185,9 @@ function M.discard(state, id)
     end)
   end
 
-  local function do_discard_all()
-    do_discard_tracked(function()
-      do_discard_untracked(on_done)
-    end)
-  end
-
-  if is_staged then
-    Git.unstage(state.git_root, paths, function(ok, err)
-      if not ok then
-        vim.notify('[vv-git] unstage failed: ' .. (err or ''), vim.log.levels.ERROR); return
-      end
-      do_discard_all()
-    end)
-  else
-    do_discard_all()
-  end
+  do_discard_tracked(function()
+    do_discard_untracked(on_done)
+  end)
 end
 
 return M

@@ -31,6 +31,8 @@
 
 ### Changed
 
+- **`d` 键 staged 区行为改为 unstage**：与 VSCode 对齐——staged 区按 `d` 只做 unstage，不再同时 discard；unstaged 区保持原有 discard + 确认弹窗逻辑不变
+
 - **图标系统重构**：`icons.lua` 现已接入 `vv-icons` 增强接口，支持 `open` 和 `empty` 状态传递
 - **兼容性增强**：在支持增强图标的同时，保留了对 `_G.MiniIcons` 全局标准接口的探测与回退逻辑
 - `single_col_threshold` 语义：从「< 此值时拒绝打开 / 关 tab」改为「< 此值时降级为单栏」；保留配置名但语义升级

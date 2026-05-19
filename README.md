@@ -82,7 +82,7 @@ opts = {
 | `<Tab>` | 展开 / 折叠目录 |
 | `h` | 折叠当前节点 |
 | `-` | 切换 stage / unstage |
-| `d` | 撤销更改（discard），确认后生效 |
+| `d` | staged 区：unstage；unstaged 区：撤销更改（discard），确认后生效 |
 | `c` | 提交（commit） |
 | `p` | 推送（push） |
 | `P` | 拉取（pull） |
