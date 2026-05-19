@@ -176,7 +176,7 @@ end
 -- 被 diff 视图修改的 win-local 选项：apply 前保存原值到 vim.w[win]，clear 时精确还原
 -- 仿 diffview Window.winopt_store（scene/window.lua:L29）。相比之前"还原到全局默认"的写法，
 -- 在 _apply_layout 的 narrow→wide 切换中能保留用户对 b_win 的 setlocal 配置
-local CHANGED_OPTS = { 'diff', 'scrollbind', 'cursorbind', 'foldmethod', 'foldexpr', 'foldlevel', 'foldenable', 'foldcolumn', 'foldtext', 'winhighlight' }
+local CHANGED_OPTS = { 'diff', 'scrollbind', 'cursorbind', 'foldmethod', 'foldexpr', 'foldlevel', 'foldenable', 'foldcolumn', 'foldtext', 'winhighlight', 'wrap' }
 
 ---@param win integer
 local function save_winopts(win)
@@ -235,6 +235,13 @@ local function apply_diff_winopts(win, buf, winhl)
   api.nvim_set_option_value('foldcolumn', fold_on and '1' or '0', { win = win })
   api.nvim_set_option_value('foldtext', "v:lua.require'vv-git.foldtext'.render()", { win = win })
   api.nvim_set_option_value('winhighlight', winhl, { win = win })
+  -- diff 模式下 wrap 会导致两侧行高不一致，产生视觉错位，属于 Neovim/Vim 上游已知限制：
+  --   https://github.com/neovim/neovim/issues/29518
+  --   https://github.com/sindrets/diffview.nvim/issues/198（diffview 作者明确说只能 nowrap 绕过）
+  -- diff_nowrap=true 时强制关闭 wrap；用户可置为 false 恢复默认行为
+  if handlers.get_config().diff_nowrap ~= false then
+    api.nvim_set_option_value('wrap', false, { win = win })
+  end
 end
 
 ---@param win integer

@@ -37,6 +37,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡）
 ---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用
 ---@field diff_ratio integer[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6
+---@field diff_nowrap boolean  -- diff 视图中强制关闭 wrap（默认 true）；wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制（neovim/neovim#29518、sindrets/diffview.nvim#198）
 ---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效
 local defaults = {
   width = 30,
@@ -47,6 +48,7 @@ local defaults = {
   preview = true,
   inline_diff_max_lines = 10000,
   right_click = 'toggle_stage',
+  diff_nowrap = true,
 }
 
 M._config = vim.deepcopy(defaults)
