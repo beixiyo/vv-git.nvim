@@ -53,7 +53,7 @@ local function build_specs()
     VVGitDiffChangeDelete   = { bg = del_line },   -- changed line context: light red
     VVGitDiffTextDelete     = { bg = del_text },   -- intra-line deleted chars: bright red
     VVGitDiffTextAddDelete  = { bg = del_text },
-    VVGitDiffDeleteDim      = { fg = '#636b78' },
+    VVGitDiffDeleteDim      = { fg = '#636b78', bg = add_line },
 
     -- 左栏
     VVGitPanelSection   = { link = 'Title' },
@@ -84,8 +84,14 @@ end
 --
 -- 用前缀匹配区分两类：VVGitDiff* 强制 set；其余（VVGitPanel*/VVGitFold/VVGitCommit*）
 -- 走 default。比维护一张白名单更稳——新增 diff 色组不会忘记同步
+local user_overrides = {}
+
 local function apply()
-  for name, spec in pairs(build_specs()) do
+  local specs = build_specs()
+  for name, override in pairs(user_overrides) do
+    specs[name] = vim.tbl_extend('force', specs[name] or {}, override)
+  end
+  for name, spec in pairs(specs) do
     if spec.default == nil and not name:match('^VVGitDiff') then
       spec.default = true
     end
@@ -93,7 +99,9 @@ local function apply()
   end
 end
 
-function M.setup()
+---@param opts? { highlights?: table<string, vim.api.keyset.highlight> }
+function M.setup(opts)
+  user_overrides = (opts and opts.highlights) or {}
   -- 共享 git 状态色（VVGitAdded/Modified/...）统一由 vv-utils.git 注册
   require('vv-utils.git').register_hl()
   apply()

@@ -46,7 +46,30 @@
 | `inline_diff_max_lines` | `integer` | `10000` | 单栏模式下 `vim.diff` 最大支持行数，超过只显示文本不画高亮 |
 | `right_click` | `string \| false` | `'toggle_stage'` | 右键触发的 action 名（如 `'yank_abs_path'`），`false` 禁用 |
 | `diff_ratio` | `integer[]` | 无（50:50） | 双栏模式下 a_win（旧版本）与 b_win（工作区）的宽度比例，如 `{4, 6}` 表示左窄右宽；不填则等宽 |
+| `highlights` | `table` | 无 | 覆盖任意 `VVGit*` 高亮组，叠加在自动计算值之上，切换主题后仍生效（见下方「自定义配色」）|
 
+
+## 自定义配色
+
+`highlights` 字段接受任意 `VVGit*` 高亮组的覆盖，叠加在按 Normal 背景自动计算的默认色之上，切换 colorscheme 后依然生效：
+
+```lua
+opts = {
+  highlights = {
+    -- b 侧新增行（整行 / 词级）
+    VVGitDiffAdd          = { bg = '#1a3a1a' },
+    VVGitDiffChange       = { bg = '#152818' },
+    VVGitDiffText         = { bg = '#2a6a2a' },
+    -- a 侧对应填充行 / 删除行
+    VVGitDiffDeleteDim    = { fg = '#636b78', bg = '#1e1e2e' },
+    VVGitDiffAddAsDelete  = { bg = '#4a1a1a' },
+    VVGitDiffChangeDelete = { bg = '#2a1010' },
+    VVGitDiffTextDelete   = { bg = '#4a1a1a' },
+  },
+}
+```
+
+可覆盖的完整高亮组列表见 `lua/vv-git/hl.lua`。
 
 ## 快捷键
 

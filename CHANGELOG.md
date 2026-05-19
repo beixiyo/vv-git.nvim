@@ -4,6 +4,10 @@
 
 ### Added
 
+- **左侧填充行背景色**：双栏模式下，左侧（a 面）对应右侧纯新增行的填充空行现在显示浅绿背景（`VVGitDiffDeleteDim.bg = add_line`），与右侧绿色新增行视觉对称，不再显示为空白
+
+- **`highlights` 自定义配色**：`setup()` 的 `opts` 新增 `highlights` 字段，可覆盖任意 `VVGit*` 高亮组；用户提供的 spec 叠加在按 Normal 背景自动计算的默认色之上，`ColorScheme` 切换主题后仍持续生效
+
 - **gitsigns 协同刷新**：监听 `User GitSignsChanged` 事件，在右侧 diff 预览中通过 gitsigns 暂存/取消暂存 hunk 后，左栏文件列表和右侧 diff 自动刷新，焦点保持在原窗口不跳转
 
 - **智能定位当前文件**：按 `<leader>gd` 打开或切换到 Git 面板时，若当前 buffer 有改动，会自动将光标定位到该文件并展示 diff；若目标路径在折叠的目录中，会自动展开父目录

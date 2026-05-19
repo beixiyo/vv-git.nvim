@@ -37,6 +37,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡）
 ---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用
 ---@field diff_ratio integer[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6
+---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -57,7 +58,7 @@ function M.setup(opts)
   local persisted = Fs.load_json(PERSIST_FILE)
   if persisted.width then M._config.width = persisted.width end
 
-  HL.setup()
+  HL.setup({ highlights = M._config.highlights })
 
   -- 向 RightView 注入依赖，解除 view → init 的反向 require
   RightView.configure({
