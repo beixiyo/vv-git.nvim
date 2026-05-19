@@ -468,14 +468,23 @@ function M.show(state, node, section, force_single)
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single,
     }
+
+    local ratio = handlers.get_config().diff_ratio
+    if ratio and ratio[1] and ratio[2] and (ratio[1] + ratio[2]) > 0 then
+      local total = api.nvim_win_get_width(a_win) + api.nvim_win_get_width(b_win)
+      api.nvim_win_set_width(a_win, math.floor(total * ratio[1] / (ratio[1] + ratio[2])))
+    end
+
     apply_diff_winopts(a_win, a_buf, WINHL_A)
     apply_diff_winopts(b_win, b_buf, WINHL_B)
     ensure_buf_highlighting(a_buf, node.relpath)
     ensure_buf_highlighting(b_buf, node.relpath)
+
     if prev_b_buf and prev_b_buf ~= b_buf then remove_right_keymaps(prev_b_buf) end
     install_right_keymaps(a_buf)
     install_right_keymaps(b_buf)
     block_insert_mode(a_buf)
+
     vim.schedule(function()
       pcall(vim.cmd, 'diffupdate')
       -- fold 是 window-local 的懒计算：foldmethod/foldlevel 设了但可见渲染要到
@@ -495,6 +504,7 @@ function M.show(state, node, section, force_single)
         local row = first or api.nvim_win_get_cursor(b_win)[1]
         local b_max = api.nvim_buf_line_count(b_buf)
         local a_max = api.nvim_buf_line_count(a_buf)
+
         pcall(api.nvim_win_set_cursor, b_win, { math.min(row, b_max), 0 })
         pcall(api.nvim_win_set_cursor, a_win, { math.min(row, a_max), 0 })
         if first then

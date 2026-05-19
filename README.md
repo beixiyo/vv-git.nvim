@@ -28,6 +28,7 @@
     diff_fill = ' ',                   -- diff 空行填充符（Vim 默认 '-'）
     preview = true,                    -- 光标移动到文件行时自动刷新右侧 diff
     inline_diff_max_lines = 10000,     -- 单栏 inline diff 最大行数（超过跳过高亮）
+    diff_ratio = { 4, 6 },            -- 双栏 a_win:b_win 宽度比例（不填则 50:50）
   },
 }
 ```
@@ -44,6 +45,7 @@
 | `preview` | `boolean` | `true` | 光标在左栏移动时自动刷新右侧 diff，无需手动 `<CR>` |
 | `inline_diff_max_lines` | `integer` | `10000` | 单栏模式下 `vim.diff` 最大支持行数，超过只显示文本不画高亮 |
 | `right_click` | `string \| false` | `'toggle_stage'` | 右键触发的 action 名（如 `'yank_abs_path'`），`false` 禁用 |
+| `diff_ratio` | `integer[]` | 无（50:50） | 双栏模式下 a_win（旧版本）与 b_win（工作区）的宽度比例，如 `{4, 6}` 表示左窄右宽；不填则等宽 |
 
 
 ## 快捷键
