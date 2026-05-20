@@ -1,41 +1,14 @@
--- 高亮组注册：仿照仓库 diffview.lua 的 alpha 混色思路
--- 每次 ColorScheme 触发都重新从 Normal.bg 计算，保证切主题时配色跟随
+-- 高亮组注册；ColorScheme 时重新应用（VVGitDiff* 强制覆盖，其余 default=true）
 
 local M = {}
 
-local function hex_rgb(h)
-  return tonumber(h:sub(2, 3), 16), tonumber(h:sub(4, 5), 16), tonumber(h:sub(6, 7), 16)
-end
-
----@param argb string #RRGGBBAA
----@param base_hex string #RRGGBB
----@return string #RRGGBB
-local function mix_over(argb, base_hex)
-  local fr, fg, fb = hex_rgb(argb:sub(1, 7))
-  local a = tonumber(argb:sub(8, 9), 16) / 255
-  local r0, g0, b0 = hex_rgb(base_hex)
-  return string.format(
-    '#%02x%02x%02x',
-    math.floor(fr * a + r0 * (1 - a)),
-    math.floor(fg * a + g0 * (1 - a)),
-    math.floor(fb * a + b0 * (1 - a))
-  )
-end
 
 ---@return table specs  { name = vim.api.keyset.highlight }
 local function build_specs()
-  local normal = vim.api.nvim_get_hl(0, { name = 'Normal' })
-  local base = normal.bg and string.format('#%06x', normal.bg) or '#1e1e1e'
-  local function mix(argb) return mix_over(argb, base) end
-
-  -- 整行 / 词级：alpha 与 vsc-theme (beixiyo/vsc-theme) 原版一致
-  --   line: 0x21 (add) / 0x55 (del)
-  --   word: 0x22 / 0x22 —— 叠在整行色上，对比靠"双层叠加"产生（VSC 模型）
-  -- 之前为了"看得清"拉到 0x99/0xaa，结果颜色过饱和浮夸，回到原版数值
-  local add_line = mix('#8cc26521')
-  local del_line = mix('#50101555')
-  local add_text = mix_over('#85e73422', add_line)
-  local del_text = mix_over('#ed344322', del_line)
+  local add_line = '#323C33'   -- 新增行背景（整行 context）
+  local del_line = '#2D1615'   -- 删除行背景（整行 context）
+  local add_text = '#3E5633'   -- 实际新增文字背景
+  local del_text = '#621D21'   -- 实际删除文字背景
 
   return {
     -- diff 主体（b 侧/绿系由 VVGitDiffAdd/Change/Text 提供；a 侧/红系由
