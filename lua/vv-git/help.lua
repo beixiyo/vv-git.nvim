@@ -15,6 +15,8 @@ local ACTIONS = {
   toggle_stage  = { cat = 'Git',      icon = '' },
   discard       = { cat = 'Git',      icon = '' },
   commit        = { cat = 'Git',      icon = '' },
+  commit_show   = { cat = 'Git',      icon = '' },
+  compare_pick  = { cat = 'Git',      icon = '' },
   push          = { cat = 'Remote',   icon = '' },
   pull          = { cat = 'Remote',   icon = '' },
   yank_abs_path = { cat = 'Yank',     icon = '' },
