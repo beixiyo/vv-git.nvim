@@ -27,6 +27,10 @@ local M = {}
 local Fs = require('vv-utils.fs')
 local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 
+---@class VVGitBinaryConfig
+---@field intercept boolean  拦截二进制文件：不在 nvim 打开 diff，改用系统默认程序（仅 _activate/_goto_file；_preview 静默跳过）
+---@field extensions table<string, boolean>  视为二进制的扩展名集合（小写 key）
+
 ---@class VVGitConfig
 ---@field width integer
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移
@@ -39,6 +43,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field diff_ratio integer[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6
 ---@field diff_nowrap boolean  -- diff 视图中强制关闭 wrap（默认 true）；wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制（neovim/neovim#29518、sindrets/diffview.nvim#198）
 ---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效
+---@field binary VVGitBinaryConfig
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -49,6 +54,33 @@ local defaults = {
   inline_diff_max_lines = 10000,
   right_click = 'toggle_stage',
   diff_nowrap = true,
+  binary = {
+    intercept = true,
+    extensions = {
+      -- image
+      png = true, jpg = true, jpeg = true, gif = true, webp = true, avif = true,
+      bmp = true, ico = true, tiff = true, tif = true, psd = true, raw = true,
+      heic = true, heif = true, svgz = true,
+      -- video
+      mp4 = true, mkv = true, avi = true, mov = true, wmv = true, flv = true, webm = true,
+      -- audio
+      mp3 = true, wav = true, flac = true, aac = true, ogg = true, wma = true, m4a = true,
+      -- archive
+      zip = true, tar = true, gz = true, tgz = true, bz2 = true, tbz2 = true,
+      xz = true, txz = true, ['7z'] = true, rar = true, zst = true, lz4 = true, lzma = true,
+      jar = true, war = true, ear = true,
+      deb = true, rpm = true, dmg = true, iso = true, apk = true, ipa = true,
+      -- compiled / object
+      exe = true, dll = true, so = true, dylib = true, o = true, a = true,
+      class = true, pyc = true, wasm = true, bin = true,
+      -- font
+      ttf = true, otf = true, woff = true, woff2 = true, eot = true,
+      -- document (binary)
+      pdf = true, doc = true, docx = true, xls = true, xlsx = true, ppt = true, pptx = true,
+      -- database
+      sqlite = true, db = true,
+    },
+  },
 }
 
 M._config = vim.deepcopy(defaults)
@@ -520,6 +552,15 @@ M._reshow_view = State.guarded(function(state)
 end)
 
 -- preview：j/k 光标移动触发。只处理文件行；header/目录行保留上一次预览不动
+---@param path string  absolute path
+---@return boolean
+local function is_binary(path)
+  local cfg = M._config.binary
+  if not cfg or not cfg.intercept then return false end
+  local ext = path:match('%.([%w_]+)$')
+  return ext and cfg.extensions[ext:lower()] or false
+end
+
 -- 复用 RightView.show 内置的 req_id 竞态守卫 + 相同 path/section 短路，快速 j/k 不会抖
 M._preview = State.guarded(function(state)
   if not M._config.preview then return end
@@ -528,6 +569,7 @@ M._preview = State.guarded(function(state)
   if not id or id.section_header then return end
   local node = id.node
   if not node or node.is_dir then return end
+  if is_binary(state.git_root .. '/' .. node.relpath) then return end
   local view = state.view
   if view and view.path == node.relpath and view.section == id.section
       and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
@@ -552,6 +594,11 @@ M._activate = State.guarded(function(state, expand_only)
     if not expand_only or state.folds[fold_key] then
       M._toggle_fold()
     end
+    return
+  end
+  local abspath = state.git_root .. '/' .. node.relpath
+  if is_binary(abspath) then
+    require('vv-utils.sys').open_default(abspath)
     return
   end
   state.cur_path = node.relpath
@@ -659,6 +706,11 @@ M._goto_file = State.guarded(function(state)
     local id = id_under_cursor(state)
     if not id or not id.node or id.node.is_dir then return end
     abspath = state.git_root .. '/' .. id.node.relpath
+  end
+
+  if is_binary(abspath) then
+    require('vv-utils.sys').open_default(abspath)
+    return
   end
 
   M.close()   -- 会关整个 vv-git tab，并跳回 prev_tab

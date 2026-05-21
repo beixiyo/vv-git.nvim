@@ -48,7 +48,32 @@
 | `diff_ratio` | `integer[]` | 无（50:50） | 双栏模式下 a_win（旧版本）与 b_win（工作区）的宽度比例，如 `{4, 6}` 表示左窄右宽；不填则等宽 |
 | `diff_nowrap` | `boolean` | `true` | diff 视图强制关闭折行；`wrap` 在双栏模式下因两侧行高不一致会造成视觉错位，属于上游已知限制（[neovim/neovim#29518](https://github.com/neovim/neovim/issues/29518)、[diffview.nvim#198](https://github.com/sindrets/diffview.nvim/issues/198)），置为 `false` 可恢复默认折行行为 |
 | `highlights` | `table` | 无 | 覆盖任意 `VVGit*` 高亮组，叠加在自动计算值之上，切换主题后仍生效（见下方「自定义配色」）|
+| `binary.intercept` | `boolean` | `true` | 拦截二进制文件：预览时静默跳过，`<CR>`/`gf` 改用系统默认程序打开；`false` 禁用拦截 |
+| `binary.extensions` | `table<string, boolean>` | 见下方 | 视为二进制的扩展名集合（小写 key）；`vim.tbl_deep_extend` 合并，只需写要覆盖的 key |
 
+
+## 二进制文件拦截
+
+默认开启。预览（光标移动）时静默跳过二进制文件；`<CR>`/`o`/`gf` 遇到二进制文件时改用系统默认程序打开，不在 nvim 内尝试渲染乱码 diff。
+
+内置扩展名覆盖：图片（png/jpg/gif/webp/heic/…）、视频（mp4/mkv/mov/…）、音频（mp3/wav/flac/…）、压缩包（zip/tar/gz/tgz/jar/deb/dmg/iso/…）、编译产物（exe/dll/so/wasm/bin/…）、字体（ttf/otf/woff/…）、二进制文档（pdf/docx/xlsx/…）、数据库（sqlite/db）。
+
+```lua
+-- 放行某类扩展名（未来 nvim 支持图片预览时）
+opts = {
+  binary = {
+    extensions = { png = false, jpg = false, jpeg = false },
+  },
+}
+
+-- 完全关闭拦截
+opts = { binary = { intercept = false } }
+
+-- 追加自定义扩展名
+opts = { binary = { extensions = { sketch = true, fig = true } } }
+```
+
+`binary.extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表。
 
 ## 自定义配色
 

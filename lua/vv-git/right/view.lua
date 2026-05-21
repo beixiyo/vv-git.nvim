@@ -38,6 +38,15 @@ local function fold_unchanged_enabled()
   return handlers.get_config().fold_unchanged ~= false
 end
 
+---@param path string  absolute path
+---@return boolean
+local function is_binary(path)
+  local cfg = handlers.get_config().binary
+  if not cfg or not cfg.intercept then return false end
+  local ext = path:match('%.([%w_]+)$')
+  return ext and cfg.extensions[ext:lower()] or false
+end
+
 -- a 侧：新增当删除显示 + 整行/词级 = 红系
 -- DiffTextAdd 在 nvim 0.11+ 的 inline:char/word 模式下用：标"对侧没有对应原文的字符"
 -- 不映射会 fall-through 到全局默认色，破坏 a/b 两侧"红系/绿系"的对比节奏
@@ -342,6 +351,8 @@ end
 ---@param force_single boolean?  true → 强制走单栏分支（窄终端降级用）；正常 dual diff 时为 false/nil
 function M.show(state, node, section, force_single)
   if node.is_dir then return end
+  local abspath = state.git_root .. '/' .. node.relpath
+  if is_binary(abspath) then return end
   local xy = node.xy or ''
   if Git.is_conflict(xy) then
     vim.notify('[vv-git] Conflict file v1 is not supported yet; please use git mergetool or other tools', vim.log.levels.WARN)
