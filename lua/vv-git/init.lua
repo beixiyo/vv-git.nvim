@@ -344,6 +344,7 @@ local function install_keymaps(state)
   map('<C-e>',         function() scroll_diff(CE_KEY) end,         'scroll_diff_down')
   map('<C-y>',         function() scroll_diff(CY_KEY) end,         'scroll_diff_up')
   map('H',             function() M._compare_pick() end,           'compare_pick')
+  map('gc',            function() M._commit_show_pick() end,        'commit_show')
   map('g?',            function() Help.open(state) end,            'help')
 
   -- 阻止 Insert / Visual mode：nofile buffer 里无意义，多选已有专用键
@@ -699,6 +700,19 @@ M._compare_pick = State.guarded(function(state)
   local Compare = require('vv-git.compare')
   Compare.open_picker(state, function(hash, short, label)
     Compare.start(state, hash, short, label, function()
+      state.selection = {}
+      RightView.close(state)
+      LeftRender.render(state)
+    end)
+  end)
+end)
+
+-- gc：查看某次 commit 本身引入的变更（commit^ vs commit）
+M._commit_show_pick = State.guarded(function(state)
+  if not state.git_root then return end
+  local Compare = require('vv-git.compare')
+  Compare.open_picker(state, function(hash, short, label)
+    Compare.start_commit(state, hash, short, label, function()
       state.selection = {}
       RightView.close(state)
       LeftRender.render(state)

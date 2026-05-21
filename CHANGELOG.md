@@ -4,7 +4,11 @@
 
 ### Added
 
-- **比较模式**：`H` 键打开两级选择器（分支 → commit），选定后左栏切换为 `commit..HEAD` 的变更文件列表，右侧 diff 展示 commit 版本（红）与 HEAD 版本（绿）的双栏对比；新增/删除文件自动降级为单栏展示。`<Esc>` 一键退出，左栏立即恢复正常 staged/unstaged 视图，无需重载索引。窄终端下同样走 inline diff 降级路径。
+- **查看 commit diff**（`gc`）：选分支 → 选 commit，展示该 commit 本身引入的变更（`commit^..commit`），即这次提交改了什么。初始 commit（无父节点）自动用 empty-tree 兜底。
+
+- **与 HEAD 比较**（`H`）：选分支 → 选 commit，展示该 commit 与当前 HEAD 之间的差异（`commit..HEAD`），即"从那时到现在改了什么"。
+
+  两种模式共用同一套左栏文件列表 + 右侧双栏 diff 基础设施；`<Esc>` 退出，左栏立即恢复正常视图。
 
 - **多选操作**：`<Tab>`（可配置 `keymap_select`）切换当前文件的选中状态，选中行以 `VVGitPanelSelected` 高亮标记；选中集合非空时，`-`/`d` 批量操作所有选中文件（staged → unstage，unstaged → stage/discard，两侧可混合）；`<Esc>` 优先清空选中，无选中时关闭面板；`v`/`V`/`<C-v>` 已屏蔽（nofile buffer 里 visual 模式无意义）
 

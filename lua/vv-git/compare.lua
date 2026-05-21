@@ -55,7 +55,7 @@ function M.open_picker(state, cb)
   end)
 end
 
--- 进入比较模式：加载 from_rev..HEAD 的文件列表，回调 on_done
+-- 进入"与 HEAD 比较"模式：from_rev..HEAD
 ---@param state table
 ---@param from_rev string
 ---@param short string
@@ -68,12 +68,50 @@ function M.start(state, from_rev, short, label, on_done)
       return
     end
     state.compare = {
-      commit = from_rev,
-      short = short,
-      label = label,
-      files = files,
+      from_rev = from_rev,
+      to_rev   = 'HEAD',
+      short    = short,
+      label    = label,
+      files    = files,
     }
     on_done()
+  end)
+end
+
+-- git empty-tree hash（无父 commit 时用作 from_rev）
+local EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+-- 进入"查看 commit 本身"模式：commit^..commit（初始 commit 用 empty-tree）
+---@param state table
+---@param hash string
+---@param short string
+---@param label string
+---@param on_done fun()
+function M.start_commit(state, hash, short, label, on_done)
+  local function apply(from_rev, files)
+    state.compare = {
+      from_rev = from_rev,
+      to_rev   = hash,
+      short    = short,
+      label    = label,
+      files    = files,
+    }
+    on_done()
+  end
+
+  Git.diff_names(state.git_root, hash .. '^', hash, function(files, err)
+    if files then
+      apply(hash .. '^', files)
+      return
+    end
+    -- 初始 commit 没有父节点，改用 empty-tree
+    Git.diff_names(state.git_root, EMPTY_TREE, hash, function(files2, err2)
+      if not files2 then
+        vim.notify('[vv-git] Show commit failed: ' .. (err2 or err or 'git diff error'), vim.log.levels.ERROR)
+        return
+      end
+      apply(EMPTY_TREE, files2)
+    end)
   end)
 end
 

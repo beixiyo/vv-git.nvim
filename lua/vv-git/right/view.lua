@@ -639,30 +639,35 @@ function M.show(state, node, section, force_single)
     end
 
   elseif section == 'compare' then
-    -- 比较模式：from_rev (commit) vs HEAD，两侧都是 scratch buffer
-    local from_rev = state.compare and state.compare.commit
+    -- 比较模式：from_rev vs to_rev，两侧都是 scratch buffer
+    -- H（compare）: from_rev=commit, to_rev='HEAD'
+    -- gc（show commit）: from_rev=commit^, to_rev=commit
+    local cmp = state.compare
+    if not cmp then return end
+    local from_rev = cmp.from_rev
+    local to_rev   = cmp.to_rev or 'HEAD'
     if not from_rev then return end
 
     local cs = node.compare_status or 'M'
     local a_path = node.old_relpath or node.relpath  -- rename 时旧路径给 a 侧
 
     if cs == 'A' then
-      -- 此文件在 from_rev 不存在，只展示 HEAD 版本
-      render_single_rev('HEAD')
+      -- 此文件在 from_rev 不存在，只展示 to_rev 版本
+      render_single_rev(to_rev)
     elseif cs == 'D' then
-      -- 此文件在 HEAD 已删，只展示 from_rev 版本
+      -- 此文件在 to_rev 已删，只展示 from_rev 版本
       render_single_rev(from_rev)
     elseif force_single then
-      -- 窄屏：b=HEAD scratch，inline diff vs from_rev
+      -- 窄屏：b=to_rev scratch，inline diff vs from_rev
       Git.show(state.git_root, from_rev, a_path, function(a_lines)
         if not alive({}) then return end
-        create_rev_buffer(state.git_root, 'HEAD', node.relpath, function(b_buf)
+        create_rev_buffer(state.git_root, to_rev, node.relpath, function(b_buf)
           if not alive({ b_buf }) then return end
           attach_single(b_buf, a_lines)
         end)
       end)
     else
-      -- 正常双栏：a=from_rev:a_path  b=HEAD:node.relpath
+      -- 正常双栏：a=from_rev:a_path  b=to_rev:node.relpath
       local a_buf_c, b_buf_c, a_done_c, b_done_c = nil, nil, false, false
       local function finalize_c()
         if not (a_done_c and b_done_c) then return end
@@ -675,7 +680,7 @@ function M.show(state, node, section, force_single)
       create_rev_buffer(state.git_root, from_rev, a_path, function(buf)
         a_buf_c = buf; a_done_c = true; finalize_c()
       end)
-      create_rev_buffer(state.git_root, 'HEAD', node.relpath, function(buf)
+      create_rev_buffer(state.git_root, to_rev, node.relpath, function(buf)
         b_buf_c = buf; b_done_c = true; finalize_c()
       end)
     end

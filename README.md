@@ -118,5 +118,6 @@ opts = {
 | `P` | 拉取（pull） |
 | `<C-e>` | 向下滚动 diff |
 | `<C-y>` | 向上滚动 diff |
-| `H` | 比较模式：选分支 → 选 commit，diff commit..HEAD |
+| `gc` | 查看 commit 本身的 diff：选分支 → 选 commit，展示该 commit 引入的变更（`commit^..commit`） |
+| `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |
 | `g?` | 显示帮助 |
