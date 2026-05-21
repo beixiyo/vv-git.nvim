@@ -45,11 +45,13 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效
 ---@field binary VVGitBinaryConfig
 ---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'）
+---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行（默认 true）
 local defaults = {
   width = 30,
   single_col_threshold = 120,
   keymap_toggle_panel = '<leader>b',
   keymap_select = '<Tab>',
+  select_move_down = false,
   fold_unchanged = true,
   diff_fill = ' ',
   preview = true,
@@ -529,14 +531,15 @@ M._toggle_select = State.guarded(function(state)
     state.selection[key] = true
   end
   LeftRender.render(state)
-  -- 选完自动下移，方便连续多选
-  local win = state.panel and state.panel.win
-  if win and vim.api.nvim_win_is_valid(win) then
-    local buf = state.panel.buf
-    local last = vim.api.nvim_buf_line_count(buf)
-    local lnum = vim.api.nvim_win_get_cursor(win)[1]
-    if lnum < last then
-      vim.api.nvim_win_set_cursor(win, { lnum + 1, 0 })
+
+  if M._config.select_move_down ~= false then
+    local win = state.panel and state.panel.win
+    if win and vim.api.nvim_win_is_valid(win) then
+      local last = vim.api.nvim_buf_line_count(state.panel.buf)
+      local lnum = vim.api.nvim_win_get_cursor(win)[1]
+      if lnum < last then
+        vim.api.nvim_win_set_cursor(win, { lnum + 1, 0 })
+      end
     end
   end
 end)
