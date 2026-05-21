@@ -118,4 +118,5 @@ opts = {
 | `P` | 拉取（pull） |
 | `<C-e>` | 向下滚动 diff |
 | `<C-y>` | 向上滚动 diff |
+| `H` | 比较模式：选分支 → 选 commit，diff commit..HEAD |
 | `g?` | 显示帮助 |

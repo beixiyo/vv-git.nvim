@@ -4,6 +4,8 @@
 
 ### Added
 
+- **比较模式**：`H` 键打开两级选择器（分支 → commit），选定后左栏切换为 `commit..HEAD` 的变更文件列表，右侧 diff 展示 commit 版本（红）与 HEAD 版本（绿）的双栏对比；新增/删除文件自动降级为单栏展示。`<Esc>` 一键退出，左栏立即恢复正常 staged/unstaged 视图，无需重载索引。窄终端下同样走 inline diff 降级路径。
+
 - **多选操作**：`<Tab>`（可配置 `keymap_select`）切换当前文件的选中状态，选中行以 `VVGitPanelSelected` 高亮标记；选中集合非空时，`-`/`d` 批量操作所有选中文件（staged → unstage，unstaged → stage/discard，两侧可混合）；`<Esc>` 优先清空选中，无选中时关闭面板；`v`/`V`/`<C-v>` 已屏蔽（nofile buffer 里 visual 模式无意义）
 
 - **二进制文件拦截**：`binary.intercept = true`（默认开启），预览时静默跳过，`<CR>`/`o`/`gf` 遇到二进制文件改用系统默认程序打开，避免渲染乱码 diff 造成卡顿。内置 40+ 扩展名（图片/视频/音频/压缩包/编译产物/字体/二进制文档/数据库），支持 `binary.extensions` 逐 key 增减覆盖

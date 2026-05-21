@@ -203,6 +203,79 @@ function M.has_staged(root, cb)
   )
 end
 
+-- 列出所有本地 + 远程分支
+---@param root string
+---@param cb fun(branches: string[]?, err?: string)
+function M.branches(root, cb)
+  vim.system(
+    { 'git', '-C', root, 'branch', '-a', '--format=%(refname:short)' },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      if r.code ~= 0 then cb(nil, r.stderr or 'git branch failed'); return end
+      local result = {}
+      for _, l in ipairs(vim.split(vim.trim(r.stdout or ''), '\n', { plain = true })) do
+        l = vim.trim(l)
+        if l ~= '' then result[#result + 1] = l end
+      end
+      cb(result)
+    end)
+  )
+end
+
+-- 列出某 ref 的最近 N 条 commit（格式：hash\x01short\x01subject）
+---@param root string
+---@param ref string
+---@param n integer
+---@param cb fun(commits: {hash:string, short:string, subject:string}[]?, err?: string)
+function M.log(root, ref, n, cb)
+  vim.system(
+    { 'git', '-C', root, 'log', ref, '--pretty=format:%H\x01%h\x01%s', '-' .. (n or 50) },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      if r.code ~= 0 then cb(nil, r.stderr or 'git log failed'); return end
+      local result = {}
+      for _, line in ipairs(vim.split(vim.trim(r.stdout or ''), '\n', { plain = true })) do
+        local hash, short, subject = line:match('^([^\x01]+)\x01([^\x01]+)\x01(.*)$')
+        if hash then
+          result[#result + 1] = { hash = vim.trim(hash), short = vim.trim(short), subject = subject or '' }
+        end
+      end
+      cb(result)
+    end)
+  )
+end
+
+-- 获取两个 ref 之间的变更文件列表（git diff --name-status from..to）
+---@param root string
+---@param from_ref string
+---@param to_ref string
+---@param cb fun(files: {status:string, path:string, old_path?:string}[]?, err?: string)
+function M.diff_names(root, from_ref, to_ref, cb)
+  vim.system(
+    { 'git', '-C', root, 'diff', '--name-status', from_ref .. '..' .. to_ref },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      if r.code ~= 0 then cb(nil, r.stderr or 'git diff failed'); return end
+      local result = {}
+      for _, line in ipairs(vim.split(vim.trim(r.stdout or ''), '\n', { plain = true })) do
+        if line ~= '' then
+          -- Rename/Copy: "R100\told_path\tnew_path"；其余: "M\tpath"
+          local status_raw, p1, p2 = line:match('^(%a%d*)\t([^\t]+)\t?(.*)$')
+          if status_raw and p1 then
+            local st = status_raw:sub(1, 1)
+            if (st == 'R' or st == 'C') and p2 ~= '' then
+              result[#result + 1] = { status = st, path = p2, old_path = p1 }
+            else
+              result[#result + 1] = { status = st, path = p1 }
+            end
+          end
+        end
+      end
+      cb(result)
+    end)
+  )
+end
+
 -- 获取未推送的 commit 数量
 ---@param root string
 ---@param cb fun(count: integer)

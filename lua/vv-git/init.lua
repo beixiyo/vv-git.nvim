@@ -294,7 +294,12 @@ local function install_keymaps(state)
   map('<C-p>',         function() navigate(state, 'k') end,       'prev_item')
   map('q',             function() M.close() end,                   '__close')
   map('<Esc>',         function()
-    if next(state.selection) then
+    if state.compare then
+      require('vv-git.compare').stop(state)
+      state.selection = {}
+      RightView.close(state)
+      LeftRender.render(state)
+    elseif next(state.selection) then
       state.selection = {}
       LeftRender.render(state)
     else
@@ -338,6 +343,7 @@ local function install_keymaps(state)
   map('P',             function() M._pull() end,                   'pull')
   map('<C-e>',         function() scroll_diff(CE_KEY) end,         'scroll_diff_down')
   map('<C-y>',         function() scroll_diff(CY_KEY) end,         'scroll_diff_up')
+  map('H',             function() M._compare_pick() end,           'compare_pick')
   map('g?',            function() Help.open(state) end,            'help')
 
   -- 阻止 Insert / Visual mode：nofile buffer 里无意义，多选已有专用键
@@ -687,6 +693,19 @@ M._apply_layout = State.guarded(function(state)
   end))
 end)
 
+-- H：打开分支 → commit 两级选择器，进入比较模式
+M._compare_pick = State.guarded(function(state)
+  if not state.git_root then return end
+  local Compare = require('vv-git.compare')
+  Compare.open_picker(state, function(hash, short, label)
+    Compare.start(state, hash, short, label, function()
+      state.selection = {}
+      RightView.close(state)
+      LeftRender.render(state)
+    end)
+  end)
+end)
+
 M._commit = State.guarded(function(state)
   if not state.git_root then return end
   Git.has_staged(state.git_root, function(has)
@@ -793,6 +812,7 @@ end)
 
 ---@param name 'toggle_stage'|'discard'
 M._action = State.guarded(function(state, name)
+  if state.compare then return end  -- 比较模式下禁用 stage/discard
   -- 多选模式：selection 非空时批量操作，忽略光标
   if next(state.selection) then
     local items = {}

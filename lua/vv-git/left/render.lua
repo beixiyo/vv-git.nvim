@@ -146,30 +146,7 @@ function M.build(state)
   push_text(' ' .. root_name, 'Title')
   push_blank()
 
-  -- Commit hint：根据 staged 数量提示
   local tree = state.tree
-  if not tree then
-    push_text('  (Waiting for git status...)', 'Comment')
-    return lines, extmarks, id_by_line
-  end
-
-  local staged_count = Tree.count_files(tree.staged)
-  local unstaged_count = Tree.count_files(tree.unstaged)
-  local hint
-  if staged_count > 0 then
-    hint = string.format('  c  Commit %d staged', staged_count)
-  elseif unstaged_count > 0 then
-    hint = string.format('  c  Commit ALL %d (no staged)', unstaged_count)
-  else
-    hint = '  working tree clean'
-  end
-  push_text(hint, 'VVGitCommitHint')
-
-  if state.ahead_count and state.ahead_count > 0 then
-    push_text(string.format('  p  Push %d commit(s)', state.ahead_count), 'VVGitCommitHint')
-  end
-  push_blank()
-
   local folds = state.folds or {}
 
   ---@param section_id 'staged'|'unstaged'|'conflicts'
@@ -238,6 +215,89 @@ function M.build(state)
 
     push_blank()
   end
+
+  -- 比较模式：替换普通 section，展示 commit..HEAD 变更文件列表
+  if state.compare then
+    local cmp = state.compare
+    local status_letter_map = { M = 'M', A = 'A', D = 'D', R = 'R', C = 'C' }
+    local status_hl_map = {
+      M = 'VVGitModified', A = 'VVGitAdded', D = 'VVGitDeleted',
+      R = 'VVGitRenamed',  C = 'VVGitAdded',
+    }
+
+    local header = string.format('  Compare (%d files)  %s', #cmp.files, cmp.label)
+    lines[#lines + 1] = header
+    local hrow = #lines - 1
+    extmarks[#extmarks + 1] = {
+      row = hrow, col = 0,
+      opts = { end_col = 12, hl_group = 'VVGitPanelSection' },
+    }
+    extmarks[#extmarks + 1] = {
+      row = hrow, col = 13,
+      opts = { end_col = #header, hl_group = 'Comment' },
+    }
+    id_by_line[#lines] = { section_header = 'compare' }
+
+    for _, f in ipairs(cmp.files) do
+      local st = f.status
+      local letter = status_letter_map[st] or st
+      local hl    = status_hl_map[st]    or 'VVGitPanelFile'
+      local node = {
+        relpath        = f.path,
+        old_relpath    = f.old_path,
+        compare_status = st,
+        is_dir         = false,
+        letter         = letter,
+        hl             = hl,
+        xy             = st .. ' ',
+      }
+      local display = f.old_path and (f.old_path .. ' → ' .. f.path) or f.path
+      local line, ems = build_row({
+        depth          = 1,
+        is_dir         = false,
+        is_open        = false,
+        has_children   = false,
+        display_name   = display,
+        node           = node,
+        status_letter  = letter,
+        status_hl      = hl,
+      })
+      lines[#lines + 1] = line
+      local lnum = #lines - 1
+      for _, em in ipairs(ems) do
+        extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
+      end
+      id_by_line[#lines] = { section = 'compare', node = node }
+    end
+
+    push_blank()
+    push_text('  <Esc>  Exit compare mode', 'Comment')
+
+    return lines, extmarks, id_by_line
+  end
+
+  -- 普通模式：commit hint + 三个 section
+  if not tree then
+    push_text('  (Waiting for git status...)', 'Comment')
+    return lines, extmarks, id_by_line
+  end
+
+  local staged_count = Tree.count_files(tree.staged)
+  local unstaged_count = Tree.count_files(tree.unstaged)
+  local hint
+  if staged_count > 0 then
+    hint = string.format('  c  Commit %d staged', staged_count)
+  elseif unstaged_count > 0 then
+    hint = string.format('  c  Commit ALL %d (no staged)', unstaged_count)
+  else
+    hint = '  working tree clean'
+  end
+  push_text(hint, 'VVGitCommitHint')
+
+  if state.ahead_count and state.ahead_count > 0 then
+    push_text(string.format('  p  Push %d commit(s)', state.ahead_count), 'VVGitCommitHint')
+  end
+  push_blank()
 
   -- 冲突优先显示（VSCode 风）
   render_section('conflicts', 'Merge Conflicts', tree.conflicts)

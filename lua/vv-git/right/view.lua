@@ -364,6 +364,7 @@ function M.show(state, node, section, force_single)
   local intrinsic_single =
     (section == 'staged' and (xy:sub(1, 1) == 'A' or xy:sub(1, 1) == 'D' or xy == '??'))
     or (section == 'unstaged' and (xy == '??' or xy:sub(2, 2) == 'D'))
+    or (section == 'compare' and (node.compare_status == 'A' or node.compare_status == 'D'))
 
   -- 异步竞态守卫：每次 show 分配单调递增 req_id。快速切换文件时，嵌套 git show
   -- 回调可能乱序到达，用 req_id 确认当前请求仍是最新才继续。否则 scratch buf
@@ -636,6 +637,49 @@ function M.show(state, node, section, force_single)
     else
       render_dual_rev_rev('HEAD', ':0')                -- 正常 staged diff
     end
+
+  elseif section == 'compare' then
+    -- 比较模式：from_rev (commit) vs HEAD，两侧都是 scratch buffer
+    local from_rev = state.compare and state.compare.commit
+    if not from_rev then return end
+
+    local cs = node.compare_status or 'M'
+    local a_path = node.old_relpath or node.relpath  -- rename 时旧路径给 a 侧
+
+    if cs == 'A' then
+      -- 此文件在 from_rev 不存在，只展示 HEAD 版本
+      render_single_rev('HEAD')
+    elseif cs == 'D' then
+      -- 此文件在 HEAD 已删，只展示 from_rev 版本
+      render_single_rev(from_rev)
+    elseif force_single then
+      -- 窄屏：b=HEAD scratch，inline diff vs from_rev
+      Git.show(state.git_root, from_rev, a_path, function(a_lines)
+        if not alive({}) then return end
+        create_rev_buffer(state.git_root, 'HEAD', node.relpath, function(b_buf)
+          if not alive({ b_buf }) then return end
+          attach_single(b_buf, a_lines)
+        end)
+      end)
+    else
+      -- 正常双栏：a=from_rev:a_path  b=HEAD:node.relpath
+      local a_buf_c, b_buf_c, a_done_c, b_done_c = nil, nil, false, false
+      local function finalize_c()
+        if not (a_done_c and b_done_c) then return end
+        if not alive({ a_buf_c, b_buf_c }) then return end
+        if not a_buf_c and not b_buf_c then return
+        elseif not a_buf_c then attach_single(b_buf_c)
+        elseif not b_buf_c then wipe_scratch({ a_buf_c }); attach_single(a_buf_c)
+        else attach_dual(a_buf_c, b_buf_c) end
+      end
+      create_rev_buffer(state.git_root, from_rev, a_path, function(buf)
+        a_buf_c = buf; a_done_c = true; finalize_c()
+      end)
+      create_rev_buffer(state.git_root, 'HEAD', node.relpath, function(buf)
+        b_buf_c = buf; b_done_c = true; finalize_c()
+      end)
+    end
+
   else -- unstaged
     if xy == '??' then
       render_single_worktree()                         -- :0 无此文件，无对比基线
