@@ -71,6 +71,8 @@ local WINHL_B = table.concat({
 
 local FILETYPE_A = 'vv-git-a'
 
+local REF_HL = { HEAD = 'VVGitWinbarOurs', MERGE_HEAD = 'VVGitWinbarTheirs' }
+
 -- 右侧 diff 窗口的 buffer-local 快捷键（show 时装到 a_buf / b_buf，close 时拆）
 -- 回调走注入的 handlers，view 不再反向 require init
 local RIGHT_KEYS_SPEC = {
@@ -133,6 +135,13 @@ local function remove_right_keymaps(buf)
   end
 end
 
+---@param buf integer?
+local function remove_conflict_accept_keymaps(buf)
+  if not buf or not api.nvim_buf_is_valid(buf) then return end
+  pcall(vim.keymap.del, 'n', '<', { buffer = buf })
+  pcall(vim.keymap.del, 'n', '>', { buffer = buf })
+end
+
 ---@param state table
 ---@return integer? main_win  panel 右侧的"主工作区"窗口（即 b_win 所在处）
 local function main_window(state)
@@ -150,10 +159,57 @@ local function main_window(state)
   return nil
 end
 
+-- 冲突三栏：在 b_win 下方新建 c_win（result 窗格）；先建 c 再分割顶部，
+-- 确保 c_win 横跨整个 diff 区域（和 a/b 等宽）
+-- 返回顺序：b_win, a_win, c_win（与 ensure_windows 的 b, a 对齐，只多一个 c）
+---@param state table
+---@return integer? b_win, integer? a_win, integer? c_win
+local function ensure_conflict_windows(state)
+  local view = state.view
+  local a_ok = view and view.a_win and api.nvim_win_is_valid(view.a_win)
+  local b_ok = view and view.b_win and api.nvim_win_is_valid(view.b_win)
+  local c_ok = view and view.c_win and api.nvim_win_is_valid(view.c_win)
+
+  if a_ok and b_ok and c_ok then return view.b_win, view.a_win, view.c_win end
+
+  -- 关掉旧 a/c（b_win 是 main_window 锚点，绝对不关）
+  if a_ok then pcall(api.nvim_win_close, view.a_win, true) end
+  if c_ok then pcall(api.nvim_win_close, view.c_win, true) end
+
+  local main = (b_ok and view.b_win) or main_window(state)
+  if not main then return nil, nil, nil end
+
+  -- Step 1：在 main 下方先 split c_win，此时 c 和 main 等宽（= 整个 diff 区）
+  api.nvim_set_current_win(main)
+  local total_h = api.nvim_win_get_height(main)
+  local c_height = math.max(8, math.floor(total_h * 0.35))
+  vim.cmd('belowright ' .. c_height .. 'split')
+  local c_win = api.nvim_get_current_win()
+
+  -- Step 2：回 main，再 vsplit 出 a_win（左），main 变 b_win（右）
+  api.nvim_set_current_win(main)
+  vim.cmd('leftabove vsplit')
+  local a_win = api.nvim_get_current_win()
+
+  return main, a_win, c_win
+end
+
 ---@param state table
 ---@return integer? b_win, integer? a_win  a_win 可能为 nil（单栏）
 local function ensure_windows(state, want_dual)
   local view = state.view
+  -- 从 conflict3 切回 single/dual 时清掉 c_win
+  if view and view.c_win then
+    if api.nvim_win_is_valid(view.c_win) then
+      pcall(api.nvim_win_close, view.c_win, true)
+    end
+    if view.c_buf then
+      remove_right_keymaps(view.c_buf)
+      remove_conflict_accept_keymaps(view.c_buf)
+    end
+    view.c_win = nil
+    view.c_buf = nil
+  end
   local a_ok = view and view.a_win and api.nvim_win_is_valid(view.a_win)
   local b_ok = view and view.b_win and api.nvim_win_is_valid(view.b_win)
 
@@ -185,7 +241,8 @@ end
 -- 被 diff 视图修改的 win-local 选项：apply 前保存原值到 vim.w[win]，clear 时精确还原
 -- 仿 diffview Window.winopt_store（scene/window.lua:L29）。相比之前"还原到全局默认"的写法，
 -- 在 _apply_layout 的 narrow→wide 切换中能保留用户对 b_win 的 setlocal 配置
-local CHANGED_OPTS = { 'diff', 'scrollbind', 'cursorbind', 'foldmethod', 'foldexpr', 'foldlevel', 'foldenable', 'foldcolumn', 'foldtext', 'winhighlight', 'wrap' }
+-- winbar 也纳入保存/恢复：冲突视图会往上面写标题，关 view 时统一还原用户原值
+local CHANGED_OPTS = { 'diff', 'scrollbind', 'cursorbind', 'foldmethod', 'foldexpr', 'foldlevel', 'foldenable', 'foldcolumn', 'foldtext', 'winhighlight', 'wrap', 'winbar' }
 
 ---@param win integer
 local function save_winopts(win)
@@ -290,6 +347,171 @@ local function create_rev_buffer(root, rev, relpath, cb)
   end)
 end
 
+---@param win integer
+---@param state table
+---@param ref string  'HEAD' | 'MERGE_HEAD'
+local function set_conflict_winbar(win, state, ref)
+  local branch_hl = REF_HL[ref] or 'VVGitWinbarOurs'
+
+  local function apply(info)
+    if not api.nvim_win_is_valid(win) then return end
+    if not info then
+      local label = ref == 'HEAD' and 'ours' or 'theirs'
+      api.nvim_set_option_value('winbar', '%#' .. branch_hl .. '#  ' .. label .. ' %*', { win = win })
+      return
+    end
+    local branch  = info.branch ~= '' and info.branch or ref
+    local hash    = info.hash   ~= '' and info.hash   or ''
+    local subject = info.subject
+
+    local win_w   = api.nvim_win_get_width(win)
+    local fixed_w = vim.fn.strdisplaywidth('  ' .. branch .. '  ')
+                  + (hash ~= '' and vim.fn.strdisplaywidth(' ' .. hash) or 0)
+    local avail   = win_w - fixed_w - 2
+
+    if avail <= 3 then
+      subject = ''
+    elseif vim.fn.strdisplaywidth(subject) > avail then
+      local lo, hi = 0, vim.fn.strchars(subject)
+      while lo < hi do
+        local mid = math.floor((lo + hi + 1) / 2)
+        if vim.fn.strdisplaywidth(vim.fn.strcharpart(subject, 0, mid) .. '…') <= avail then
+          lo = mid
+        else
+          hi = mid - 1
+        end
+      end
+      subject = vim.fn.strcharpart(subject, 0, lo) .. '…'
+    end
+
+    local hash_part    = hash    ~= '' and ('%#Comment# ' .. hash .. '%*') or ''
+    local subject_part = subject ~= '' and (' ' .. subject)                or ''
+    local bar = '%#' .. branch_hl .. '#  ' .. branch .. ' %*' .. hash_part .. subject_part
+    api.nvim_set_option_value('winbar', bar, { win = win })
+  end
+
+  local cache = state._conflict_info_cache
+  if not cache then cache = {}; state._conflict_info_cache = cache end
+
+  if cache[ref] ~= nil then
+    apply(cache[ref] or nil)
+    return
+  end
+
+  Git.conflict_info(state.git_root, ref, function(info)
+    if cache[ref] == nil then cache[ref] = info or false end
+    apply(info)
+  end)
+end
+
+---@param win integer?
+local function clear_winbar(win)
+  if win and api.nvim_win_is_valid(win) then
+    pcall(api.nvim_set_option_value, 'winbar', '', { win = win })
+  end
+end
+
+-- ── hunk 级别冲突解决 ──────────────────────────────────────────────────────
+
+-- 解析 buf 中所有冲突 hunk，返回 (hunks, lines)；hunks = {{start1, sep1, finish1}, ...}（1-indexed）
+local function find_conflict_hunks(buf)
+  local hunks = {}
+  local lines = api.nvim_buf_get_lines(buf, 0, -1, false)
+  local i = 1
+  while i <= #lines do
+    if lines[i]:match('^<<<<<<< ') or lines[i] == '<<<<<<<' then
+      local h = { start1 = i }
+      i = i + 1
+      while i <= #lines and not lines[i]:match('^=======') do i = i + 1 end
+      if i > #lines then break end
+      h.sep1 = i; i = i + 1
+      while i <= #lines
+          and not (lines[i]:match('^>>>>>>> ') or lines[i] == '>>>>>>>') do
+        i = i + 1
+      end
+      if i > #lines then break end
+      h.finish1 = i
+      hunks[#hunks + 1] = h
+      i = i + 1
+    else
+      i = i + 1
+    end
+  end
+  return hunks, lines
+end
+
+-- cursor_line 所在 hunk；不在任何 hunk 内则取距离最近的
+local function nearest_hunk(hunks, cursor_line)
+  for _, h in ipairs(hunks) do
+    if cursor_line >= h.start1 and cursor_line <= h.finish1 then return h end
+  end
+  local best, best_dist = hunks[1], math.huge
+  for _, h in ipairs(hunks) do
+    local d = math.abs(h.start1 - cursor_line)
+    if d < best_dist then best = h; best_dist = d end
+  end
+  return best
+end
+
+---@param lines string[] buffer 全量行（由 find_conflict_hunks 返回，避免二次读取）
+local function resolve_hunk_in_buf(c_buf, hunk, side, lines)
+  local new_lines = {}
+  if side == 'ours' then
+    for i = hunk.start1 + 1, hunk.sep1 - 1 do
+      new_lines[#new_lines + 1] = lines[i]
+    end
+  else
+    for i = hunk.sep1 + 1, hunk.finish1 - 1 do
+      new_lines[#new_lines + 1] = lines[i]
+    end
+  end
+  -- nvim_buf_set_lines：0-indexed start（含）、end（不含）
+  api.nvim_buf_set_lines(c_buf, hunk.start1 - 1, hunk.finish1, false, new_lines)
+end
+
+local function accept_hunk(s, side)
+  local view = s.view
+  if not (view and view.section == 'conflicts') then return end
+  local c_buf, c_win = view.c_buf, view.c_win
+  if not (c_buf and api.nvim_buf_is_valid(c_buf)) then return end
+
+  local cursor_line = 1
+  if c_win and api.nvim_win_is_valid(c_win) then
+    cursor_line = api.nvim_win_get_cursor(c_win)[1]
+  end
+
+  local hunks, lines = find_conflict_hunks(c_buf)
+  if #hunks == 0 then return end
+
+  local was_last = #hunks == 1
+  resolve_hunk_in_buf(c_buf, nearest_hunk(hunks, cursor_line), side, lines)
+
+  pcall(api.nvim_buf_call, c_buf, function() vim.cmd('silent! write') end)
+
+  if was_last then
+    local relpath = view.node and view.node.relpath
+    if relpath and s.git_root then
+      Git.stage(s.git_root, { relpath }, function(ok, err)
+        if not ok then
+          vim.notify('[vv-git] stage failed: ' .. (err or ''), vim.log.levels.ERROR)
+          return
+        end
+        require('vv-git.loader').reload_index(s)
+      end)
+    end
+  end
+end
+
+-- 在 buf 上注册 < > hunk 级别冲突接受快捷键
+-- scratch buf 有 bufhidden=wipe，随 view 关闭自动清理，无需手动 del keymap
+local function install_conflict_accept_keymaps(buf, s)
+  if not buf or not api.nvim_buf_is_valid(buf) then return end
+  vim.keymap.set('n', '<', function() accept_hunk(s, 'ours') end,
+    { buffer = buf, silent = true, nowait = true, desc = 'vv-git: accept_ours' })
+  vim.keymap.set('n', '>', function() accept_hunk(s, 'theirs') end,
+    { buffer = buf, silent = true, nowait = true, desc = 'vv-git: accept_theirs' })
+end
+
 -- 批量 wipe vv-git 自建的 scratch buf；工作区 buf（无标记）保留不动
 ---@param bufs integer[]?
 local function wipe_scratch(bufs)
@@ -336,6 +558,36 @@ local function ensure_buf_highlighting(buf, relpath)
   end
 end
 
+local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
+  vim.schedule(function()
+    pcall(vim.cmd, 'diffupdate')
+    for _, w in ipairs({ a_win, b_win }) do
+      if api.nvim_win_is_valid(w) then
+        api.nvim_win_call(w, function() pcall(vim.cmd, 'normal! zX') end)
+      end
+    end
+    if not (api.nvim_win_is_valid(a_win) and api.nvim_win_is_valid(b_win)) then return end
+    local b_lines = api.nvim_buf_get_lines(b_buf, 0, -1, false)
+    local a_lines = api.nvim_buf_get_lines(a_buf, 0, -1, false)
+    local first = InlineDiff.first_hunk_b_line(a_lines, b_lines)
+    local row = first or api.nvim_win_get_cursor(b_win)[1]
+    local b_max = api.nvim_buf_line_count(b_buf)
+    local a_max = api.nvim_buf_line_count(a_buf)
+    pcall(api.nvim_win_set_cursor, b_win, { math.min(row, b_max), 0 })
+    pcall(api.nvim_win_set_cursor, a_win, { math.min(row, a_max), 0 })
+    if c_win and c_buf then
+      local c_max = api.nvim_buf_is_valid(c_buf) and api.nvim_buf_line_count(c_buf) or row
+      if api.nvim_win_is_valid(c_win) then
+        pcall(api.nvim_win_set_cursor, c_win, { math.min(row, c_max), 0 })
+      end
+    end
+    if first then
+      api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
+    end
+    api.nvim_win_call(b_win, function() pcall(vim.cmd, 'syncbind') end)
+  end)
+end
+
 -- 按 section 路由：
 --   staged:   a=HEAD (scratch)   vs  b=:0: (scratch，index 版)   —— 只看增量 staged
 --   unstaged: a=:0:  (scratch)   vs  b=worktree (可编辑)          —— 只看未 stage 部分
@@ -347,20 +599,17 @@ end
 -- 任一 git show 失败（二进制/LFS/非 UTF-8）→ 再降一级到工作区单栏
 ---@param state table
 ---@param node table  tree node（leaf file）
----@param section 'staged'|'unstaged'
+---@param section 'staged'|'unstaged'|'compare'|'conflicts'
 ---@param force_single boolean?  true → 强制走单栏分支（窄终端降级用）；正常 dual diff 时为 false/nil
 function M.show(state, node, section, force_single)
   if node.is_dir then return end
   local abspath = state.git_root .. '/' .. node.relpath
   if is_binary(abspath) then return end
   local xy = node.xy or ''
-  if Git.is_conflict(xy) then
-    vim.notify('[vv-git] Conflict file v1 is not supported yet; please use git mergetool or other tools', vim.log.levels.WARN)
-    return
-  end
 
   -- 文件本身就是单栏（A/D/??/*D）→ 任何宽度下都不会升回 dual，记下来给
   -- _apply_layout 判断「resize 后是否需要重渲染」，避免对这类文件做无意义的重 show
+  -- conflicts 始终为 false：:2:/:3: 双侧都可能存在，宽屏应升回 dual
   local intrinsic_single =
     (section == 'staged' and (xy:sub(1, 1) == 'A' or xy:sub(1, 1) == 'D' or xy == '??'))
     or (section == 'unstaged' and (xy == '??' or xy:sub(2, 2) == 'D'))
@@ -412,6 +661,7 @@ function M.show(state, node, section, force_single)
   local render_single_worktree, render_single_rev
   local render_single_rev_with_inline, render_single_worktree_with_inline
   local render_dual_rev_rev, render_dual_rev_worktree
+  local render_conflict_triple
 
   -- 单栏挂载：只 b_win + b_buf；不动 diff opts
   -- a_lines（可选）：传入则在 b_buf 上叠 inline diff（行级 add/change + 删除虚拟行）
@@ -468,6 +718,14 @@ function M.show(state, node, section, force_single)
       end
     end
 
+    -- 冲突单栏：winbar 显示 theirs（b 侧）信息；切离冲突文件则清掉
+    if section == 'conflicts' then
+      set_conflict_winbar(b_win, state, 'MERGE_HEAD')
+      install_conflict_accept_keymaps(b_buf, state)
+    else
+      clear_winbar(b_win)
+    end
+
     focus_back_to_panel()
   end
 
@@ -504,35 +762,88 @@ function M.show(state, node, section, force_single)
     install_right_keymaps(b_buf)
     block_insert_mode(a_buf)
 
-    vim.schedule(function()
-      pcall(vim.cmd, 'diffupdate')
-      -- fold 是 window-local 的懒计算：foldmethod/foldlevel 设了但可见渲染要到
-      -- 窗口被 enter 时才重算。nvim_win_call 到各窗口里 zX 强制重算
-      for _, w in ipairs({ a_win, b_win }) do
-        if api.nvim_win_is_valid(w) then
-          api.nvim_win_call(w, function() pcall(vim.cmd, 'normal! zX') end)
-        end
-      end
-      -- scrollbind/cursorbind 不会主动对齐"已有"的视口与光标，只在后续滚动时同步
-      -- 首次进入：自动跳到第一个变更位置（hunks 由 vim.diff 算，不依赖 ]c 的边界行为）
-      -- 没 hunk → 保持 b_win 当前光标（通常是 1）。再把 a_win 光标对到 b_win 同一行，syncbind 对齐 scroll
-      if api.nvim_win_is_valid(a_win) and api.nvim_win_is_valid(b_win) then
-        local b_lines = api.nvim_buf_get_lines(b_buf, 0, -1, false)
-        local a_lines = api.nvim_buf_get_lines(a_buf, 0, -1, false)
-        local first = InlineDiff.first_hunk_b_line(a_lines, b_lines)
-        local row = first or api.nvim_win_get_cursor(b_win)[1]
-        local b_max = api.nvim_buf_line_count(b_buf)
-        local a_max = api.nvim_buf_line_count(a_buf)
+    -- 冲突双栏：a_win 显示 ours（HEAD），b_win 显示 theirs（MERGE_HEAD）
+    -- 切离冲突文件时清掉两侧 winbar，避免标题残留到普通 staged/unstaged diff
+    if section == 'conflicts' then
+      set_conflict_winbar(a_win, state, 'HEAD')
+      set_conflict_winbar(b_win, state, 'MERGE_HEAD')
+      install_conflict_accept_keymaps(a_buf, state)
+      install_conflict_accept_keymaps(b_buf, state)
+    else
+      clear_winbar(a_win)
+      clear_winbar(b_win)
+    end
 
-        pcall(api.nvim_win_set_cursor, b_win, { math.min(row, b_max), 0 })
-        pcall(api.nvim_win_set_cursor, a_win, { math.min(row, a_max), 0 })
-        if first then
-          api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
-        end
-        api.nvim_win_call(b_win, function() pcall(vim.cmd, 'syncbind') end)
-      end
-    end)
+    schedule_diff_sync(a_win, a_buf, b_win, b_buf)
     focus_back_to_panel()
+  end
+
+  -- 三栏冲突挂载：a=:2:(ours) | b=:3:(theirs)，底部 c=worktree（可编辑，滚动同步）
+  local function attach_conflict_triple(a_buf, b_buf, c_buf)
+    local b_win, a_win, c_win = ensure_conflict_windows(state)
+    if not a_win or not b_win or not c_win then
+      wipe_scratch({ a_buf, b_buf })
+      vim.notify('[vv-git] Failed to create conflict windows', vim.log.levels.ERROR); return
+    end
+    state.view = {
+      mode = 'conflict3', section = section, path = node.relpath,
+      a_win = a_win, a_buf = a_buf,
+      b_win = b_win, b_buf = b_buf,
+      c_win = c_win, c_buf = c_buf,
+      node = node, intrinsic_single = intrinsic_single,
+    }
+
+    apply_diff_winopts(a_win, a_buf, WINHL_A)
+    apply_diff_winopts(b_win, b_buf, WINHL_B)
+    ensure_buf_highlighting(a_buf, node.relpath)
+    ensure_buf_highlighting(b_buf, node.relpath)
+
+    -- c_win：可编辑工作区文件，不开 diff 模式，scrollbind 保持滚动粗对齐
+    save_winopts(c_win)
+    local ok, err = pcall(api.nvim_win_set_buf, c_win, c_buf)
+    if not ok then
+      if not tostring(err):find('E828') then error(err) end
+    end
+    api.nvim_set_option_value('diff',       false, { win = c_win })
+    api.nvim_set_option_value('scrollbind', true,  { win = c_win })
+    api.nvim_set_option_value('cursorbind', true,  { win = c_win })
+    if handlers.get_config().diff_nowrap ~= false then
+      api.nvim_set_option_value('wrap', false, { win = c_win })
+    end
+    api.nvim_set_option_value('winbar',
+      '%#Title# Result%* — worktree (edit to resolve)', { win = c_win })
+    ensure_buf_highlighting(c_buf, node.relpath)
+
+    if prev_b_buf and prev_b_buf ~= b_buf then remove_right_keymaps(prev_b_buf) end
+    install_right_keymaps(a_buf)
+    install_right_keymaps(b_buf)
+    install_right_keymaps(c_buf)
+    block_insert_mode(a_buf)
+    block_insert_mode(b_buf)
+
+    set_conflict_winbar(a_win, state, 'HEAD')
+    set_conflict_winbar(b_win, state, 'MERGE_HEAD')
+    install_conflict_accept_keymaps(a_buf, state)
+    install_conflict_accept_keymaps(b_buf, state)
+    install_conflict_accept_keymaps(c_buf, state)
+
+    schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
+    focus_back_to_panel()
+  end
+
+  local function dual_rev_fetch(rev_a, rev_b, on_both)
+    local a_buf, b_buf, a_done, b_done
+    local function finalize()
+      if not (a_done and b_done) then return end
+      if not alive({ a_buf, b_buf }) then return end
+      on_both(a_buf, b_buf)
+    end
+    create_rev_buffer(state.git_root, rev_a, node.relpath, function(buf)
+      a_buf = buf; a_done = true; finalize()
+    end)
+    create_rev_buffer(state.git_root, rev_b, node.relpath, function(buf)
+      b_buf = buf; b_done = true; finalize()
+    end)
   end
 
   render_single_worktree = function()
@@ -555,14 +866,10 @@ function M.show(state, node, section, force_single)
   -- 两个 git show 互不依赖，并发发起 + barrier 合流，比串行省掉一次 RTT
   -- （staged 文件 j/k 快速切换时每次都能省 5-50ms，取决于仓库/磁盘）
   render_dual_rev_rev = function(a_rev, b_rev)
-    local a_buf, b_buf, a_done, b_done = nil, nil, false, false
-    local function finalize()
-      if not (a_done and b_done) then return end
-      if not alive({ a_buf, b_buf }) then return end
+    dual_rev_fetch(a_rev, b_rev, function(a_buf, b_buf)
       if not a_buf and not b_buf then
         render_single_worktree()
       elseif not a_buf then
-        -- a 侧缺 → 只有 b_rev 的 scratch 可用，当 single 展示
         attach_single(b_buf)
       elseif not b_buf then
         wipe_scratch({ a_buf })
@@ -570,12 +877,6 @@ function M.show(state, node, section, force_single)
       else
         attach_dual(a_buf, b_buf)
       end
-    end
-    create_rev_buffer(state.git_root, a_rev, node.relpath, function(buf)
-      a_buf = buf; a_done = true; finalize()
-    end)
-    create_rev_buffer(state.git_root, b_rev, node.relpath, function(buf)
-      b_buf = buf; b_done = true; finalize()
     end)
   end
 
@@ -588,6 +889,24 @@ function M.show(state, node, section, force_single)
         return
       end
       attach_dual(a_buf, get_worktree_buffer(abspath))
+    end)
+  end
+
+  -- 三栏冲突：:2:(ours) / :3:(theirs) 并发 show；worktree c_buf 直接 get
+  -- 任一侧缺失时降级：双侧均失败 → 单栏 worktree；a 失败 → 单栏 theirs；b 失败 → 单栏 worktree
+  render_conflict_triple = function()
+    local c_buf = get_worktree_buffer(abspath)
+    dual_rev_fetch(':2', ':3', function(a_buf, b_buf)
+      if not a_buf and not b_buf then
+        attach_single(c_buf)
+      elseif not a_buf then
+        attach_single(b_buf)
+      elseif not b_buf then
+        wipe_scratch({ a_buf })
+        attach_single(c_buf)
+      else
+        attach_conflict_triple(a_buf, b_buf, c_buf)
+      end
     end)
   end
 
@@ -626,6 +945,7 @@ function M.show(state, node, section, force_single)
   -- force_single：窄终端 fallback 时，正常 dual 路径降级为 single + inline diff——
   -- staged 显示 :0:（已暂存版）+ vs HEAD 内联高亮；
   -- unstaged 显示 worktree（用户当前可编辑版）+ vs :0: 内联高亮（worktree b_buf 编辑会触发去抖重渲染）
+  -- conflicts 显示 :2:（ours/HEAD）vs :3:（theirs/MERGE_HEAD）
   if section == 'staged' then
     local x = xy:sub(1, 1)
     if x == 'A' or xy == '??' then
@@ -685,6 +1005,13 @@ function M.show(state, node, section, force_single)
       end)
     end
 
+  elseif section == 'conflicts' then
+    -- :2: = ours (HEAD)，:3: = theirs (MERGE_HEAD)，worktree = 带冲突标记的可编辑文件
+    if force_single then
+      render_single_rev_with_inline(':2', ':3')        -- 窄屏降级：b=theirs，inline diff vs ours
+    else
+      render_conflict_triple()                         -- 三栏：ours | theirs + 底部 worktree result
+    end
   else -- unstaged
     if xy == '??' then
       render_single_worktree()                         -- :0 无此文件，无对比基线
@@ -707,6 +1034,14 @@ function M.close(state)
   if view.a_win and api.nvim_win_is_valid(view.a_win) then
     pcall(api.nvim_win_close, view.a_win, true)
   end
+  if view.c_win and api.nvim_win_is_valid(view.c_win) then
+    pcall(api.nvim_win_close, view.c_win, true)
+  end
+  if view.c_buf then
+    remove_right_keymaps(view.c_buf)
+    remove_conflict_accept_keymaps(view.c_buf)
+  end
+  state._conflict_info_cache = nil
   -- b_win 是工作区文件，不主动关，只清 diff opts
   if view.b_win and api.nvim_win_is_valid(view.b_win) then
     clear_diff_winopts(view.b_win)

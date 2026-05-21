@@ -222,6 +222,30 @@ function M.branches(root, cb)
   )
 end
 
+-- 获取某 ref 的简短信息（用于冲突 diff winbar 标题）
+---@param root string
+---@param ref string  'HEAD' | 'MERGE_HEAD' | 任意 git ref
+---@param cb fun(info: {hash:string, branch:string, subject:string}?)
+function M.conflict_info(root, ref, cb)
+  vim.system(
+    { 'git', '-C', root, 'log', '-1', '--format=%h%x00%D%x00%s', ref },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      if r.code ~= 0 then cb(nil); return end
+      local parts = vim.split(vim.trim(r.stdout or ''), '\0', { plain = true })
+      local hash     = parts[1] or ''
+      local refnames = parts[2] or ''
+      local subject  = parts[3] or ''
+      -- 从装饰串里提取最短可读分支名
+      -- 可能格式：'HEAD -> branch-ours, branch-ours' / 'branch-theirs' / 'tag: v1.0, main'
+      local branch = refnames:match('HEAD %-> ([^,]+)')
+                  or refnames:match('^([^,%(]+)')
+                  or ''
+      cb({ hash = vim.trim(hash), branch = vim.trim(branch), subject = vim.trim(subject) })
+    end)
+  )
+end
+
 -- 列出某 ref 的最近 N 条 commit（格式：hash\x01short\x01subject）
 ---@param root string
 ---@param ref string
@@ -275,6 +299,28 @@ function M.diff_names(root, from_ref, to_ref, cb)
     end)
   )
 end
+
+---@param root string
+---@param side_flag '--ours'|'--theirs'
+---@param paths string[]
+---@param cb fun(ok:boolean, stderr?:string)
+local function accept_side(root, side_flag, paths, cb)
+  if #paths == 0 then cb(true); return end
+  run(root, vim.list_extend({ 'checkout', side_flag, '--' }, paths), function(ok, err)
+    if not ok then cb(false, err); return end
+    M.stage(root, paths, cb)
+  end)
+end
+
+---@param root string
+---@param paths string[]
+---@param cb fun(ok:boolean, stderr?:string)
+function M.accept_ours(root, paths, cb) accept_side(root, '--ours', paths, cb) end
+
+---@param root string
+---@param paths string[]
+---@param cb fun(ok:boolean, stderr?:string)
+function M.accept_theirs(root, paths, cb) accept_side(root, '--theirs', paths, cb) end
 
 -- 获取未推送的 commit 数量
 ---@param root string

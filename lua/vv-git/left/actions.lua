@@ -2,6 +2,7 @@
 -- 文件粒度：直接对单个 relpath 操作
 -- 文件夹粒度：递归收集子树所有 leaf，批量 git 命令
 
+local api = vim.api
 local Git = require('vv-git.git')
 local Tree = require('vv-git.tree')
 local Loader = require('vv-git.loader')
@@ -9,7 +10,7 @@ local Loader = require('vv-git.loader')
 local M = {}
 
 ---@param id table  panel id_by_line 项：{ section, node } 或 section_header
----@return 'staged'|'unstaged'|nil side, string[]? paths
+---@return 'staged'|'unstaged'|'conflicts'|nil side, string[]? paths
 local function collect(state, id)
   if not id then return nil, nil end
   local side
@@ -51,6 +52,16 @@ local function collect(state, id)
   end
 
   return side, paths
+end
+
+-- 接受冲突后强制重新加载 c_buf（worktree 已被 git checkout --ours/theirs 改写）
+---@param state table
+local function reload_conflict_result(state)
+  local c_buf = state.view and state.view.c_buf
+  if not c_buf or not api.nvim_buf_is_valid(c_buf) then return end
+  pcall(api.nvim_buf_call, c_buf, function()
+    vim.cmd('silent! edit!')
+  end)
 end
 
 ---@param state table
@@ -303,5 +314,29 @@ function M.discard_selection(state, items)
     end)
   end)
 end
+
+---@param state table
+---@param id table
+---@param side_name 'ours'|'theirs'
+local function accept_conflict_side(state, id, side_name)
+  local section, paths = collect(state, id)
+  if section ~= 'conflicts' or not paths or #paths == 0 then return end
+  Git['accept_' .. side_name](state.git_root, paths, function(ok, err)
+    if not ok then
+      vim.notify('[vv-git] accept ' .. side_name .. ' failed: ' .. (err or ''), vim.log.levels.ERROR)
+      return
+    end
+    reload_conflict_result(state)
+    refresh(state)
+  end)
+end
+
+---@param state table
+---@param id table
+function M.accept_ours(state, id) accept_conflict_side(state, id, 'ours') end
+
+---@param state table
+---@param id table
+function M.accept_theirs(state, id) accept_conflict_side(state, id, 'theirs') end
 
 return M

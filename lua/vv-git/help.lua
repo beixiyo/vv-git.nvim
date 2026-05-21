@@ -17,6 +17,8 @@ local ACTIONS = {
   commit        = { cat = 'Git',      icon = '' },
   commit_show   = { cat = 'Git',      icon = '' },
   compare_pick  = { cat = 'Git',      icon = '' },
+  accept_ours   = { cat = 'Conflict', icon = '󰅁' },
+  accept_theirs = { cat = 'Conflict', icon = '󰅂' },
   push          = { cat = 'Remote',   icon = '' },
   pull          = { cat = 'Remote',   icon = '' },
   yank_abs_path = { cat = 'Yank',     icon = '' },
@@ -25,7 +27,7 @@ local ACTIONS = {
   __close       = { cat = 'View',     icon = '' },
 }
 
-local CATEGORIES = { 'Navigate', 'Select', 'Git', 'Remote', 'Yank', 'View' }
+local CATEGORIES = { 'Navigate', 'Select', 'Git', 'Conflict', 'Remote', 'Yank', 'View' }
 
 ---@param state table
 function M.open(state)
