@@ -44,10 +44,12 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field diff_nowrap boolean  -- diff 视图中强制关闭 wrap（默认 true）；wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制（neovim/neovim#29518、sindrets/diffview.nvim#198）
 ---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效
 ---@field binary VVGitBinaryConfig
+---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'）
 local defaults = {
   width = 30,
   single_col_threshold = 120,
   keymap_toggle_panel = '<leader>b',
+  keymap_select = '<Tab>',
   fold_unchanged = true,
   diff_fill = ' ',
   preview = true,
@@ -289,7 +291,14 @@ local function install_keymaps(state)
   map('<C-n>',         function() navigate(state, 'j') end,       'next_item')
   map('<C-p>',         function() navigate(state, 'k') end,       'prev_item')
   map('q',             function() M.close() end,                   '__close')
-  map('<Esc>',         function() M.close() end,                   '__close')
+  map('<Esc>',         function()
+    if next(state.selection) then
+      state.selection = {}
+      LeftRender.render(state)
+    else
+      M.close()
+    end
+  end,                                                              '__close')
   map('R',             function() M.refresh() end,                 'refresh')
   map('<CR>',          function() M._activate() end,               'open')
   map('o',             function() M._activate() end,               'open')
@@ -318,7 +327,7 @@ local function install_keymaps(state)
 
   map('gf',            function() M._goto_file() end,              'goto_file')
   map('Y',             function() M._yank_abs_path() end,           'yank_abs_path')
-  map('<Tab>',         function() M._toggle_fold() end,            'toggle_fold')
+  map(M._config.keymap_select, function() M._toggle_select() end,  'toggle_select')
   map('h',             function() M._collapse() end,               'close_node')
   map('-',             function() M._action('toggle_stage') end,   'toggle_stage')
   map('d',             function() M._action('discard') end,        'discard')
@@ -329,10 +338,12 @@ local function install_keymaps(state)
   map('<C-y>',         function() scroll_diff(CY_KEY) end,         'scroll_diff_up')
   map('g?',            function() Help.open(state) end,            'help')
 
-  -- 阻止 Insert mode：buftype=nofile + modifiable=false 下进入 Insert 无意义
-  -- 排除已映射为功能键的 o/s/c/R，只屏蔽纯 Insert 入口
+  -- 阻止 Insert / Visual mode：nofile buffer 里无意义，多选已有专用键
   for _, key in ipairs({ 'i', 'I', 'a', 'A', 'O', 'S', 'C' }) do
     vim.keymap.set('n', key, '<Nop>', { buffer = buf, nowait = true })
+  end
+  for _, key in ipairs({ 'v', 'V', '<C-v>' }) do
+    vim.keymap.set('n', key, '<Nop>', { buffer = buf, silent = true })
   end
 
   -- preview 模式：光标落到文件行自动刷新右侧 diff；停在 header/目录 上不动（保留上一次预览）
@@ -505,6 +516,29 @@ end)
 M.refresh = State.guarded(function(state)
   if not state.panel or not state.git_root then return end
   Loader.reload_index(state)
+end)
+
+-- <Tab>（可配置）：切换当前文件节点的选中状态；目录节点忽略
+M._toggle_select = State.guarded(function(state)
+  local id = id_under_cursor(state)
+  if not id or not id.node or id.node.is_dir or id.section_header then return end
+  local key = (id.section or '') .. ':' .. id.node.relpath
+  if state.selection[key] then
+    state.selection[key] = nil
+  else
+    state.selection[key] = true
+  end
+  LeftRender.render(state)
+  -- 选完自动下移，方便连续多选
+  local win = state.panel and state.panel.win
+  if win and vim.api.nvim_win_is_valid(win) then
+    local buf = state.panel.buf
+    local last = vim.api.nvim_buf_line_count(buf)
+    local lnum = vim.api.nvim_win_get_cursor(win)[1]
+    if lnum < last then
+      vim.api.nvim_win_set_cursor(win, { lnum + 1, 0 })
+    end
+  end
 end)
 
 M._toggle_fold = State.guarded(function(state)
@@ -756,6 +790,22 @@ end)
 
 ---@param name 'toggle_stage'|'discard'
 M._action = State.guarded(function(state, name)
+  -- 多选模式：selection 非空时批量操作，忽略光标
+  if next(state.selection) then
+    local items = {}
+    for key in pairs(state.selection) do
+      local section, relpath = key:match('^(.-):(.+)$')
+      if section and relpath then
+        items[#items + 1] = { section = section, relpath = relpath }
+      end
+    end
+    state.selection = {}
+    local fn = Actions[name .. '_selection']
+    if fn then fn(state, items) end
+    return
+  end
+
+  -- 单选模式：原有逻辑
   local id = id_under_cursor(state)
   if not id then return end
   if id.node then

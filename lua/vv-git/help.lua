@@ -10,8 +10,8 @@ local ACTIONS = {
   prev_item     = { cat = 'Navigate', icon = '' },
   open          = { cat = 'Navigate', icon = '' },
   close_node    = { cat = 'Navigate', icon = '' },
-  toggle_fold   = { cat = 'Navigate', icon = '' },
   goto_file     = { cat = 'Navigate', icon = '' },
+  toggle_select = { cat = 'Select',   icon = '󰒆' },
   toggle_stage  = { cat = 'Git',      icon = '' },
   discard       = { cat = 'Git',      icon = '' },
   commit        = { cat = 'Git',      icon = '' },
@@ -23,7 +23,7 @@ local ACTIONS = {
   __close       = { cat = 'View',     icon = '' },
 }
 
-local CATEGORIES = { 'Navigate', 'Git', 'Remote', 'Yank', 'View' }
+local CATEGORIES = { 'Navigate', 'Select', 'Git', 'Remote', 'Yank', 'View' }
 
 ---@param state table
 function M.open(state)

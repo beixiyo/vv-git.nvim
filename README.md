@@ -24,6 +24,7 @@
     width = 30,                        -- 左栏宽度
     single_col_threshold = 120,        -- 窗口列数 < 此值时降级为单栏 + inline diff
     keymap_toggle_panel = '<leader>b', -- 全局切换左栏的映射（false 禁用）
+    keymap_select = '<Tab>',           -- 切换当前文件选中状态（多选）
     fold_unchanged = true,             -- 折叠未改动代码
     diff_fill = ' ',                   -- diff 空行填充符（Vim 默认 '-'）
     preview = true,                    -- 光标移动到文件行时自动刷新右侧 diff
@@ -48,6 +49,7 @@
 | `diff_ratio` | `integer[]` | 无（50:50） | 双栏模式下 a_win（旧版本）与 b_win（工作区）的宽度比例，如 `{4, 6}` 表示左窄右宽；不填则等宽 |
 | `diff_nowrap` | `boolean` | `true` | diff 视图强制关闭折行；`wrap` 在双栏模式下因两侧行高不一致会造成视觉错位，属于上游已知限制（[neovim/neovim#29518](https://github.com/neovim/neovim/issues/29518)、[diffview.nvim#198](https://github.com/sindrets/diffview.nvim/issues/198)），置为 `false` 可恢复默认折行行为 |
 | `highlights` | `table` | 无 | 覆盖任意 `VVGit*` 高亮组，叠加在自动计算值之上，切换主题后仍生效（见下方「自定义配色」）|
+| `keymap_select` | `string` | `'<Tab>'` | 切换当前行选中状态（多选）；目录节点忽略 |
 | `binary.intercept` | `boolean` | `true` | 拦截二进制文件：预览时静默跳过，`<CR>`/`gf` 改用系统默认程序打开；`false` 禁用拦截 |
 | `binary.extensions` | `table<string, boolean>` | 见下方 | 视为二进制的扩展名集合（小写 key）；`vim.tbl_deep_extend` 合并，只需写要覆盖的 key |
 
@@ -105,10 +107,11 @@ opts = {
 |------|------|
 | `gf` | 跳转到文件 |
 | `Y` | 复制文件绝对路径 |
-| `<Tab>` | 展开 / 折叠目录 |
+| `<Tab>` | 切换当前文件选中（多选；目录忽略，可配置 `keymap_select`） |
+| `<Esc>` | 选中非空时清空选中；否则关闭面板 |
 | `h` | 折叠当前节点 |
-| `-` | 切换 stage / unstage |
-| `d` | staged 区：unstage；unstaged 区：撤销更改（discard），确认后生效 |
+| `-` | 单选：切换 stage/unstage；**多选**：批量 stage/unstage |
+| `d` | 单选—staged: unstage；unstaged: discard（确认）；**多选**：同单选规则批量执行 |
 | `c` | 提交（commit） |
 | `p` | 推送（push） |
 | `P` | 拉取（pull） |

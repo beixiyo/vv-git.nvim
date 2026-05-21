@@ -24,7 +24,7 @@ local function pad_to_cols(s, cols)
   return s .. string.rep(' ', cols - w)
 end
 
----@param opts { depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, node:table, status_letter?:string, status_hl?:string, section_id?:string }
+---@param opts { depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, node:table, status_letter?:string, status_hl?:string, section_id?:string, selected?:boolean }
 ---@return string line, table[] extmarks (无 row)
 local function build_row(opts)
   local prefix = string.rep(INDENT_STEP, opts.depth)
@@ -86,6 +86,13 @@ local function build_row(opts)
         virt_text = { { opts.status_letter .. ' ', opts.status_hl or 'VVGitPanelFile' } },
         virt_text_pos = 'right_align',
       },
+    }
+  end
+
+  if opts.selected then
+    extmarks[#extmarks + 1] = {
+      col = 0,
+      opts = { end_col = 0, line_hl_group = 'VVGitPanelSelected' },
     }
   end
 
@@ -208,6 +215,7 @@ function M.build(state)
         letter, hl = node.letter, node.hl
       end
 
+      local sel_key = section_id .. ':' .. node.relpath
       local line, ems = build_row({
         depth = r.depth + 1, -- section 内再缩进一层
         is_dir = node.is_dir,
@@ -218,6 +226,7 @@ function M.build(state)
         status_letter = letter,
         status_hl = hl,
         section_id = section_id,
+        selected = not node.is_dir and (state.selection or {})[sel_key] == true,
       })
       lines[#lines + 1] = line
       local lnum = #lines - 1

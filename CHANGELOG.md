@@ -4,6 +4,8 @@
 
 ### Added
 
+- **多选操作**：`<Tab>`（可配置 `keymap_select`）切换当前文件的选中状态，选中行以 `VVGitPanelSelected` 高亮标记；选中集合非空时，`-`/`d` 批量操作所有选中文件（staged → unstage，unstaged → stage/discard，两侧可混合）；`<Esc>` 优先清空选中，无选中时关闭面板；`v`/`V`/`<C-v>` 已屏蔽（nofile buffer 里 visual 模式无意义）
+
 - **二进制文件拦截**：`binary.intercept = true`（默认开启），预览时静默跳过，`<CR>`/`o`/`gf` 遇到二进制文件改用系统默认程序打开，避免渲染乱码 diff 造成卡顿。内置 40+ 扩展名（图片/视频/音频/压缩包/编译产物/字体/二进制文档/数据库），支持 `binary.extensions` 逐 key 增减覆盖
 
 - **左侧填充行背景色**：双栏模式下，左侧（a 面）对应右侧纯新增行的填充空行现在显示浅绿背景（`VVGitDiffDeleteDim.bg = add_line`），与右侧绿色新增行视觉对称，不再显示为空白

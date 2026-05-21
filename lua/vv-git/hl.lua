@@ -37,7 +37,7 @@ local function build_specs()
     VVGitPanelIndent    = { link = 'Comment' },
     VVGitPanelMatch     = { link = 'Search' },
     VVGitPanelDim       = { link = 'Comment' },
-    VVGitPanelSelected  = { link = 'CursorLine' },
+    VVGitPanelSelected  = { link = 'Visual' },
 
     -- diff 折叠行：走 Comment 色，切主题自动适配
     VVGitFold           = { link = 'Comment' },

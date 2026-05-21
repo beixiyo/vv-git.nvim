@@ -190,4 +190,118 @@ function M.discard(state, id)
   end)
 end
 
+-- 多选批量 toggle_stage：staged → unstage，unstaged → stage，两组并发执行
+---@param state table
+---@param items {section:string, relpath:string}[]
+function M.toggle_stage_selection(state, items)
+  local staged, unstaged = {}, {}
+  for _, item in ipairs(items) do
+    if item.section == 'staged' then
+      staged[#staged + 1] = item.relpath
+    else
+      unstaged[#unstaged + 1] = item.relpath
+    end
+  end
+
+  -- staged 侧需要带上 rename 旧路径（与 collect() 逻辑一致）
+  if #staged > 0 and state.index and state.index.rename_map then
+    local extras = {}
+    local prefix_len = #state.git_root + 2
+    for _, p in ipairs(staged) do
+      local abs = state.git_root .. '/' .. p
+      local old_abs = state.index.rename_map[abs]
+      if old_abs then
+        local old_rel = old_abs:sub(1, #state.git_root) == state.git_root
+            and old_abs:sub(prefix_len) or old_abs
+        extras[#extras + 1] = old_rel
+      end
+    end
+    vim.list_extend(staged, extras)
+  end
+
+  if not staged[1] and not unstaged[1] then return end
+
+  local function do_unstage(after)
+    if not staged[1] then after(); return end
+    Git.unstage(state.git_root, staged, function(ok, err)
+      if not ok then vim.notify('[vv-git] unstage failed: ' .. (err or ''), vim.log.levels.ERROR) end
+      after()
+    end)
+  end
+
+  local function do_stage(after)
+    if not unstaged[1] then after(); return end
+    Git.stage(state.git_root, unstaged, function(ok, err)
+      if not ok then vim.notify('[vv-git] stage failed: ' .. (err or ''), vim.log.levels.ERROR) end
+      after()
+    end)
+  end
+
+  do_unstage(function()
+    do_stage(function()
+      Loader.reload_index(state)
+    end)
+  end)
+end
+
+-- 多选批量 discard：staged → unstage；unstaged → 弹一次确认框后 discard
+---@param state table
+---@param items {section:string, relpath:string}[]
+function M.discard_selection(state, items)
+  local staged, unstaged = {}, {}
+  for _, item in ipairs(items) do
+    if item.section == 'staged' then
+      staged[#staged + 1] = item.relpath
+    else
+      unstaged[#unstaged + 1] = item.relpath
+    end
+  end
+
+  local function do_staged(after)
+    if not staged[1] then after(); return end
+    Git.unstage(state.git_root, staged, function(ok, err)
+      if not ok then vim.notify('[vv-git] unstage failed: ' .. (err or ''), vim.log.levels.ERROR) end
+      after()
+    end)
+  end
+
+  local function do_unstaged(after)
+    if not unstaged[1] then after(); return end
+    -- 判断是否含 untracked
+    local xy_map = {}
+    if state.tree and state.tree.unstaged then
+      xy_map = collect_xy(state.tree.unstaged)
+    end
+    local untracked, tracked = split_by_tracked(unstaged, xy_map)
+    local msg = string.format('Discard %d selected file(s)?', #unstaged)
+    if #untracked > 0 then
+      msg = msg .. string.format('\n⚠ %d untracked file(s) will be permanently deleted!', #untracked)
+    end
+    local choice = vim.fn.confirm(msg, '&Yes\n&No', 2)
+    if choice ~= 1 then after(); return end
+
+    local function discard_tracked(cb)
+      if not tracked[1] then cb(); return end
+      Git.discard(state.git_root, tracked, function(ok, err)
+        if not ok then vim.notify('[vv-git] discard failed: ' .. (err or ''), vim.log.levels.ERROR) end
+        cb()
+      end)
+    end
+    local function discard_untracked(cb)
+      if not untracked[1] then cb(); return end
+      Git.discard_untracked(state.git_root, untracked, function(ok, err)
+        if not ok then vim.notify('[vv-git] delete untracked failed: ' .. (err or ''), vim.log.levels.ERROR) end
+        cb()
+      end)
+    end
+    discard_tracked(function() discard_untracked(after) end)
+  end
+
+  do_staged(function()
+    do_unstaged(function()
+      Loader.reload_index(state)
+    end)
+  end)
+end
+
 return M

@@ -8,6 +8,7 @@
 -- state.index     = vv-utils.git.index() 返回的 { status_map, is_ignored }
 -- state.tree      = 变更树：{ staged, unstaged, conflicts }
 -- state.folds     = { [relpath] = true }  被折叠的文件夹集合
+-- state.selection = { ['section:relpath'] = true }  多选集合（仅文件节点）
 -- state.cur_path  = 当前选中文件相对路径
 
 local M = {}
@@ -30,6 +31,7 @@ function M.get()
       index = nil,
       tree = nil,
       folds = {},
+      selection = {},
       cur_path = nil,
     }
   end
