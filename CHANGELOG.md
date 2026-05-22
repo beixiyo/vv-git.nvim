@@ -10,6 +10,8 @@
 
   两种模式共用同一套左栏文件列表 + 右侧双栏 diff 基础设施；`<Esc>` 退出，左栏立即恢复正常视图。
 
+- **Compare 模式树结构**：`H`/`gc` 的变更文件列表从扁平路径改为树形目录结构，与 normal 模式的 Staged/Changes 视图一致——支持目录折叠箭头、文件类型图标、单链目录合并（`src/foo/bar/` 显示为一行）、`l`/`h` 展开/折叠、目录状态聚合（显示子文件中最严重的状态字母）
+
 - **多选操作**：`<Tab>`（可配置 `keymap_select`）切换当前文件的选中状态，选中行以 `VVGitPanelSelected` 高亮标记；选中集合非空时，`-`/`d` 批量操作所有选中文件（staged → unstage，unstaged → stage/discard，两侧可混合）；`<Esc>` 优先清空选中，无选中时关闭面板；`v`/`V`/`<C-v>` 已屏蔽（nofile buffer 里 visual 模式无意义）
 
 - **二进制文件拦截**：`binary.intercept = true`（默认开启），预览时静默跳过，`<CR>`/`o`/`gf` 遇到二进制文件改用系统默认程序打开，避免渲染乱码 diff 造成卡顿。内置 40+ 扩展名（图片/视频/音频/压缩包/编译产物/字体/二进制文档/数据库），支持 `binary.extensions` 逐 key 增减覆盖

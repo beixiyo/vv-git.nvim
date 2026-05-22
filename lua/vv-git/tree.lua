@@ -194,6 +194,37 @@ function M.leaf_paths(node, out)
   return out
 end
 
+-- 从 compare 文件列表构建树（复用内部 trie 逻辑）
+---@param files { status:string, path:string, old_path?:string }[]
+---@return table root  与 M.build 返回的 side_root 同构
+function M.build_compare(files)
+  local root = new_root()
+  for _, f in ipairs(files) do
+    local parts = vim.split(f.path, '/', { plain = true })
+    local cur = root
+    local accum = ''
+    for i, part in ipairs(parts) do
+      accum = accum == '' and part or (accum .. '/' .. part)
+      local is_last = (i == #parts)
+      cur.children[part] = cur.children[part] or make_node(part, accum, not is_last)
+      local node = cur.children[part]
+      if is_last then
+        local st = f.status
+        node.letter = st
+        node.hl = ({
+          A = 'VVGitAdded', M = 'VVGitModified', D = 'VVGitDeleted',
+          R = 'VVGitRenamed', C = 'VVGitAdded',
+        })[st] or 'VVGitModified'
+        node.xy = st .. ' '
+        node.compare_status = st
+        node.old_relpath = f.old_path
+      end
+      cur = node
+    end
+  end
+  return root
+end
+
 -- 是否 root 完全为空
 ---@param side_root table
 function M.empty(side_root)

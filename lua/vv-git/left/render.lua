@@ -216,14 +216,9 @@ function M.build(state)
     push_blank()
   end
 
-  -- 比较模式：替换普通 section，展示 commit..HEAD 变更文件列表
+  -- 比较模式：替换普通 section，展示 commit..HEAD 变更文件列表（树结构）
   if state.compare then
     local cmp = state.compare
-    local status_letter_map = { M = 'M', A = 'A', D = 'D', R = 'R', C = 'C' }
-    local status_hl_map = {
-      M = 'VVGitModified', A = 'VVGitAdded', D = 'VVGitDeleted',
-      R = 'VVGitRenamed',  C = 'VVGitAdded',
-    }
 
     local header = string.format('  Compare (%d files)  %s', #cmp.files, cmp.label)
     lines[#lines + 1] = header
@@ -238,25 +233,34 @@ function M.build(state)
     }
     id_by_line[#lines] = { section_header = 'compare' }
 
-    for _, f in ipairs(cmp.files) do
-      local st = f.status
-      local letter = status_letter_map[st] or st
-      local hl    = status_hl_map[st]    or 'VVGitPanelFile'
-      local node = {
-        relpath        = f.path,
-        old_relpath    = f.old_path,
-        compare_status = st,
-        is_dir         = false,
-        letter         = letter,
-        hl             = hl,
-        xy             = st .. ' ',
-      }
-      local display = f.old_path and (f.old_path .. ' → ' .. f.path) or f.path
+    local compare_root = Tree.build_compare(cmp.files)
+    local scoped_folds = {}
+    for k, v in pairs(folds) do
+      local s, p = k:match('^(.-):(.*)')
+      if s == 'compare' then scoped_folds[p] = v end
+    end
+
+    local rows = Tree.flatten(compare_root, scoped_folds, { group_empty_dirs = true })
+    for _, r in ipairs(rows) do
+      local node = r.node
+      local letter, hl
+      if node.is_dir then
+        letter, hl = dir_status(node)
+      else
+        letter, hl = node.letter, node.hl
+      end
+
+      local display = r.display_name
+      if not node.is_dir and node.old_relpath then
+        local old_name = node.old_relpath:match('[^/]+$') or node.old_relpath
+        display = old_name .. ' → ' .. display
+      end
+
       local line, ems = build_row({
-        depth          = 1,
-        is_dir         = false,
-        is_open        = false,
-        has_children   = false,
+        depth          = r.depth + 1,
+        is_dir         = node.is_dir,
+        is_open        = node.is_dir and not scoped_folds[node.relpath],
+        has_children   = r.has_children,
         display_name   = display,
         node           = node,
         status_letter  = letter,
