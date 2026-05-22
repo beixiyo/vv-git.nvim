@@ -262,7 +262,7 @@ local function restore_winopts(win)
   local saved = vim.w[win].vv_git_saved
   if not saved then return end
   for opt, val in pairs(saved) do
-    pcall(api.nvim_set_option_value, opt, val, { win = win })
+    pcall(api.nvim_set_option_value, opt, val, { win = win, scope = 'local' })
   end
   vim.w[win].vv_git_saved = nil
 end
@@ -276,7 +276,7 @@ local function apply_diff_winopts(win, buf, winhl)
   -- 是按 win 维护的，set_buf 不会触发重建，:diffupdate 也救不回来；
   -- 新 buf 会被沿用旧 hunk 套出"整片替换"假象（folded=0、大量 DiffText）
   if api.nvim_get_option_value('diff', { win = win }) then
-    api.nvim_set_option_value('diff', false, { win = win })
+    api.nvim_set_option_value('diff', false, { win = win, scope = 'local' })
   end
   -- pcall: nvim_win_set_buf 可能因 E828（undo 目录不可写）等非致命错误抛异常，
   -- 但 buffer 实际已切换成功，不应中断 diff 视图
@@ -284,9 +284,9 @@ local function apply_diff_winopts(win, buf, winhl)
   if not ok then
     if not tostring(err):find('E828') then error(err) end
   end
-  api.nvim_set_option_value('diff', true, { win = win })
-  api.nvim_set_option_value('scrollbind', true, { win = win })
-  api.nvim_set_option_value('cursorbind', true, { win = win })
+  api.nvim_set_option_value('diff', true, { win = win, scope = 'local' })
+  api.nvim_set_option_value('scrollbind', true, { win = win, scope = 'local' })
+  api.nvim_set_option_value('cursorbind', true, { win = win, scope = 'local' })
   -- 锁定 diff 折叠：
   --   foldmethod=diff：treesitter.lua / lsp.lua 会在 FileType/LspAttach 时写 expr，必须覆盖
   --   foldlevel=0：TS autocmd 用 `vim.wo` 落在 current win 上；bufload b_buf 时 current win
@@ -294,19 +294,19 @@ local function apply_diff_winopts(win, buf, winhl)
   --               被写到 a_win，导致"所有折叠默认打开" → 看似没折叠。这里压回 0
   local fold_on = fold_unchanged_enabled()
   if fold_on then
-    api.nvim_set_option_value('foldmethod', 'diff', { win = win })
-    api.nvim_set_option_value('foldlevel', 0, { win = win })
+    api.nvim_set_option_value('foldmethod', 'diff', { win = win, scope = 'local' })
+    api.nvim_set_option_value('foldlevel', 0, { win = win, scope = 'local' })
   end
-  api.nvim_set_option_value('foldenable', fold_on, { win = win })
-  api.nvim_set_option_value('foldcolumn', fold_on and '1' or '0', { win = win })
-  api.nvim_set_option_value('foldtext', "v:lua.require'vv-git.foldtext'.render()", { win = win })
-  api.nvim_set_option_value('winhighlight', winhl, { win = win })
+  api.nvim_set_option_value('foldenable', fold_on, { win = win, scope = 'local' })
+  api.nvim_set_option_value('foldcolumn', fold_on and '1' or '0', { win = win, scope = 'local' })
+  api.nvim_set_option_value('foldtext', "v:lua.require'vv-git.foldtext'.render()", { win = win, scope = 'local' })
+  api.nvim_set_option_value('winhighlight', winhl, { win = win, scope = 'local' })
   -- diff 模式下 wrap 会导致两侧行高不一致，产生视觉错位，属于 Neovim/Vim 上游已知限制：
   --   https://github.com/neovim/neovim/issues/29518
   --   https://github.com/sindrets/diffview.nvim/issues/198（diffview 作者明确说只能 nowrap 绕过）
   -- diff_nowrap=true 时强制关闭 wrap；用户可置为 false 恢复默认行为
   if handlers.get_config().diff_nowrap ~= false then
-    api.nvim_set_option_value('wrap', false, { win = win })
+    api.nvim_set_option_value('wrap', false, { win = win, scope = 'local' })
   end
 end
 
@@ -357,7 +357,7 @@ local function set_conflict_winbar(win, state, ref)
     if not api.nvim_win_is_valid(win) then return end
     if not info then
       local label = ref == 'HEAD' and 'ours' or 'theirs'
-      api.nvim_set_option_value('winbar', '%#' .. branch_hl .. '#  ' .. label .. ' %*', { win = win })
+      api.nvim_set_option_value('winbar', '%#' .. branch_hl .. '#  ' .. label .. ' %*', { win = win, scope = 'local' })
       return
     end
     local branch  = info.branch ~= '' and info.branch or ref
@@ -387,7 +387,7 @@ local function set_conflict_winbar(win, state, ref)
     local hash_part    = hash    ~= '' and ('%#Comment# ' .. hash .. '%*') or ''
     local subject_part = subject ~= '' and (' ' .. subject)                or ''
     local bar = '%#' .. branch_hl .. '#  ' .. branch .. ' %*' .. hash_part .. subject_part
-    api.nvim_set_option_value('winbar', bar, { win = win })
+    api.nvim_set_option_value('winbar', bar, { win = win, scope = 'local' })
   end
 
   local cache = state._conflict_info_cache
@@ -407,7 +407,7 @@ end
 ---@param win integer?
 local function clear_winbar(win)
   if win and api.nvim_win_is_valid(win) then
-    pcall(api.nvim_set_option_value, 'winbar', '', { win = win })
+    pcall(api.nvim_set_option_value, 'winbar', '', { win = win, scope = 'local' })
   end
 end
 
@@ -804,14 +804,14 @@ function M.show(state, node, section, force_single)
     if not ok then
       if not tostring(err):find('E828') then error(err) end
     end
-    api.nvim_set_option_value('diff',       false, { win = c_win })
-    api.nvim_set_option_value('scrollbind', true,  { win = c_win })
-    api.nvim_set_option_value('cursorbind', true,  { win = c_win })
+    api.nvim_set_option_value('diff',       false, { win = c_win, scope = 'local' })
+    api.nvim_set_option_value('scrollbind', true,  { win = c_win, scope = 'local' })
+    api.nvim_set_option_value('cursorbind', true,  { win = c_win, scope = 'local' })
     if handlers.get_config().diff_nowrap ~= false then
-      api.nvim_set_option_value('wrap', false, { win = c_win })
+      api.nvim_set_option_value('wrap', false, { win = c_win, scope = 'local' })
     end
     api.nvim_set_option_value('winbar',
-      '%#Title# Result%* — worktree (edit to resolve)', { win = c_win })
+      '%#Title# Result%* — worktree (edit to resolve)', { win = c_win, scope = 'local' })
     ensure_buf_highlighting(c_buf, node.relpath)
 
     if prev_b_buf and prev_b_buf ~= b_buf then remove_right_keymaps(prev_b_buf) end

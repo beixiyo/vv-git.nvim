@@ -30,9 +30,11 @@ local function apply_win_opts(win)
   -- 在 VimResized / panel 重建 / 第三方浮窗创建等路径上可能被继承/污染进 diff-group。
   -- 写死 false 让本 panel 永不进 diff 计算，新浮窗从 panel 继承也拿不到污染状态。
   -- 对照 diffview panel.lua:50-52 同样做法
-  vim.wo[win].diff = false
-  vim.wo[win].scrollbind = false
-  vim.wo[win].cursorbind = false
+  -- scope='local'：不污染全局默认（vim.wo 等于 :set，会改全局）
+  local api = vim.api
+  api.nvim_set_option_value('diff', false, { win = win, scope = 'local' })
+  api.nvim_set_option_value('scrollbind', false, { win = win, scope = 'local' })
+  api.nvim_set_option_value('cursorbind', false, { win = win, scope = 'local' })
 end
 
 ---@param buf integer
@@ -42,9 +44,6 @@ function M.open_split(buf, opts)
   local prev = vim.api.nvim_get_current_win()
   vim.cmd('topleft vsplit')
   local win = vim.api.nvim_get_current_win()
-  vim.wo[win].diff = false
-  vim.wo[win].scrollbind = false
-  vim.wo[win].cursorbind = false
   vim.api.nvim_win_set_width(win, opts.width)
   vim.api.nvim_win_set_buf(win, buf)
   apply_win_opts(win)

@@ -54,6 +54,12 @@
 
 ### Fixed
 
+- **修复 diff 视图行号丢失**：`vim.wo[win].X = val` 等同于 `:set`（同时改全局默认），`hide_chrome` 给 panel 设 `number=false` 后全局默认被污染，后续所有新窗口继承 `false`。改用 `nvim_set_option_value(..., scope='local')` 只改目标窗口。同步修复 `view.lua` 全部 19 处 `{ win = win }` 调用、`panel.lua` 的 `diff/scrollbind/cursorbind` 设置
+
+### Refactored
+
+- **init.lua 拆分为 4 个子模块**（872 → 147 行）：`core/lifecycle.lua`（open/close/toggle）、`core/keymaps.lua`（panel 快捷键）、`core/panel_ops.lua`（preview/activate/fold/action/layout）、`core/commands.lua`（commit/push/pull/goto_file/yank）。init.lua 仅保留 config + setup + 子模块挂载，对外 API 不变。减少 staged diff 时 treesitter 大文件解析闪烁
+
 - **修复 renamed 文件暂存报错**：从 Changes 区按 `-` 暂存 renamed 文件时，`collect()` 无条件将 rename 旧路径附加到 `git add` 参数，但旧文件已不存在导致 `fatal: pathspec did not match any files`。改为仅在 unstage 路径（`side == 'staged'`）时附加旧路径
 - **修复 Changes（unstaged）文件预览无代码着色**：`get_worktree_buffer` 通过 `bufadd` + `bufload` 加载 buffer 时，在 `vim.schedule_wrap` 异步回调上下文中 FileType autocmd 链未完整触发 treesitter；而 `create_rev_buffer`（staged 路径）显式调用了 `vim.treesitter.start` 所以不受影响。新增 `ensure_buf_highlighting` 在 `attach_single` 和 `attach_dual` 统一兜底 filetype 检测 + treesitter attach
 - 修复 `p` (push) 成功后，左侧面板未自动刷新导致未推送 commit 数量没更新的问题
