@@ -18,24 +18,24 @@ local M = {}
 local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 
 ---@class VVGitBinaryConfig
----@field intercept boolean  拦截二进制文件：不在 nvim 打开 diff，改用系统默认程序（仅 _activate/_goto_file；_preview 静默跳过）
----@field extensions table<string, boolean>  视为二进制的扩展名集合（小写 key）
+---@field intercept boolean  拦截二进制文件：不在 nvim 打开 diff，改用系统默认程序（仅 _activate/_goto_file；_preview 静默跳过） @default true
+---@field extensions table<string, boolean>  视为二进制的扩展名集合（小写 key） @default { png = true, jpg = true, jpeg = true, ... }
 
 ---@class VVGitConfig
----@field width integer
----@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移
----@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用
----@field fold_unchanged boolean  -- diff 视图默认折叠未改动代码
----@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X
----@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l
----@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡）
----@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用
----@field diff_ratio integer[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6
----@field diff_nowrap boolean  -- diff 视图中强制关闭 wrap（默认 true）；wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制（neovim/neovim#29518、sindrets/diffview.nvim#198）
----@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效
+---@field width integer @default 30
+---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
+---@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用 @default '<leader>b'
+---@field fold_unchanged boolean  -- diff 视图默认折叠未改动代码 @default true
+---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X @default ' '
+---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l @default true
+---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡） @default 10000
+---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用 @default 'toggle_stage'
+---@field diff_ratio integer[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6 @default { 5, 5 }
+---@field diff_nowrap boolean  -- diff 视图中强制关闭 wrap（默认 true）；wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制（neovim/neovim#29518、sindrets/diffview.nvim#198） @default true
+---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效 @default nil
 ---@field binary VVGitBinaryConfig
----@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'）
----@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行（默认 true）
+---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'） @default '<Tab>'
+---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行（默认 true） @default false
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -43,6 +43,7 @@ local defaults = {
   keymap_select = '<Tab>',
   select_move_down = false,
   fold_unchanged = true,
+  diff_ratio = { 5, 5 },
   diff_fill = ' ',
   preview = true,
   inline_diff_max_lines = 10000,
@@ -95,6 +96,8 @@ function M.setup(opts)
   ucmd('VVGitToggle',       function() M.toggle() end)
   ucmd('VVGitTogglePanel',  function() M.toggle_panel() end)
   ucmd('VVGitRefresh',      function() M.refresh() end)
+  ucmd('VVGitCompare',      function() M.open() M._compare_pick() end)
+  ucmd('VVGitCommitShow',   function() M.open() M._commit_show_pick() end)
 
   if M._config.keymap_toggle_panel then
     vim.keymap.set('n', M._config.keymap_toggle_panel, function() M.toggle_panel() end, {
