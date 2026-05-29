@@ -120,7 +120,7 @@ function L.install(state, M)
       M._action(rc_action)
     end,                                                            rc_action)
 
-    for _, key in ipairs({ '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
+    for _, key in ipairs({ '<LeftDrag>', '<2-LeftMouse>', '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
       vim.keymap.set({ 'n', 'x' }, key, '<Nop>', { buffer = buf, silent = true })
     end
     vim.keymap.set('x', '<RightMouse>', '<Esc>', { buffer = buf, silent = true })
