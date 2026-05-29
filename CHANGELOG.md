@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Section 折叠**：`Staged Changes` / `Changes` / `Merge Conflicts` 标题行现在带折叠箭头，光标在标题上时 `<CR>`/`o`/`l` 切换展开/折叠、`h` 直接折叠、单击（`<LeftRelease>`）也可切换；折叠后只保留标题行，文件列表隐藏。折叠状态按 section 独立记录（`state.section_folds`），折叠/展开后光标固定在标题行不跳走
+
 - **查看 commit diff**（`gc`）：选分支 → 选 commit，展示该 commit 本身引入的变更（`commit^..commit`），即这次提交改了什么。初始 commit（无父节点）自动用 empty-tree 兜底。
 
 - **与 HEAD 比较**（`H`）：选分支 → 选 commit，展示该 commit 与当前 HEAD 之间的差异（`commit..HEAD`），即"从那时到现在改了什么"。
@@ -27,7 +29,7 @@
 - **鼠标操作**：单击（`<LeftRelease>`）展开/收起目录；右键（`<RightMouse>` + `getmousepos()`）执行可配置 action（默认 `toggle_stage`），屏蔽右键 visual 选区（含双击/三击）。配置项 `right_click`（`string|false`）
 - **鼠标 visual 屏蔽**：屏蔽 `<LeftDrag>`（左键拖拽）和 `<2-LeftMouse>`（双击左键），防止鼠标操作触发 visual 选区
 - **j/k 循环导航**：`j`/`k`/`<C-n>`/`<C-p>` 在可交互行间跳转，到边缘自动循环回绕，跳过空行和非交互行
-- **默认光标在 Changes**：初次渲染时光标优先定位到 Changes（unstaged）区域的第一个文件，而非 Staged Changes
+- **默认光标在 Changes**：初次渲染时光标优先定位到 Changes（unstaged）区域的第一个文件，而非 Staged Changes；当前文件同时存在于 Staged 与 Changes 时，也优先落在 Changes 一侧
 - Added `<Esc>` mapping to close the panel and diff view.
 - **窄终端单栏 fallback**：窗口列数 < `single_col_threshold` 时不再拒绝打开 / 关闭 tab，自动降级为「panel + 单栏 b 视图」，列数恢复后自动升回 dual diff
 - **单栏 inline diff 高亮**：单栏模式下用 `vim.diff()` 在 b_buf 上叠 extmark，新增/修改行整行染色 + 删除行通过 `virt_lines` 在原位上方显示，覆盖 staged 和 unstaged

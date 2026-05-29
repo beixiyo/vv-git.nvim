@@ -56,7 +56,10 @@ function L.attach(M)
   M._activate = State.guarded(function(state, expand_only)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
-    if id.section_header then return end
+    if id.section_header then
+      M._toggle_fold()
+      return
+    end
     local node = id.node
     if not node then return end
     if node.is_dir then
@@ -83,7 +86,19 @@ function L.attach(M)
 
   M._toggle_fold = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
-    if not id or not id.node or not id.node.is_dir then return end
+    if not id then return end
+
+    -- section 标题行：折叠/展开整个 section
+    if id.section_header then
+      state.section_folds = state.section_folds or {}
+      local sid = id.section_header
+      state.section_folds[sid] = not state.section_folds[sid] or nil
+      state._section_hint = sid
+      LeftRender.render(state)
+      return
+    end
+
+    if not id.node or not id.node.is_dir then return end
     local fold_key = (id.section or '') .. ':' .. id.node.relpath
     state.folds[fold_key] = not state.folds[fold_key] or nil
     state.cur_path = id.node.relpath
@@ -93,7 +108,18 @@ function L.attach(M)
 
   M._collapse = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
-    if not id or not id.node then return end
+    if not id then return end
+
+    -- section 标题行：直接折叠该 section
+    if id.section_header then
+      state.section_folds = state.section_folds or {}
+      state.section_folds[id.section_header] = true
+      state._section_hint = id.section_header
+      LeftRender.render(state)
+      return
+    end
+
+    if not id.node then return end
     local section = id.section or ''
     local fold_key
     if id.node.is_dir and not state.folds[section .. ':' .. id.node.relpath] then

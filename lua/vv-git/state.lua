@@ -7,7 +7,8 @@
 -- state.git_root  = 当前仓库根绝对路径
 -- state.index     = vv-utils.git.index() 返回的 { status_map, is_ignored }
 -- state.tree      = 变更树：{ staged, unstaged, conflicts }
--- state.folds     = { [relpath] = true }  被折叠的文件夹集合
+-- state.folds         = { ['section:relpath'] = true }  被折叠的文件夹集合
+-- state.section_folds = { [section_id] = true }  被折叠的 section（staged/unstaged/conflicts）
 -- state.selection = { ['section:relpath'] = true }  多选集合（仅文件节点）
 -- state.cur_path  = 当前选中文件相对路径
 
@@ -31,6 +32,7 @@ function M.get()
       index = nil,
       tree = nil,
       folds = {},
+      section_folds = {},
       selection = {},
       cur_path = nil,
     }

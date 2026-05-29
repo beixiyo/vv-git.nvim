@@ -148,6 +148,7 @@ function M.build(state)
 
   local tree = state.tree
   local folds = state.folds or {}
+  local section_folds = state.section_folds or {}
 
   ---@param section_id 'staged'|'unstaged'|'conflicts'
   ---@param title string
@@ -155,25 +156,42 @@ function M.build(state)
   local function render_section(section_id, title, side_root)
     if Tree.empty(side_root) then return end
 
+    local collapsed = section_folds[section_id] == true
+
     local count = Tree.count_files(side_root)
-    local header = string.format('  %s (%d)', title, count)
+    -- 行首箭头占位（与文件夹行的 arrow_block 同宽，2 cols），点击/回车可折叠整个 section
+    local arrow_raw = collapsed and ARROW_CLOSE or ARROW_OPEN
+    local arrow_block = pad_to_cols(arrow_raw, ARROW_COLS)
+    local body = string.format('%s (%d)', title, count)
+    local header = arrow_block .. body
     lines[#lines + 1] = header
     local row = #lines - 1
-    
+
     local title_hl = 'VVGitPanelSection'
     if section_id == 'staged' then
       title_hl = 'VVGitPanelStagedDir'
     end
 
+    local title_col = #arrow_block
     extmarks[#extmarks + 1] = {
       row = row, col = 0,
-      opts = { end_col = 2 + #title, hl_group = title_hl },
+      opts = { end_col = #arrow_raw, hl_group = 'VVGitPanelIndent' },
     }
     extmarks[#extmarks + 1] = {
-      row = row, col = 2 + #title + 1,
+      row = row, col = title_col,
+      opts = { end_col = title_col + #title, hl_group = title_hl },
+    }
+    extmarks[#extmarks + 1] = {
+      row = row, col = title_col + #title + 1,
       opts = { end_col = #header, hl_group = 'VVGitPanelSectionCount' },
     }
     id_by_line[#lines] = { section_header = section_id }
+
+    -- section 折叠：只保留标题行，跳过文件列表
+    if collapsed then
+      push_blank()
+      return
+    end
 
     -- fold key 加 section 前缀，避免 staged/unstaged 同名目录共享折叠状态
     local scoped_folds = {}
@@ -323,6 +341,19 @@ function M.render(state)
   -- （初次渲染时光标可能在 header，跳到第一个文件行更合理）
   local win = state.panel.win
   if win and vim.api.nvim_win_is_valid(win) then
+    -- section 折叠/展开后：把光标固定在该 section 标题行，避免跳到别处
+    local sh = state._section_hint
+    if sh then
+      state._section_hint = nil
+      for lnum = 1, #lines do
+        local id = id_by_line[lnum]
+        if id and id.section_header == sh then
+          pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
+          return
+        end
+      end
+    end
+
     -- 动作触发的渲染：在原 section 内顺势下移，避免跨 section 跳动；
     -- 原 section 已无节点时保持原行号（不拉回 cur_path 已移动到的位置）
     local hint = state._action_hint
@@ -355,11 +386,13 @@ function M.render(state)
           end
         end
       end
-      -- fallback：忽略 section
-      for lnum, id in pairs(id_by_line) do
-        if id.node and id.node.relpath == cur_path then
-          pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
-          return
+      -- fallback：同名文件可能同时出现在 staged 与 unstaged，按 Changes 优先
+      for _, prefer in ipairs({ 'unstaged', 'staged', 'conflicts' }) do
+        for lnum, id in pairs(id_by_line) do
+          if id.node and id.node.relpath == cur_path and id.section == prefer then
+            pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
+            return
+          end
         end
       end
     end

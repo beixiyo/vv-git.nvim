@@ -107,7 +107,7 @@ function L.install(state, M)
   map('l',             function() M._activate(true) end,           'expand')
   map('<LeftRelease>', function()
     local id = L.id_under_cursor(state)
-    if id and id.node and id.node.is_dir then M._toggle_fold() end
+    if id and (id.section_header or (id.node and id.node.is_dir)) then M._toggle_fold() end
   end,                                                              'click_toggle')
 
   if M._config.right_click then
