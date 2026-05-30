@@ -63,6 +63,7 @@
 
 ### Refactored
 
+- inline diff / resize / discard-untracked 改用 vv-utils（timer.debounce + fs.delete），移除手搓 uv timer 与逐类型删除分支
 - **init.lua 拆分为 4 个子模块**（872 → 147 行）：`core/lifecycle.lua`（open/close/toggle）、`core/keymaps.lua`（panel 快捷键）、`core/panel_ops.lua`（preview/activate/fold/action/layout）、`core/commands.lua`（commit/push/pull/goto_file/yank）。init.lua 仅保留 config + setup + 子模块挂载，对外 API 不变。减少 staged diff 时 treesitter 大文件解析闪烁
 
 - **修复 renamed 文件暂存报错**：从 Changes 区按 `-` 暂存 renamed 文件时，`collect()` 无条件将 rename 旧路径附加到 `git add` 参数，但旧文件已不存在导致 `fatal: pathspec did not match any files`。改为仅在 unstage 路径（`side == 'staged'`）时附加旧路径

@@ -204,15 +204,13 @@ function L.attach(M)
     RightView.show(state, view.node, view.section, want_single)
   end
 
-  M._apply_layout = State.guarded(function(state)
-    if state._resize_timer then pcall(state._resize_timer.close, state._resize_timer) end
-    state._resize_timer = vim.uv.new_timer()
-    if not state._resize_timer then do_apply_layout(state); return end
-    state._resize_timer:start(50, 0, vim.schedule_wrap(function()
-      if state._resize_timer then pcall(state._resize_timer.close, state._resize_timer) end
-      state._resize_timer = nil
-      if State.has() then do_apply_layout(State.get()) end
-    end))
+  -- resize 去抖单例：L.attach 仅初始化时调一次，常驻一个 uv timer
+  local apply_layout_debounced = require('vv-utils.timer').debounce(function()
+    if State.has() then do_apply_layout(State.get()) end
+  end, 50)
+
+  M._apply_layout = State.guarded(function()
+    apply_layout_debounced()
   end)
 end
 

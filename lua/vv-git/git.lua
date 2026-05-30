@@ -2,6 +2,7 @@
 -- 异步优先，失败统一通过 notify 提示
 
 local utils_git = require('vv-utils.git')
+local Fs = require('vv-utils.fs')
 
 local M = {}
 
@@ -101,17 +102,10 @@ function M.discard_untracked(root, paths, cb)
   local errors = {}
   for _, p in ipairs(paths) do
     local abspath = root .. '/' .. p
-    local stat = vim.uv.fs_stat(abspath)
-    if stat then
-      local ok, err
-      if stat.type == 'directory' then
-        ok, err = pcall(vim.fn.delete, abspath, 'rf')
-      else
-        ok, err = os.remove(abspath)
-      end
-      if not ok then
-        errors[#errors + 1] = p .. ': ' .. (err or 'unknown error')
-      end
+    -- Fs.delete 递归处理目录/文件，路径已不存在时静默成功，失败抛错 → pcall 收集
+    local ok, err = pcall(Fs.delete, abspath)
+    if not ok then
+      errors[#errors + 1] = p .. ': ' .. tostring(err)
     end
   end
   if #errors > 0 then

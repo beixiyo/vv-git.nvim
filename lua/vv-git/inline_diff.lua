@@ -380,27 +380,22 @@ end
 function M.attach_live(b_buf, a_lines, max_lines, opts)
   local first = M.apply(b_buf, a_lines, api.nvim_buf_get_lines(b_buf, 0, -1, false), max_lines, opts)
 
-  local timer
+  local recompute, cancel = require('vv-utils.timer').debounce(function()
+    if api.nvim_buf_is_valid(b_buf) then
+      M.apply(b_buf, a_lines, api.nvim_buf_get_lines(b_buf, 0, -1, false), max_lines, opts)
+    end
+  end, 200)
+
   local aug = api.nvim_create_augroup('VVGitInlineDiffLive_' .. b_buf, { clear = true })
   api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI' }, {
     group = aug,
     buffer = b_buf,
-    callback = function()
-      if timer then pcall(timer.close, timer) end
-      timer = vim.uv.new_timer()
-      if not timer then return end
-      timer:start(200, 0, vim.schedule_wrap(function()
-        if timer then pcall(timer.close, timer); timer = nil end
-        if api.nvim_buf_is_valid(b_buf) then
-          M.apply(b_buf, a_lines, api.nvim_buf_get_lines(b_buf, 0, -1, false), max_lines, opts)
-        end
-      end))
-    end,
+    callback = function() recompute() end,
   })
 
   local cleanup = function()
     pcall(api.nvim_del_augroup_by_id, aug)
-    if timer then pcall(timer.close, timer); timer = nil end
+    cancel()
     M.clear(b_buf)
     -- 把 ufo 重新挂到 b_buf 上：它会把 foldmethod 重新接管为 manual + 走 lsp/treesitter
     -- provider 重算 fold ranges，让用户离开 vv-git 后这个 worktree buffer 恢复正常 fold
