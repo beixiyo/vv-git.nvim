@@ -144,17 +144,27 @@ function L.attach(M)
     else
       state.selection[key] = true
     end
+
+    -- 切换选中不改变行布局：先记下当前行，渲染后按原行恢复。
+    -- 不能依赖 render 内部按 cur_path 的恢复——cur_path 仅由 CursorMoved
+    -- 的 _preview 同步，且有多处提前 return（preview 关闭 / 二进制 / 焦点不在 panel），
+    -- 可能滞后于光标实际行，导致 render 把光标拉到别处（表现为「跳到上面」）。
+    local win = state.panel and state.panel.win
+    local lnum = (win and vim.api.nvim_win_is_valid(win))
+        and vim.api.nvim_win_get_cursor(win)[1] or nil
+
+    -- 同步 cur_path/cur_section，让 render 的恢复逻辑与当前行一致（双保险）
+    state.cur_path = id.node.relpath
+    state.cur_section = id.section
+
     LeftRender.render(state)
 
-    if M._config.select_move_down ~= false then
-      local win = state.panel and state.panel.win
-      if win and vim.api.nvim_win_is_valid(win) then
-        local last = vim.api.nvim_buf_line_count(state.panel.buf)
-        local lnum = vim.api.nvim_win_get_cursor(win)[1]
-        if lnum < last then
-          vim.api.nvim_win_set_cursor(win, { lnum + 1, 0 })
-        end
-      end
+    if lnum and win and vim.api.nvim_win_is_valid(win) then
+      local last = vim.api.nvim_buf_line_count(state.panel.buf)
+      local target = (M._config.select_move_down ~= false and lnum < last)
+          and lnum + 1
+          or lnum
+      pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
     end
   end)
 
