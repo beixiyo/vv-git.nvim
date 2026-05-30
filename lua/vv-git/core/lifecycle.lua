@@ -8,17 +8,13 @@ local Loader = require('vv-git.loader')
 local Guard = require('vv-git.guard')
 local Keymaps = require('vv-git.core.keymaps')
 local Fs = require('vv-utils.fs')
+local UGit = require('vv-utils.git')
 
 local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 
 ---@return string? git_root
 local function detect_git_root()
-  local cwd = vim.fn.getcwd()
-  local result = vim.fn.systemlist({ 'git', '-C', cwd, 'rev-parse', '--show-toplevel' })
-  if vim.v.shell_error ~= 0 or not result[1] or result[1] == '' then
-    return nil
-  end
-  return vim.fs.normalize(result[1])
+  return UGit.root()
 end
 
 ---@param root string
@@ -28,7 +24,7 @@ local function get_current_relpath(root)
   local name = vim.api.nvim_buf_get_name(buf)
   if name == "" or not root then return nil end
   name = vim.fs.normalize(name)
-  if name:sub(1, #root) == root then
+  if name:sub(1, #root + 1) == root .. '/' then
     local rel = name:sub(#root + 2)
     if rel ~= "" then return rel end
   end

@@ -37,7 +37,7 @@ local function collect(state, id)
 
       if old_abs then
         local old_rel
-        if old_abs:sub(1, #state.git_root) == state.git_root then
+        if old_abs:sub(1, #state.git_root + 1) == state.git_root .. '/' then
           old_rel = old_abs:sub(prefix_len)
         else
           old_rel = old_abs
@@ -222,7 +222,7 @@ function M.toggle_stage_selection(state, items)
       local abs = state.git_root .. '/' .. p
       local old_abs = state.index.rename_map[abs]
       if old_abs then
-        local old_rel = old_abs:sub(1, #state.git_root) == state.git_root
+        local old_rel = old_abs:sub(1, #state.git_root + 1) == state.git_root .. '/'
             and old_abs:sub(prefix_len) or old_abs
         extras[#extras + 1] = old_rel
       end

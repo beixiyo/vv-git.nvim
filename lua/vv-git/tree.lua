@@ -87,7 +87,7 @@ function M.build(status_map, git_root)
   for abspath, xy in pairs(status_map) do
     -- abspath 形如 /repo/src/foo.ts，取 src/foo.ts
     local relpath
-    if abspath:sub(1, #git_root) == git_root then
+    if abspath:sub(1, #git_root + 1) == git_root .. '/' then
       relpath = abspath:sub(prefix_len)
     else
       relpath = abspath

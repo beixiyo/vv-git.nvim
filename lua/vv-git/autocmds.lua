@@ -22,7 +22,7 @@ function M.setup(handlers)
       local name = vim.api.nvim_buf_get_name(args.buf)
       if name == '' then return end
       name = vim.fs.normalize(name)
-      if name:sub(1, #state.git_root) ~= state.git_root then return end
+      if name ~= state.git_root and name:sub(1, #state.git_root + 1) ~= state.git_root .. '/' then return end
       if state._refresh_scheduled then return end
       state._refresh_scheduled = true
       vim.schedule(function()

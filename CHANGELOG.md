@@ -59,10 +59,12 @@
 
 ### Fixed
 
+- relpath / BufWritePost 仓库归属判断补 '/' 边界，姊妹目录（如 proj2 vs proj）不再误判为仓内
 - **修复 diff 视图行号丢失**：`vim.wo[win].X = val` 等同于 `:set`（同时改全局默认），`hide_chrome` 给 panel 设 `number=false` 后全局默认被污染，后续所有新窗口继承 `false`。改用 `nvim_set_option_value(..., scope='local')` 只改目标窗口。同步修复 `view.lua` 全部 19 处 `{ win = win }` 调用、`panel.lua` 的 `diff/scrollbind/cursorbind` 设置
 
 ### Refactored
 
+- detect_git_root 改用 vv-utils.git.root
 - inline diff / resize / discard-untracked 改用 vv-utils（timer.debounce + fs.delete），移除手搓 uv timer 与逐类型删除分支
 - **init.lua 拆分为 4 个子模块**（872 → 147 行）：`core/lifecycle.lua`（open/close/toggle）、`core/keymaps.lua`（panel 快捷键）、`core/panel_ops.lua`（preview/activate/fold/action/layout）、`core/commands.lua`（commit/push/pull/goto_file/yank）。init.lua 仅保留 config + setup + 子模块挂载，对外 API 不变。减少 staged diff 时 treesitter 大文件解析闪烁
 
