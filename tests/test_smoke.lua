@@ -141,146 +141,36 @@ local function test_view_module_loads()
   assert_true(ok, 'vv-git.right.view loads without error')
 end
 
--- 测试 7: 源代码静态验证 — M.open 含终端宽度检查 + notify
--- 未加 guard 时用户在窄终端按 <leader>gd 会秒开秒关，体感「没反应」
-local function test_narrow_width_guard_source()
-  local this = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p')
-  local init_lua = vim.fn.fnamemodify(this, ':h:h') .. '/lua/vv-git/init.lua'
-  local src = table.concat(vim.fn.readfile(init_lua), '\n')
+-- 测试 7: 源代码静态验证 — 窄终端策略为「降级单栏」而非旧的「拒开 + Terminal too narrow」
+-- 现行设计：列数 < single_col_threshold 时 diff 视图降级为单栏（仅 b 侧，无 inline diff），
+-- ≥ 阈值时正常 dual diff，resize 时在 narrow↔wide 间自动迁移。本测试防回退到旧拒开设计。
+-- 注：旧版曾用「窄终端 = notify + close」，现已改回（重新实现的）单栏降级，故旧的
+-- "Terminal too narrow" / "Terminal shrunk below" 字串应不复存在。
+local function test_narrow_single_col_design()
+  local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
+  local pops_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/core/panel_ops.lua'), '\n')
 
-  -- M.open 函数体（function M.open() ... end 配对）
-  local open_fn = src:match('function M%.open%(%).-\nend\n')
-  assert_true(open_fn ~= nil, 'M.open 函数定义存在')
-  if open_fn then
-    assert_true(open_fn:find('vim%.o%.columns%s*<%s*min_cols') ~= nil
-      or open_fn:find('vim%.o%.columns%s*<%s*M%._config%.single_col_threshold') ~= nil,
-      'M.open: 含 vim.o.columns < 阈值 的宽度判断（窄终端提示防回归）')
-    assert_true(open_fn:find('Terminal too narrow') ~= nil,
-      'M.open: notify 消息含 "Terminal too narrow"（窄终端提示防回归）')
-    assert_true(open_fn:find('vim%.log%.levels%.WARN') ~= nil,
-      'M.open: 窄终端通知用 WARN 级别（窄终端提示防回归）')
-  end
+  assert_true(init_src:find('single_col_threshold') ~= nil,
+    'config 含 single_col_threshold 窄宽阈值（单栏降级设计）')
+  assert_true(pops_src:find('vim%.o%.columns%s*<%s*M%._config%.single_col_threshold') ~= nil,
+    'panel_ops.is_narrow 用 columns < single_col_threshold 判定窄宽')
+  assert_true(pops_src:find('RightView%.show%(.-is_narrow') ~= nil,
+    'RightView.show 接收 is_narrow（宽度驱动单/双栏，而非拒开）')
+  assert_true(init_src:find('Terminal too narrow') == nil,
+    '不再含旧「Terminal too narrow」拒开提示（已改单栏降级）')
 end
 
--- 测试 8: 运行时验证 — headless 默认 80 列（窄屏）下 VVGit 应：
---   1) 不创建新 tab（不打开插件）
---   2) 发出一条包含 "Terminal too narrow" 的 WARN 通知
-local function test_narrow_width_guard_runtime()
-  local ok_setup = pcall(require('vv-git').setup, {})
-  if not ok_setup then
-    log('SKIP: narrow width guard runtime needs full nvim env')
-    return
-  end
+-- 测试 8: 源代码静态验证 — resize 经 _apply_layout 在 narrow↔wide 间迁移，而非 notify + 关闭
+local function test_resize_single_col_migration()
+  local pops_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/core/panel_ops.lua'), '\n')
+  local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
 
-  local start_tabs = #vim.api.nvim_list_tabpages()
-  local start_state = require('vv-git.state').has()
-
-  -- 捕获 notify
-  local captured = {}
-  local orig_notify = vim.notify
-  vim.notify = function(msg, level) captured[#captured + 1] = { msg = msg, level = level } end
-
-  pcall(require('vv-git').open)
-
-  vim.notify = orig_notify
-
-  -- 窄屏下 state 应保持原样（通常为 false）
-  assert_true(require('vv-git.state').has() == start_state,
-    'narrow: State.has() 保持不变（窄终端提示防回归）')
-  assert_true(#vim.api.nvim_list_tabpages() == start_tabs,
-    'narrow: 没有新增 tab（窄终端提示防回归）')
-
-  -- 应捕获到一条含 "Terminal too narrow" 的 WARN 通知
-  local hit = false
-  for _, n in ipairs(captured) do
-    if type(n.msg) == 'string' and n.msg:find('Terminal too narrow', 1, true)
-        and n.level == vim.log.levels.WARN then
-      hit = true; break
-    end
-  end
-  assert_true(hit, 'narrow: 发出含 "Terminal too narrow" 的 WARN 通知（窄终端提示防回归）')
-end
-
--- 测试 9: 源代码静态验证 — _apply_layout 对窄化应执行 notify + 关闭
--- 之前的「单栏降级」代码与 WinClosed → ensure_invariant 交互会把插件误杀，
--- 现在统一策略为「窄终端 = 不支持 → notify + close」。防回退
-local function test_resize_to_narrow_source()
-  local this = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p')
-  local init_lua = vim.fn.fnamemodify(this, ':h:h') .. '/lua/vv-git/init.lua'
-  local src = table.concat(vim.fn.readfile(init_lua), '\n')
-
-  local apply = src:match('M%._apply_layout%s*=%s*State%.guarded%(function.-\nend%)')
-  assert_true(apply ~= nil, '_apply_layout 函数定义存在')
-  if apply then
-    assert_true(apply:find('Terminal shrunk below') ~= nil,
-      '_apply_layout: 窄化时发出 "Terminal shrunk below" 通知（resize 防回归）')
-    assert_true(apply:find('M%.close') ~= nil or apply:find('vim%.schedule'),
-      '_apply_layout: 窄化时调用 M.close / vim.schedule 关闭（resize 防回归）')
-    -- 不再存在旧的"单栏降级"代码（Panel.close_win + 保留 b_win）
-    assert_true(apply:find('_auto_hidden') == nil,
-      '_apply_layout: 已清理 _auto_hidden 旧降级逻辑（resize 防回归）')
-    assert_true(apply:find('Panel%.close_win') == nil,
-      '_apply_layout: 不再手动 Panel.close_win（由 M.close 统一处理）（resize 防回归）')
-    -- 去重 flag
-    assert_true(apply:find('_closing_narrow') ~= nil,
-      '_apply_layout: 使用 _closing_narrow flag 防 VimResized 连发导致多次 notify')
-  end
-end
-
--- 测试 10: 运行时验证 — 宽终端打开后拉窄应 notify + 关闭 + tabs-1
-local function test_resize_to_narrow_runtime()
-  local ok_setup = pcall(require('vv-git').setup, {})
-  if not ok_setup then
-    log('SKIP: resize runtime needs full nvim env')
-    return
-  end
-
-  -- 先设宽终端，确保能成功打开
-  local orig_cols = vim.o.columns
-  vim.o.columns = 200
-
-  -- 检查是否在 git repo
-  local cwd = vim.fn.getcwd()
-  vim.fn.systemlist({ 'git', '-C', cwd, 'rev-parse', '--show-toplevel' })
-  if vim.v.shell_error ~= 0 then
-    vim.o.columns = orig_cols
-    log('SKIP: not a git repo')
-    return
-  end
-
-  -- 捕获 notify
-  local captured = {}
-  local orig_notify = vim.notify
-  vim.notify = function(msg, level) captured[#captured + 1] = { msg = msg, level = level } end
-
-  -- 打开（宽终端，应成功）
-  pcall(require('vv-git').open)
-  local after_open_has = require('vv-git.state').has()
-  local after_open_tabs = #vim.api.nvim_list_tabpages()
-
-  -- 模拟窄化
-  vim.o.columns = 80
-  pcall(vim.cmd, 'doautocmd VimResized')
-  -- 给 vim.schedule 一个 tick 机会跑（headless 下 vim.wait 能驱动事件循环）
-  vim.wait(300, function() return not require('vv-git.state').has() end, 10)
-
-  vim.notify = orig_notify
-  vim.o.columns = orig_cols
-
-  assert_true(after_open_has, 'resize: 宽终端下先成功打开（前置条件）')
-  assert_true(not require('vv-git.state').has(),
-    'resize: 窄化后 State.has() == false（插件已关闭）（resize 防回归）')
-  assert_true(#vim.api.nvim_list_tabpages() < after_open_tabs,
-    'resize: 窄化后 tabs 数量减少（vv-git tab 已关）（resize 防回归）')
-
-  local hit = false
-  for _, n in ipairs(captured) do
-    if type(n.msg) == 'string' and n.msg:find('Terminal shrunk below', 1, true)
-        and n.level == vim.log.levels.WARN then
-      hit = true; break
-    end
-  end
-  assert_true(hit, 'resize: 发出含 "Terminal shrunk below" 的 WARN 通知（resize 防回归）')
+  assert_true(pops_src:find('M%._apply_layout%s*=') ~= nil,
+    '_apply_layout 定义存在（resize 布局迁移入口）')
+  assert_true(view_src:find('_apply_layout') ~= nil and view_src:find('narrow') ~= nil,
+    'view 层支持 _apply_layout 的 narrow↔wide 迁移（保留 b_win 配置）')
+  assert_true(pops_src:find('Terminal shrunk below') == nil,
+    '不再含旧「Terminal shrunk below」窄化关闭提示（已改单栏迁移）')
 end
 
 -- 执行所有测试
@@ -291,10 +181,8 @@ test_discard_untracked_dir()
 test_classify_untracked()
 test_insert_mode_blocked()
 test_view_module_loads()
-test_narrow_width_guard_source()
-test_narrow_width_guard_runtime()
-test_resize_to_narrow_source()
-test_resize_to_narrow_runtime()
+test_narrow_single_col_design()
+test_resize_single_col_migration()
 log('========== 测试完成 ==========')
 print(string.format('总计: %d 通过, %d 失败', _passed, _failed))
 if _failed > 0 then os.exit(1) end
