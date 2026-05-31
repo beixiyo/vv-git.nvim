@@ -98,6 +98,7 @@ function M.setup(opts)
   ucmd('VVGitRefresh',      function() M.refresh() end)
   ucmd('VVGitCompare',      function() M.open() M._compare_pick() end)
   ucmd('VVGitCommitShow',   function() M.open() M._commit_show_pick() end)
+  ucmd('VVGitShow',         function(o) M.show_commit(o.args) end, { nargs = 1 })
 
   if M._config.keymap_toggle_panel then
     vim.keymap.set('n', M._config.keymap_toggle_panel, function() M.toggle_panel() end, {
@@ -141,6 +142,31 @@ end
 
 ---@return table
 function M.config() return M._config end
+
+--- 打开面板并直接展示指定 commit 的 diff（commit^..commit，初始 commit 用 empty-tree）。
+--- 供外部集成调用（如 telescope git_log 选中 commit 后展示），跳过 vv-git 自己的 picker。
+---@param hash string
+---@param on_close? fun()  面板关闭（按 q）后回调，用于回到调用方 UI（如 resume telescope）
+function M.show_commit(hash, on_close)
+  if not hash or hash == '' then return end
+  M.open()
+  M._commit_show(hash)
+
+  if on_close then
+    -- 面板开在独立 tabpage，按 q → M.close → tabclose；挂一次性 WinClosed 在面板窗口上，
+    -- 关闭时回调（schedule 到 tab 关完、已切回原 tab 后再执行）。
+    local State = require('vv-git.state')
+    local s = State.has() and State.get() or nil
+    local win = s and s.panel and s.panel.win
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_create_autocmd('WinClosed', {
+        pattern = tostring(win),
+        once = true,
+        callback = function() vim.schedule(on_close) end,
+      })
+    end
+  end
+end
 
 -- 子模块往 M 上挂方法（open/close/toggle/_preview/_activate/_commit 等）
 require('vv-git.core.lifecycle').attach(M)

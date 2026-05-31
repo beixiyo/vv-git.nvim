@@ -46,6 +46,21 @@ function L.attach(M)
     end)
   end)
 
+  -- 展示指定 commit 的 diff（hash 由外部选好，跳过 open_picker）。供公开 M.show_commit / 外部集成（telescope git_log 等）用。
+  M._commit_show = State.guarded(function(state, hash)
+    if not state.git_root or not hash or hash == '' then return end
+    local Compare = require('vv-git.compare')
+    local short = hash:sub(1, 7)
+    local subject = vim.fn.system({ 'git', '-C', state.git_root, 'log', '-1', '--format=%s', hash })
+    subject = vim.v.shell_error == 0 and vim.trim(subject) or ''
+    local label = subject ~= '' and (short .. '  ' .. subject) or short
+    Compare.start_commit(state, hash, short, label, function()
+      state.selection = {}
+      RightView.close(state)
+      LeftRender.render(state)
+    end)
+  end)
+
   M._commit = State.guarded(function(state)
     if not state.git_root then return end
     Git.has_staged(state.git_root, function(has)
