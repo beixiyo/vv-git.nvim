@@ -413,7 +413,8 @@ end
 
 -- ── hunk 级别冲突解决 ──────────────────────────────────────────────────────
 
--- 解析 buf 中所有冲突 hunk，返回 (hunks, lines)；hunks = {{start1, sep1, finish1}, ...}（1-indexed）
+-- 解析 buf 中所有冲突 hunk，返回 (hunks, lines)；hunks = {{start1, sep1, finish1, base1?}, ...}（1-indexed）
+-- base1：diff3/zdiff3 风格下 `||||||| base` 标记行；普通风格无此行时为 nil
 local function find_conflict_hunks(buf)
   local hunks = {}
   local lines = api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -422,7 +423,14 @@ local function find_conflict_hunks(buf)
     if lines[i]:match('^<<<<<<< ') or lines[i] == '<<<<<<<' then
       local h = { start1 = i }
       i = i + 1
-      while i <= #lines and not lines[i]:match('^=======') do i = i + 1 end
+      -- 扫到 ======= 前，若遇到 ||||||| 基线标记（diff3/zdiff3）记下 base1：
+      -- 该行起到 ======= 前都是 base 段，accept_ours 时要排除
+      while i <= #lines and not lines[i]:match('^=======') do
+        if not h.base1 and (lines[i]:match('^||||||| ') or lines[i] == '|||||||') then
+          h.base1 = i
+        end
+        i = i + 1
+      end
       if i > #lines then break end
       h.sep1 = i; i = i + 1
       while i <= #lines
@@ -457,7 +465,10 @@ end
 local function resolve_hunk_in_buf(c_buf, hunk, side, lines)
   local new_lines = {}
   if side == 'ours' then
-    for i = hunk.start1 + 1, hunk.sep1 - 1 do
+    -- diff3/zdiff3 有 base 段时，ours 仅取 <<<<<<< 到 ||||||| 之间，避免把
+    -- base 标记行及其内容也算进 ours；无 base 标记时仍取到 ======= 前
+    local ours_end = (hunk.base1 or hunk.sep1) - 1
+    for i = hunk.start1 + 1, ours_end do
       new_lines[#new_lines + 1] = lines[i]
     end
   else
@@ -567,6 +578,10 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
       end
     end
     if not (api.nvim_win_is_valid(a_win) and api.nvim_win_is_valid(b_win)) then return end
+    -- a_buf/b_buf 是 bufhidden=wipe scratch，快速切文件时 win 仍 valid 但其 buf
+    -- 可能已被换走/wipe（旧 schedule 回调晚于新 set_buf 执行）→ 校验后再读，
+    -- 与下方 c_buf 分支的 nvim_buf_is_valid 写法对齐，避免 "Invalid buffer id"
+    if not (api.nvim_buf_is_valid(a_buf) and api.nvim_buf_is_valid(b_buf)) then return end
     local b_lines = api.nvim_buf_get_lines(b_buf, 0, -1, false)
     local a_lines = api.nvim_buf_get_lines(a_buf, 0, -1, false)
     local first = InlineDiff.first_hunk_b_line(a_lines, b_lines)
@@ -719,9 +734,11 @@ function M.show(state, node, section, force_single)
     end
 
     -- 冲突单栏：winbar 显示 theirs（b 侧）信息；切离冲突文件则清掉
+    -- 注意：窄屏单栏的 b_buf 是纯净 :3:（theirs）scratch，既无冲突标记也无
+    -- view.c_buf，hunk 级 accept 无从下手 → 不装 < / > 死键误导用户，改由左
+    -- panel 的 accept_ours/accept_theirs（整文件级）解决冲突
     if section == 'conflicts' then
       set_conflict_winbar(b_win, state, 'MERGE_HEAD')
-      install_conflict_accept_keymaps(b_buf, state)
     else
       clear_winbar(b_win)
     end

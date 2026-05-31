@@ -63,6 +63,17 @@
 - **修复 diff 视图行号丢失**：`vim.wo[win].X = val` 等同于 `:set`（同时改全局默认），`hide_chrome` 给 panel 设 `number=false` 后全局默认被污染，后续所有新窗口继承 `false`。改用 `nvim_set_option_value(..., scope='local')` 只改目标窗口。同步修复 `view.lua` 全部 19 处 `{ win = win }` 调用、`panel.lua` 的 `diff/scrollbind/cursorbind` 设置
 - git index 加载失败的 fallback tree 复用 `Tree.new_root()`（带 is_dir），count_files 不再把空根当 1 个文件、commit hint 不再误显 "Commit 1 staged"
 - discard 某文件失败时回调链不再中断，untracked 删除与面板刷新照常进行，UI 不再停留在与磁盘不一致的陈旧状态
+- 窄终端单栏冲突视图不再绑定无效的 `<` / `>` 接受键（按了没反应误导用户），冲突改用左栏整文件级 accept ours/theirs 解决
+- diff3/zdiff3 冲突风格下 `<` 接受 ours 不再把 `|||||||` 基线标记及 base 段内容一并写入，只保留 ours 内容
+- 极快切换文件时读取已失效的 diff buffer 不再抛 `Invalid buffer id`（schedule_diff_sync 补 buf 有效性校验，与 c_buf 分支对齐）
+- 反复 open/close 面板后 WinResized 监听不再线性累积、每次缩放重复触发，始终只保留一个
+- gitsigns 暂存/重置后若同时触发保存，右侧 diff 不再偶发漏刷（reshow 不再被 BufWritePost 的去抖吞掉）
+- 比较模式顶部 Compare 标题行点击/回车不再触发无效折叠，也不再悄悄污染 `section_folds` 状态（其下目录折叠不受影响）
+- commit 浮窗提交进行中连按两次 `<C-s>` 不再发起两次提交（第二次报 nothing to commit），并支持外部关窗后正常重开
+- 对比/历史版本视图按 `gf` 跳转工作区文件时，历史版本行数多于当前文件不再定位失败、光标停在第 1 行（clamp 行号）
+- 对比/查看 commit 时含中文等非 ASCII 文件名的差异现在能正常显示双栏 diff（diff_names 改用 `-z` 按 NUL 解析）
+- 帮助浮窗（`g?`）的 `l` 展开、点击折叠、`<C-e>`/`<C-y>` 滚动 diff 归入 Navigate/View 分类并显示图标，不再落入末尾 Other
+- 程序化调用或 state 残留陈旧 panel buffer 时打开帮助浮窗不再因无效 buffer 报错，守卫会安全退出
 
 ### Refactored
 

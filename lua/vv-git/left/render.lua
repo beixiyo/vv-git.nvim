@@ -249,7 +249,9 @@ function M.build(state)
       row = hrow, col = 13,
       opts = { end_col = #header, hl_group = 'Comment' },
     }
-    id_by_line[#lines] = { section_header = 'compare' }
+    -- 不给 compare header 赋 section_header：compare 渲染从不读 section_folds['compare']，
+    -- 折叠点击对它无效。留空 id 让 _toggle_fold/_collapse/_activate 在该行直接 return，
+    -- 避免死写 section_folds['compare']（其下目录折叠走 folds 表 'compare:' 前缀，不受影响）
 
     local compare_root = Tree.build_compare(cmp.files)
     local scoped_folds = {}

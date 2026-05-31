@@ -45,6 +45,10 @@ local function ensure_unfolded(state, relpath)
   end
 end
 
+-- 记录本模块注册的 WinResized autocmd id：每次 open 前先删旧的再注册，
+-- 避免跨 open/close 循环线性累积（State.clear 不持有该 id，故存模块级 upvalue）
+local resize_autocmd_id = nil
+
 local L = {}
 
 ---@param M table
@@ -99,7 +103,12 @@ function L.attach(M)
     }
     state._panel_width = M._config.width
 
-    vim.api.nvim_create_autocmd('WinResized', {
+    -- 先注销上一轮残留的注册，保证全局至多一个 WinResized 监听
+    if resize_autocmd_id then
+      pcall(vim.api.nvim_del_autocmd, resize_autocmd_id)
+      resize_autocmd_id = nil
+    end
+    resize_autocmd_id = vim.api.nvim_create_autocmd('WinResized', {
       callback = function()
         if not State.has() then return true end
         local s = State.get()

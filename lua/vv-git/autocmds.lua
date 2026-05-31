@@ -23,11 +23,17 @@ function M.setup(handlers)
       if name == '' then return end
       name = vim.fs.normalize(name)
       if name ~= state.git_root and name:sub(1, #state.git_root + 1) ~= state.git_root .. '/' then return end
+      -- 与 GitSignsChanged 共用同一去抖：若两者同 tick 到达，只调度一次 on_refresh()。
+      -- 但 reshow 需求要 OR 合并到 _refresh_need_reshow——否则先到的 BufWritePost
+      -- 会让随后的 GitSignsChanged 短路，丢掉它的 on_reshow_view()。
       if state._refresh_scheduled then return end
       state._refresh_scheduled = true
       vim.schedule(function()
         state._refresh_scheduled = false
+        local need_reshow = state._refresh_need_reshow
+        state._refresh_need_reshow = false
         handlers.on_refresh()
+        if need_reshow then handlers.on_reshow_view() end
       end)
     end),
   })
@@ -39,12 +45,17 @@ function M.setup(handlers)
     pattern = 'GitSignsChanged',
     callback = State.guarded(function(state)
       if not state.git_root then return end
+      -- 标记本轮去抖需要 reshow（即便 BufWritePost 先置位了 _refresh_scheduled，
+      -- 这里的 need_reshow 也会被合并进同一个 schedule 闭包，不会被吞）
+      state._refresh_need_reshow = true
       if state._refresh_scheduled then return end
       state._refresh_scheduled = true
       vim.schedule(function()
         state._refresh_scheduled = false
+        local need_reshow = state._refresh_need_reshow
+        state._refresh_need_reshow = false
         handlers.on_refresh()
-        handlers.on_reshow_view()
+        if need_reshow then handlers.on_reshow_view() end
       end)
     end),
   })

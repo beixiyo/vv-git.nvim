@@ -15,13 +15,16 @@ local cur = nil -- { buf, win }
 local function close()
   vim.cmd('stopinsert')
   if not cur then return end
-  if cur.win and api.nvim_win_is_valid(cur.win) then
-    pcall(api.nvim_win_close, cur.win, true)
-  end
-  if cur.buf and api.nvim_buf_is_valid(cur.buf) then
-    pcall(api.nvim_buf_delete, cur.buf, { force = true })
-  end
+  -- 先快照再清 cur：关窗会同步触发 WinClosed/BufWipeout autocmd 回调，
+  -- 其中也会把 cur 置 nil，若沿用 cur.* 取值会在中途变成索引 nil
+  local win, buf = cur.win, cur.buf
   cur = nil
+  if win and api.nvim_win_is_valid(win) then
+    pcall(api.nvim_win_close, win, true)
+  end
+  if buf and api.nvim_buf_is_valid(buf) then
+    pcall(api.nvim_buf_delete, buf, { force = true })
+  end
 end
 
 ---@param git_root string
@@ -30,6 +33,8 @@ end
 local function submit(git_root, commit_all, on_success)
   vim.cmd('stopinsert')
   if not cur or not cur.buf or not api.nvim_buf_is_valid(cur.buf) then return end
+  -- 防重入：Git.commit 是异步的，提交进行中再按 <C-s> 会派生第二个 commit 进程
+  if cur.submitting then return end
   local lines = api.nvim_buf_get_lines(cur.buf, 0, -1, false)
   local msg = table.concat(lines, '\n')
   msg = msg:gsub('^%s+', ''):gsub('%s+$', '')
@@ -37,14 +42,16 @@ local function submit(git_root, commit_all, on_success)
     vim.notify('[vv-git] Commit message cannot be empty', vim.log.levels.WARN)
     return
   end
+  cur.submitting = true
 
   local function do_commit()
     Git.commit(git_root, msg, function(ok, err)
       if not ok then
+        if cur then cur.submitting = false end
         vim.notify('[vv-git] Commit failed: ' .. (err or ''), vim.log.levels.ERROR)
         return
       end
-      close()
+      close() -- 清 cur，无需再复位 submitting
       vim.notify('[vv-git] Commit succeeded', vim.log.levels.INFO)
       if on_success then on_success() end
     end)
@@ -53,6 +60,7 @@ local function submit(git_root, commit_all, on_success)
   if commit_all then
     Git.stage_all(git_root, function(ok, err)
       if not ok then
+        if cur then cur.submitting = false end
         vim.notify('[vv-git] git add -A failed: ' .. (err or ''), vim.log.levels.ERROR); return
       end
       do_commit()
@@ -103,6 +111,15 @@ function M.open(opts)
   vim.api.nvim_set_option_value('relativenumber', false, { win = win })
 
   cur = { buf = buf, win = win }
+
+  -- 浮窗被外部关闭（非 close()）时复位 cur，避免残留导致下次校验误判
+  api.nvim_create_autocmd({ 'WinClosed', 'BufWipeout' }, {
+    buffer = buf,
+    once = true,
+    callback = function()
+      if cur and cur.buf == buf then cur = nil end
+    end,
+  })
 
   if not opts.has_staged then
     -- 使用虚拟文本做占位提示

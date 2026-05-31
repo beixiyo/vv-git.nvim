@@ -263,29 +263,44 @@ function M.log(root, ref, n, cb)
   )
 end
 
--- 获取两个 ref 之间的变更文件列表（git diff --name-status from..to）
+-- 获取两个 ref 之间的变更文件列表（git diff --name-status -z from..to）
+-- -z 用 NUL 分隔字段：避免路径含 tab/换行，且 quotePath 不再转义非 ASCII（保持裸 UTF-8）
+-- 字段序列：status\0 path\0；rename/copy 为 status\0 old\0 new\0（三个连续 NUL 字段）
 ---@param root string
 ---@param from_ref string
 ---@param to_ref string
 ---@param cb fun(files: {status:string, path:string, old_path?:string}[]?, err?: string)
 function M.diff_names(root, from_ref, to_ref, cb)
   vim.system(
-    { 'git', '-C', root, 'diff', '--name-status', from_ref .. '..' .. to_ref },
+    { 'git', '-C', root, 'diff', '--name-status', '-z', from_ref .. '..' .. to_ref },
     { text = true },
     vim.schedule_wrap(function(r)
       if r.code ~= 0 then cb(nil, r.stderr or 'git diff failed'); return end
       local result = {}
-      for _, line in ipairs(vim.split(vim.trim(r.stdout or ''), '\n', { plain = true })) do
-        if line ~= '' then
-          -- Rename/Copy: "R100\told_path\tnew_path"；其余: "M\tpath"
-          local status_raw, p1, p2 = line:match('^(%a%d*)\t([^\t]+)\t?(.*)$')
-          if status_raw and p1 then
-            local st = status_raw:sub(1, 1)
-            if (st == 'R' or st == 'C') and p2 ~= '' then
-              result[#result + 1] = { status = st, path = p2, old_path = p1 }
-            else
-              result[#result + 1] = { status = st, path = p1 }
+      -- 末尾会多出一个空字段（最后一个 NUL 之后），按 status/path 配对消费即可忽略
+      local fields = vim.split(r.stdout or '', '\0', { plain = true })
+      local i = 1
+      while i <= #fields do
+        local status_raw = fields[i]
+        if status_raw == '' then
+          i = i + 1
+        else
+          -- status 形如 'M'、'A'、'R100'、'C75'；取首字母即类别
+          local st = status_raw:sub(1, 1)
+          if st == 'R' or st == 'C' then
+            -- rename/copy：old=fields[i+1]、new=fields[i+2]
+            local old_path = fields[i + 1]
+            local new_path = fields[i + 2]
+            if new_path and new_path ~= '' then
+              result[#result + 1] = { status = st, path = new_path, old_path = old_path }
             end
+            i = i + 3
+          else
+            local path = fields[i + 1]
+            if path and path ~= '' then
+              result[#result + 1] = { status = st, path = path }
+            end
+            i = i + 2
           end
         end
       end

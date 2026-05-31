@@ -133,6 +133,8 @@ function L.attach(M)
     end
     vim.cmd('edit ' .. vim.fn.fnameescape(abspath))
     if row then
+      -- rev/compare 视图行数可能多于工作区文件，clamp 防越界（否则 set_cursor 静默失效，光标落第 1 行）
+      row = math.min(row, vim.api.nvim_buf_line_count(0))
       pcall(vim.api.nvim_win_set_cursor, 0, { row, 0 })
       pcall(vim.cmd, 'normal! zz')
     end
