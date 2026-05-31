@@ -179,8 +179,10 @@ function M.discard(state, id)
   local function do_discard_tracked(after)
     if #tracked == 0 then after(); return end
     Git.discard(state.git_root, tracked, function(ok, err)
+      -- 失败也继续走 after()：否则链被掐断，untracked 不删、on_done 不刷新，
+      -- 面板与磁盘（可能已部分 restore）不一致。与 discard_selection 的 discard_tracked 对齐
       if not ok then
-        vim.notify('[vv-git] discard failed: ' .. (err or ''), vim.log.levels.ERROR); return
+        vim.notify('[vv-git] discard failed: ' .. (err or ''), vim.log.levels.ERROR)
       end
       after()
     end)
@@ -190,7 +192,7 @@ function M.discard(state, id)
     if #untracked == 0 then after(); return end
     Git.discard_untracked(state.git_root, untracked, function(ok, err)
       if not ok then
-        vim.notify('[vv-git] delete untracked failed: ' .. (err or ''), vim.log.levels.ERROR); return
+        vim.notify('[vv-git] delete untracked failed: ' .. (err or ''), vim.log.levels.ERROR)
       end
       after()
     end)

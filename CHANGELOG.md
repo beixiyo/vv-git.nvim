@@ -62,6 +62,7 @@
 - relpath / BufWritePost 仓库归属判断补 '/' 边界，姊妹目录（如 proj2 vs proj）不再误判为仓内
 - **修复 diff 视图行号丢失**：`vim.wo[win].X = val` 等同于 `:set`（同时改全局默认），`hide_chrome` 给 panel 设 `number=false` 后全局默认被污染，后续所有新窗口继承 `false`。改用 `nvim_set_option_value(..., scope='local')` 只改目标窗口。同步修复 `view.lua` 全部 19 处 `{ win = win }` 调用、`panel.lua` 的 `diff/scrollbind/cursorbind` 设置
 - git index 加载失败的 fallback tree 复用 `Tree.new_root()`（带 is_dir），count_files 不再把空根当 1 个文件、commit hint 不再误显 "Commit 1 staged"
+- discard 某文件失败时回调链不再中断，untracked 删除与面板刷新照常进行，UI 不再停留在与磁盘不一致的陈旧状态
 
 ### Refactored
 
