@@ -74,6 +74,7 @@ local function insert(root, relpath, xy, side)
 end
 
 local function new_root() return { name = '', relpath = '', is_dir = true, children = {} } end
+M.new_root = new_root
 
 ---@param status_map table<string,string>
 ---@param git_root string

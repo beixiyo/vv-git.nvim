@@ -24,7 +24,7 @@ function M.reload_index(state, after)
     if idx then
       state.tree = Tree.build(idx.status_map, state.git_root)
     else
-      state.tree = { staged = {children={}}, unstaged = {children={}}, conflicts = {children={}} }
+      state.tree = { staged = Tree.new_root(), unstaged = Tree.new_root(), conflicts = Tree.new_root() }
     end
     done_index = true
     finalize()
