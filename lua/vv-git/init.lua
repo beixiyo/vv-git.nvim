@@ -28,6 +28,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field fold_unchanged boolean  -- diff 视图默认折叠未改动代码 @default true
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X @default ' '
 ---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l @default true
+---@field preview_debounce_ms integer  -- 预览防抖延迟（毫秒），光标停顿后才刷新右侧 diff，避免快速 j/k 时频繁重算；0 = 不防抖 @default 150
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡） @default 10000
 ---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用 @default 'toggle_stage'
 ---@field diff_ratio integer[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6 @default { 5, 5 }
@@ -46,6 +47,7 @@ local defaults = {
   diff_ratio = { 5, 5 },
   diff_fill = ' ',
   preview = true,
+  preview_debounce_ms = 150,
   inline_diff_max_lines = 10000,
   right_click = 'toggle_stage',
   diff_nowrap = true,

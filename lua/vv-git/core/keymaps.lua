@@ -152,7 +152,7 @@ function L.install(state, M)
 
   vim.api.nvim_create_autocmd('CursorMoved', {
     buffer = buf,
-    callback = State.guarded(function(s) M._preview() end),
+    callback = State.guarded(function(s) M._preview_on_move() end),
     desc = 'vv-git: preview on cursor move',
   })
 end

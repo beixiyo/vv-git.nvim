@@ -53,6 +53,21 @@ function L.attach(M)
     RightView.show(state, node, id.section, is_narrow(M))
   end)
 
+  -- 预览防抖：单例常驻 timer（仿下方 _apply_layout）。wait 用函数延迟读 config——
+  -- L.attach 在 M.setup 之前于模块加载期执行，此刻 M._config 尚未就绪。
+  local preview_debounced = require('vv-utils.timer').debounce(function()
+    M._preview()
+  end, function() return M._config.preview_debounce_ms or 0 end)
+
+  -- CursorMoved 入口：>0 走防抖（光标停顿后才刷新 diff），0 保持同步直刷
+  M._preview_on_move = function()
+    if (M._config.preview_debounce_ms or 0) > 0 then
+      preview_debounced()
+    else
+      M._preview()
+    end
+  end
+
   M._activate = State.guarded(function(state, expand_only)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
