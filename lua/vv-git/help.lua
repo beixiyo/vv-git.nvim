@@ -13,6 +13,8 @@ local ACTIONS = {
   close_node    = { cat = 'Navigate', icon = '' },
   click_toggle  = { cat = 'Navigate', icon = '' },
   goto_file     = { cat = 'Navigate', icon = '' },
+  system_open   = { cat = 'Open as',  icon = '' },
+  execute       = { cat = 'Open as',  icon = '󰐊' },
   toggle_select = { cat = 'Select',   icon = '󰒆' },
   toggle_stage  = { cat = 'Git',      icon = '' },
   discard       = { cat = 'Git',      icon = '' },
@@ -31,7 +33,7 @@ local ACTIONS = {
   __close       = { cat = 'View',     icon = '' },
 }
 
-local CATEGORIES = { 'Navigate', 'Select', 'Git', 'Conflict', 'Remote', 'Yank', 'View' }
+local CATEGORIES = { 'Navigate', 'Open as', 'Select', 'Git', 'Conflict', 'Remote', 'Yank', 'View' }
 
 ---@param state table
 function M.open(state)

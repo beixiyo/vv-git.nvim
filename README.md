@@ -57,7 +57,7 @@
 
 ## 二进制文件拦截
 
-默认开启。预览（光标移动）时静默跳过二进制文件；`<CR>`/`o`/`gf` 遇到二进制文件时改用系统默认程序打开，不在 nvim 内尝试渲染乱码 diff。
+默认开启。预览（光标移动）时静默跳过二进制文件；`<CR>`/`gf` 遇到二进制文件时改用系统默认程序打开，不在 nvim 内尝试渲染乱码 diff。
 
 内置扩展名覆盖：图片（png/jpg/gif/webp/heic/…）、视频（mp4/mkv/mov/…）、音频（mp3/wav/flac/…）、压缩包（zip/tar/gz/tgz/jar/deb/dmg/iso/…）、编译产物（exe/dll/so/wasm/bin/…）、字体（ttf/otf/woff/…）、二进制文档（pdf/docx/xlsx/…）、数据库（sqlite/db）。
 
@@ -110,7 +110,9 @@ opts = {
 | `Y` | 复制文件绝对路径 |
 | `<Tab>` | 切换当前文件选中（多选；目录忽略，可配置 `keymap_select`） |
 | `<Esc>` | 选中非空时清空选中；否则关闭面板 |
-| `<CR>` / `o` / `l` | 文件：打开 diff；目录/**section 标题**：展开/折叠 |
+| `<CR>` / `l` | 文件：打开 diff；目录/**section 标题**：展开/折叠 |
+| `o` | 系统工具打开：文件→默认程序，目录→文件管理器 |
+| `X` | 按文件类型执行：解析运行器后确认，在底部分屏终端运行（仅文件节点） |
 | `h` | 折叠当前节点；光标在 **section 标题**（Staged / Changes / Merge Conflicts）上时折叠整个 section |
 | `-` | 单选：切换 stage/unstage；**多选**：批量 stage/unstage |
 | `d` | 单选—staged: unstage；unstaged: discard（确认）；**多选**：同单选规则批量执行 |

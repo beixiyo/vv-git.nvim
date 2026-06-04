@@ -37,6 +37,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field binary VVGitBinaryConfig
 ---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'） @default '<Tab>'
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行（默认 true） @default false
+---@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -174,5 +175,26 @@ end
 require('vv-git.core.lifecycle').attach(M)
 require('vv-git.core.panel_ops').attach(M)
 require('vv-git.core.commands').attach(M)
+
+--- 返回光标节点的绝对路径（文件或目录），面板未开或光标不在节点上时返回 nil
+---@return string?
+function M.get_node_path()
+  local State = require('vv-git.state')
+  if not State.has() then return nil end
+  local id = require('vv-git.core.keymaps').id_under_cursor(State.get())
+  if not id or not id.node then return nil end
+  return vim.fs.normalize(State.get().git_root .. '/' .. id.node.relpath)
+end
+
+--- 返回光标节点对应的目录：目录节点返回自身，文件节点返回父目录
+---@return string?
+function M.get_node_dir()
+  local State = require('vv-git.state')
+  if not State.has() then return nil end
+  local id = require('vv-git.core.keymaps').id_under_cursor(State.get())
+  if not id or not id.node then return nil end
+  local path = vim.fs.normalize(State.get().git_root .. '/' .. id.node.relpath)
+  return id.node.is_dir and path or vim.fs.dirname(path)
+end
 
 return M

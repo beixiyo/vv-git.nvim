@@ -103,7 +103,8 @@ function L.install(state, M)
   end,                                                              '__close')
   map('R',             function() M.refresh() end,                 'refresh')
   map('<CR>',          function() M._activate() end,               'open')
-  map('o',             function() M._activate() end,               'open')
+  map('o',             function() M._system_open() end,            'system_open')
+  map('X',             function() M._execute() end,               'execute')
   map('l',             function() M._activate(true) end,           'expand')
   map('<LeftRelease>', function()
     local id = L.id_under_cursor(state)
@@ -148,6 +149,12 @@ function L.install(state, M)
   end
   for _, key in ipairs({ 'v', 'V', '<C-v>' }) do
     vim.keymap.set('n', key, '<Nop>', { buffer = buf, silent = true })
+  end
+
+  for lhs, action in pairs(M._config.mappings or {}) do
+    if type(action) == 'function' then
+      map(lhs, function() action(state) end, 'custom: ' .. lhs)
+    end
   end
 
   vim.api.nvim_create_autocmd('CursorMoved', {

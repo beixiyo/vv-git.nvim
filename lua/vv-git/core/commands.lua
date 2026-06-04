@@ -158,6 +158,36 @@ function L.attach(M)
     local abs = vim.fs.normalize(state.git_root .. '/' .. relpath)
     Editor.copy_path({ path = abs, title = 'vv-git' })
   end)
+
+  M._system_open = State.guarded(function(state)
+    local id = Keymaps.id_under_cursor(state)
+    if not id or not id.node then return end
+    local abspath = vim.fs.normalize(state.git_root .. '/' .. id.node.relpath)
+    require('vv-utils.sys').open_default(abspath)
+  end)
+
+  M._execute = State.guarded(function(state)
+    local id = Keymaps.id_under_cursor(state)
+    if not id or not id.node or id.node.is_dir then return end
+    local abspath = vim.fs.normalize(state.git_root .. '/' .. id.node.relpath)
+
+    local plan, err = require('vv-utils.exec').resolve(abspath)
+    if not plan then
+      vim.notify('vv-git: ' .. (err or 'cannot run ' .. abspath), vim.log.levels.WARN)
+      return
+    end
+
+    local prompt = 'vv-git execute?\n  ' .. table.concat(plan.cmd, ' ')
+    if vim.fn.confirm(prompt, '&Yes\n&No', 2) ~= 1 then return end
+
+    vim.cmd('botright 15new')
+    if vim.fn.has('nvim-0.11') == 1 then
+      vim.fn.jobstart(plan.cmd, { term = true, cwd = vim.fs.dirname(abspath) })
+    else
+      vim.fn.termopen(plan.cmd, { cwd = vim.fs.dirname(abspath) })
+    end
+    vim.cmd('startinsert')
+  end)
 end
 
 return L
