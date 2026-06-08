@@ -16,6 +16,15 @@ function M.reload_index(state, after)
   local function finalize()
     if not done_index or not done_ahead then return end
     LeftRender.render(state)
+    -- 广播 git 状态变更：stage/unstage/discard/commit/push/conflict 等所有变更操作
+    -- 都汇聚到 reload_index（actions → refresh、commit/push → M.refresh），故这里发一个
+    -- User 事件，让 vv-explorer / vv-statuscol 等外部消费者即时刷新自己的 git 索引，
+    -- 无需各自轮询或等 FocusGained。消费者监听 `User VVGitStatusChanged`。
+    vim.api.nvim_exec_autocmds('User', {
+      pattern = 'VVGitStatusChanged',
+      modeline = false,
+      data = { root = state.git_root },
+    })
     if after then after() end
   end
 

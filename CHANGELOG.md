@@ -4,6 +4,8 @@
 
 ### Added
 
+- **状态变更广播**：任意 git 变更（stage/unstage/discard/commit/push/conflict）完成后，`reload_index` 发一个 `User VVGitStatusChanged` 事件（`data.root` 带仓库根），供 vv-explorer / vv-statuscol 等外部消费者即时刷新自身 git 索引，无需轮询或等 `FocusGained`
+
 - **预览防抖**：`preview_debounce_ms` 光标停顿后才刷新右侧 diff，避免快速 `j`/`k` 时频繁重算；`0` = 不防抖（同步直刷）
 
 - **Section 折叠**：`Staged Changes` / `Changes` / `Merge Conflicts` 标题行现在带折叠箭头，光标在标题上时 `<CR>`/`o`/`l` 切换展开/折叠、`h` 直接折叠、单击（`<LeftRelease>`）也可切换；折叠后只保留标题行，文件列表隐藏。折叠状态按 section 独立记录（`state.section_folds`），折叠/展开后光标固定在标题行不跳走
