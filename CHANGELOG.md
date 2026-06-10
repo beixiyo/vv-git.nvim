@@ -63,6 +63,7 @@
 
 ### Fixed
 
+- **diff 滚动锚点智能选择**：`<C-e>`/`<C-y>` 滚动 diff 时固定驱动 `b_win`（新/after 侧），大批量**删除**时 b_win 内容很少（filler 占位无法作为滚动余量），导致滚不到底、看不全左侧被删的行。改为取 a/b 两个 scrollbind 窗口中**缓冲区行数最多**的那个当锚点，新增/删除都能覆盖全文滚动
 - relpath / BufWritePost 仓库归属判断补 '/' 边界，姊妹目录（如 proj2 vs proj）不再误判为仓内
 - **修复 diff 视图行号丢失**：`vim.wo[win].X = val` 等同于 `:set`（同时改全局默认），`hide_chrome` 给 panel 设 `number=false` 后全局默认被污染，后续所有新窗口继承 `false`。改用 `nvim_set_option_value(..., scope='local')` 只改目标窗口。同步修复 `view.lua` 全部 19 处 `{ win = win }` 调用、`panel.lua` 的 `diff/scrollbind/cursorbind` 设置
 - git index 加载失败的 fallback tree 复用 `Tree.new_root()`（带 is_dir），count_files 不再把空根当 1 个文件、commit hint 不再误显 "Commit 1 staged"

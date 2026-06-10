@@ -10,10 +10,28 @@ local L = {}
 local CE_KEY = vim.api.nvim_replace_termcodes('<C-e>', true, false, true)
 local CY_KEY = vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
 
+-- 选滚动锚点：a/b 两个 diff 窗口 scrollbind 联动，驱动哪个都会带动另一个，但驱动方自身
+-- 必须有足够内容才能滚到底。固定用 b_win（新/after 侧）在大批量「删除」时会失灵——此时
+-- b_win 内容很少（filler 占位不可作为 <C-e> 的滚动余量），而 a_win（旧/before 侧）才装着
+-- 全部被删的行。故取**缓冲区行数最多**的那个 diff 窗口当锚点，保证总能覆盖全文滚动。
+---@param view table
+---@return integer? win
+local function pick_scroll_anchor(view)
+  if not view then return nil end
+  local best, best_n
+  for _, w in ipairs({ view.b_win, view.a_win }) do
+    if w and vim.api.nvim_win_is_valid(w) then
+      local n = vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(w))
+      if not best or n > best_n then best, best_n = w, n end
+    end
+  end
+  return best
+end
+
 ---@param keys string
 local function scroll_diff(keys)
   if not State.has() then return end
-  local target = State.get().view and State.get().view.b_win
+  local target = pick_scroll_anchor(State.get().view)
   if not target or not vim.api.nvim_win_is_valid(target) then return end
   local prev = vim.api.nvim_get_current_win()
   if prev == target then
