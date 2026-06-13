@@ -1,5 +1,7 @@
 -- 生命周期 autocmd 注册：
 --   BufWritePost                 仓内文件保存 → 刷新左栏
+--   User GitSignsChanged         gitsigns stage/unstage/reset → 刷新左栏 + 重渲染 diff
+--   BufEnter / FocusGained       进入任意 buffer / 切回 nvim → 防抖刷新左栏（捕获外部 git 变化）
 --   VimResized                   终端尺寸变化 → 重排 panel / a_win
 --   TabClosed                    专属 tab 被关掉 → 拆 diff 视图 + 清 state（统一清理入口）
 --   WinClosed                    panel / diff 窗口被关 → 同步 state 字段并检查不变式
@@ -12,7 +14,9 @@ local Guard = require('vv-git.guard')
 local M = {}
 
 ---@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun() }
-function M.setup(handlers)
+---@param config table?  vv-git 合并后的配置（读取 auto_refresh 等）
+function M.setup(handlers, config)
+  config = config or {}
   local aug = vim.api.nvim_create_augroup('VVGit', { clear = true })
 
   vim.api.nvim_create_autocmd('BufWritePost', {
@@ -59,6 +63,25 @@ function M.setup(handlers)
       end)
     end),
   })
+
+  -- BufEnter / FocusGained：捕获 BufWritePost / GitSignsChanged 之外的外部变化——
+  -- 终端 git checkout / pull / stash、其它工具或 AI 直接改文件、alt-tab 回到 nvim 等。
+  -- 只要面板开着，就在 state.git_root 上重跑 git status 刷新左栏。
+  --
+  -- 不再按 buffer 类型过滤（点进 panel / diff 也要能刷新）。这两个事件触发偏频繁，尤其
+  -- BufEnter 会被 diff 预览结束时的「焦点回弹到 panel」反复带起，靠 debounce 收敛：连续
+  -- 浏览只在停下后刷一次。render 仅重绘左栏、不切窗口/buffer，故不会自我触发形成回环。
+  if config.auto_refresh ~= false then
+    local refresh_debounced = require('vv-utils.timer').debounce(State.guarded(function(state)
+      if not state.git_root then return end
+      handlers.on_refresh()
+    end), 200)
+
+    vim.api.nvim_create_autocmd({ 'BufEnter', 'FocusGained' }, {
+      group = aug,
+      callback = State.guarded(function() refresh_debounced() end),
+    })
+  end
 
   -- 仅当 vv-git tab 是当前 tab 时才重排
   vim.api.nvim_create_autocmd('VimResized', {

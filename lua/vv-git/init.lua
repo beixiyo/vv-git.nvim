@@ -28,6 +28,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field fold_unchanged boolean  -- diff 视图默认折叠未改动代码 @default true
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X @default ' '
 ---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l @default true
+---@field auto_refresh boolean  -- BufEnter / FocusGained 时防抖刷新左栏 git 状态，捕获终端 checkout/pull、外部改文件等 @default true
 ---@field preview_debounce_ms integer  -- 预览防抖延迟（毫秒），光标停顿后才刷新右侧 diff，避免快速 j/k 时频繁重算；0 = 不防抖 @default 150
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡） @default 10000
 ---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用 @default 'toggle_stage'
@@ -49,6 +50,7 @@ local defaults = {
   diff_fill = ' ',
   preview = true,
   preview_debounce_ms = 150,
+  auto_refresh = true,
   inline_diff_max_lines = 10000,
   right_click = 'toggle_stage',
   diff_nowrap = true,
@@ -129,7 +131,7 @@ function M.setup(opts)
     on_apply_layout     = function() M._apply_layout() end,
     on_ensure_invariant = function() M._ensure_invariant() end,
     on_reshow_view      = function() M._reshow_view() end,
-  })
+  }, M._config)
 
   vim.api.nvim_create_autocmd('VimLeavePre', {
     callback = function()
