@@ -4,6 +4,7 @@
 
 ### Added
 
+- **方向键导航**：面板内 `↑/↓` 同 `j`/`k`（跳上/下一个可选项）、`→` 同 `l`（展开/激活）、`←` 同 `h`（折叠），照顾习惯方向键的用户
 - **状态变更广播**：任意 git 变更（stage/unstage/discard/commit/push/conflict）完成后，`reload_index` 发一个 `User VVGitStatusChanged` 事件（`data.root` 带仓库根），供 vv-explorer / vv-statuscol 等外部消费者即时刷新自身 git 索引，无需轮询或等 `FocusGained`
 
 - **预览防抖**：`preview_debounce_ms` 光标停顿后才刷新右侧 diff，避免快速 `j`/`k` 时频繁重算；`0` = 不防抖（同步直刷）

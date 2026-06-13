@@ -110,10 +110,11 @@ opts = {
 | `Y` | 复制文件绝对路径 |
 | `<Tab>` | 切换当前文件选中（多选；目录忽略，可配置 `keymap_select`） |
 | `<Esc>` | 选中非空时清空选中；否则关闭面板 |
-| `<CR>` / `l` | 文件：打开 diff；目录/**section 标题**：展开/折叠 |
+| `j` / `k` / `↓` / `↑` | 跳到下/上一个可选项（`<C-n>`/`<C-p>` 同义；方向键等同 `j`/`k`） |
+| `<CR>` / `l` / `→` | 文件：打开 diff；目录/**section 标题**：展开/折叠（`→` 同 `l`） |
 | `o` | 系统工具打开：文件→默认程序，目录→文件管理器 |
 | `X` | 按文件类型执行：解析运行器后确认，在底部分屏终端运行（仅文件节点） |
-| `h` | 折叠当前节点；光标在 **section 标题**（Staged / Changes / Merge Conflicts）上时折叠整个 section |
+| `h` / `←` | 折叠当前节点；光标在 **section 标题**（Staged / Changes / Merge Conflicts）上时折叠整个 section（`←` 同 `h`） |
 | `-` | 单选：切换 stage/unstage；**多选**：批量 stage/unstage |
 | `d` | 单选—staged: unstage；unstaged: discard（确认）；**多选**：同单选规则批量执行 |
 | `c` | 提交（commit） |

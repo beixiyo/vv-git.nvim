@@ -105,6 +105,9 @@ function L.install(state, M)
   map('k',             function() navigate(state, 'k') end,       'prev_item')
   map('<C-n>',         function() navigate(state, 'j') end,       'next_item')
   map('<C-p>',         function() navigate(state, 'k') end,       'prev_item')
+  -- 方向键 ↑↓ 与 j/k 同义（跳到上/下一个可选项）
+  map('<Down>',        function() navigate(state, 'j') end,       'next_item')
+  map('<Up>',          function() navigate(state, 'k') end,       'prev_item')
   map('q',             function() M.close() end,                   '__close')
   map('<Esc>',         function()
     if state.compare then
@@ -124,6 +127,7 @@ function L.install(state, M)
   map('o',             function() M._system_open() end,            'system_open')
   map('X',             function() M._execute() end,               'execute')
   map('l',             function() M._activate(true) end,           'expand')
+  map('<Right>',       function() M._activate(true) end,           'expand')   -- → 同 l
   map('<LeftRelease>', function()
     local id = L.id_under_cursor(state)
     if id and (id.section_header or (id.node and id.node.is_dir)) then M._toggle_fold() end
@@ -149,6 +153,7 @@ function L.install(state, M)
   map('Y',             function() M._yank_abs_path() end,           'yank_abs_path')
   map(M._config.keymap_select, function() M._toggle_select() end,  'toggle_select')
   map('h',             function() M._collapse() end,               'close_node')
+  map('<Left>',        function() M._collapse() end,               'close_node')  -- ← 同 h
   map('-',             function() M._action('toggle_stage') end,   'toggle_stage')
   map('d',             function() M._action('discard') end,        'discard')
   map('<',             function() M._action('accept_ours') end,    'accept_ours')
