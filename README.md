@@ -114,7 +114,7 @@ opts = {
 | `<CR>` / `l` / `→` | 文件：打开 diff；目录/**section 标题**：展开/折叠（`→` 同 `l`） |
 | `o` | 系统工具打开：文件→默认程序，目录→文件管理器 |
 | `X` | 按文件类型执行：解析运行器后确认，在底部分屏终端运行（仅文件节点） |
-| `h` / `←` | 折叠当前节点；光标在 **section 标题**（Staged / Changes / Merge Conflicts）上时折叠整个 section（`←` 同 `h`） |
+| `h` / `←` | 折叠当前节点；子文件折到父目录；**最外层文件 / section 标题**上则折叠整个 section（Staged / Changes / Merge Conflicts）并归位标题行（`←` 同 `h`） |
 | `-` | 单选：切换 stage/unstage；**多选**：批量 stage/unstage |
 | `d` | 单选—staged: unstage；unstaged: discard（确认）；**多选**：同单选规则批量执行 |
 | `c` | 提交（commit） |

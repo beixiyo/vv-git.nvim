@@ -141,7 +141,17 @@ function L.attach(M)
       fold_key = section .. ':' .. id.node.relpath
     else
       local parent = vim.fs.dirname(id.node.relpath)
-      if parent == '.' or parent == '' then return end
+      if parent == '.' or parent == '' then
+        -- 最外层文件/已折叠的最外层目录（无父目录可收）→ 继续往外折叠整个所属 section
+        -- （Staged Changes / Changes / Merge Conflicts），光标归到该 section 标题行
+        if section ~= '' then
+          state.section_folds = state.section_folds or {}
+          state.section_folds[section] = true
+          state._section_hint = section
+          LeftRender.render(state)
+        end
+        return
+      end
       fold_key = section .. ':' .. parent
     end
     state.folds[fold_key] = true

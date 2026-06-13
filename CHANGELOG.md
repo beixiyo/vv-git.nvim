@@ -51,6 +51,7 @@
 
 ### Changed
 
+- **`h` / `←` 在最外层文件上折叠整个 section**：此前最外层文件（无父目录可收）按 `h` 无反应；现继续往外折叠其所属 section（Staged Changes / Changes / Merge Conflicts）并把光标归到该 section 标题行，与 yazi/资源管理器「向左一路收起」的直觉一致
 - **`d` 键 staged 区行为改为 unstage**：与 VSCode 对齐——staged 区按 `d` 只做 unstage，不再同时 discard；unstaged 区保持原有 discard + 确认弹窗逻辑不变
 
 - **图标系统重构**：`icons.lua` 现已接入 `vv-icons` 增强接口，支持 `open` 和 `empty` 状态传递
