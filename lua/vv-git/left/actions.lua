@@ -163,7 +163,11 @@ function M.discard(state, id)
   end
 
   local choice = vim.fn.confirm(prompt_msg, '&Yes\n&No', 2)
-  if choice ~= 1 then return end
+  if choice ~= 1 then
+    -- 用户取消：清掉 M._action 预设的 hint，否则它会在下次无关渲染（R / gitsigns / 保存）时错位光标
+    state._action_hint = nil
+    return
+  end
 
   local function on_done()
     refresh(state, function()
@@ -322,10 +326,16 @@ end
 ---@param side_name 'ours'|'theirs'
 local function accept_conflict_side(state, id, side_name)
   local section, paths = collect(state, id)
-  if section ~= 'conflicts' or not paths or #paths == 0 then return end
+  -- 非冲突节点上按 < / >，或这次 accept 失败：都不会触发渲染，需主动清掉
+  -- M._action 预设的 hint，否则它会在下次无关渲染（R / gitsigns / 保存）时错位光标
+  if section ~= 'conflicts' or not paths or #paths == 0 then
+    state._action_hint = nil
+    return
+  end
   Git['accept_' .. side_name](state.git_root, paths, function(ok, err)
     if not ok then
       vim.notify('[vv-git] accept ' .. side_name .. ' failed: ' .. (err or ''), vim.log.levels.ERROR)
+      state._action_hint = nil
       return
     end
     reload_conflict_result(state)

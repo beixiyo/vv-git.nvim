@@ -24,6 +24,50 @@ local function is_binary(M, path)
   return ext and cfg.extensions[ext:lower()] or false
 end
 
+-- 动作（stage/unstage/discard/accept）触发渲染后，把光标落到「下一个文件」
+-- 仅靠旧的绝对行号 hint.lnum 不可靠：stage 会把文件移到上方的 Staged section，
+-- 该 section 增长把下方 Changes 整体顶下去，旧行号便指向了被暂存文件「上方」的条目，
+-- 表现为光标无规律上跳。改为在动作前记下同 section 内**下一个 / 上一个文件**的 relpath，
+-- 渲染后按 relpath 定位，自然跳过目录行
+---@param state table
+---@param id table  当前光标 id（含 section / node）
+---@param lnum integer 当前行号
+---@return string? next_path 下一个文件 relpath
+---@return string? prev_path 上一个文件 relpath（next 不存在时回退）
+local function action_neighbor_leaves(state, id, lnum)
+  local id_by_line = state.panel and state.panel.id_by_line or {}
+  local section = id.section
+  local acted = id.node
+  if not section or not acted then return nil, nil end
+
+  -- 操作目录时其下 leaf 都会离开本 section，捕获的「下一个文件」必须排除整棵子树
+  local function under_acted(node)
+    if acted.is_dir then
+      return node.relpath == acted.relpath
+          or node.relpath:sub(1, #acted.relpath + 1) == acted.relpath .. '/'
+    end
+    return node.relpath == acted.relpath
+  end
+
+  local lnums = {}
+  for l in pairs(id_by_line) do lnums[#lnums + 1] = l end
+  table.sort(lnums)
+
+  local next_path, prev_path
+  for _, l in ipairs(lnums) do
+    local e = id_by_line[l]
+    if e and e.section == section and e.node and not e.node.is_dir and not under_acted(e.node) then
+      if l > lnum then
+        if not next_path then next_path = e.node.relpath end
+      elseif l < lnum then
+        prev_path = e.node.relpath  -- 升序遍历，持续覆盖 → 取最接近 lnum 的上一个文件
+      end
+    end
+  end
+
+  return next_path, prev_path
+end
+
 ---@param M table
 function L.attach(M)
   M._reshow_view = State.guarded(function(state)
@@ -54,7 +98,7 @@ function L.attach(M)
   end)
 
   -- 预览防抖：单例常驻 timer（仿下方 _apply_layout）。wait 用函数延迟读 config——
-  -- L.attach 在 M.setup 之前于模块加载期执行，此刻 M._config 尚未就绪。
+  -- L.attach 在 M.setup 之前于模块加载期执行，此刻 M._config 尚未就绪
   local preview_debounced = require('vv-utils.timer').debounce(function()
     M._preview()
   end, function() return M._config.preview_debounce_ms or 0 end)
@@ -170,10 +214,10 @@ function L.attach(M)
       state.selection[key] = true
     end
 
-    -- 切换选中不改变行布局：先记下当前行，渲染后按原行恢复。
+    -- 切换选中不改变行布局：先记下当前行，渲染后按原行恢复
     -- 不能依赖 render 内部按 cur_path 的恢复——cur_path 仅由 CursorMoved
     -- 的 _preview 同步，且有多处提前 return（preview 关闭 / 二进制 / 焦点不在 panel），
-    -- 可能滞后于光标实际行，导致 render 把光标拉到别处（表现为「跳到上面」）。
+    -- 可能滞后于光标实际行，导致 render 把光标拉到别处（表现为「跳到上面」）
     local win = state.panel and state.panel.win
     local lnum = (win and vim.api.nvim_win_is_valid(win))
         and vim.api.nvim_win_get_cursor(win)[1] or nil
@@ -218,7 +262,8 @@ function L.attach(M)
     if id.node and id.section and state.panel and state.panel.win
         and vim.api.nvim_win_is_valid(state.panel.win) then
       local lnum = vim.api.nvim_win_get_cursor(state.panel.win)[1]
-      state._action_hint = { section = id.section, lnum = lnum }
+      local next_path, prev_path = action_neighbor_leaves(state, id, lnum)
+      state._action_hint = { section = id.section, lnum = lnum, next_path = next_path, prev_path = prev_path }
     end
     local fn = Actions[name]
     if fn then fn(state, id) end

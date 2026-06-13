@@ -356,24 +356,46 @@ function M.render(state)
       end
     end
 
-    -- 动作触发的渲染：在原 section 内顺势下移，避免跨 section 跳动；
-    -- 原 section 已无节点时保持原行号（不拉回 cur_path 已移动到的位置）
+    -- 动作触发的渲染：落到动作前记下的「下一个文件」（跳过目录），在原 section 内顺势下移，
+    -- 避免跨 section 跳动。绝对行号会因 Staged section 增长而漂移，故优先按 relpath 定位
     local hint = state._action_hint
     if hint then
       state._action_hint = nil
-      for lnum = hint.lnum, #lines do
-        local id = id_by_line[lnum]
-        if id and id.section == hint.section and id.node then
-          pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
-          state.cur_path = id.node.relpath
-          return
+
+      -- relpath → 行号（限定同 section 且为文件 leaf）
+      local function find_leaf(relpath)
+        if not relpath then return nil end
+        for lnum = 1, #lines do
+          local id = id_by_line[lnum]
+          if id and id.section == hint.section and id.node
+              and not id.node.is_dir and id.node.relpath == relpath then
+            return lnum
+          end
         end
       end
-      local target = math.min(hint.lnum, math.max(1, #lines))
-      pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
-      local id = id_by_line[target]
-      state.cur_path = id and id.node and id.node.relpath or nil
-      return
+
+      -- ① 下一个文件 → ② 没有则上一个文件 → ③ 仍没有则原 section 内从旧行号向下找首个文件
+      local target = find_leaf(hint.next_path) or find_leaf(hint.prev_path)
+      if not target then
+        for lnum = hint.lnum, #lines do
+          local id = id_by_line[lnum]
+          if id and id.section == hint.section and id.node and not id.node.is_dir then
+            target = lnum
+            break
+          end
+        end
+      end
+
+      if target then
+        pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
+        local id = id_by_line[target]
+        state.cur_path = id and id.node and id.node.relpath or nil
+        if id and id.section then state.cur_section = id.section end
+        return
+      end
+      -- ④ 该 section 已被清空（acted 是其唯一文件）：旧绝对行号已失效，不再 clamp
+      -- 落空，交给下方通用 cur_path 恢复——它跨 section 按 relpath 找到 acted 文件的新位置
+      -- （stage→落到 Staged 副本；unstage→落到 Changes 副本；discard 后文件不存在则退到首个文件）
     end
 
     local cur_path = state.cur_path
