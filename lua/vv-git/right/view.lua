@@ -584,7 +584,14 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
     if not (api.nvim_buf_is_valid(a_buf) and api.nvim_buf_is_valid(b_buf)) then return end
     local b_lines = api.nvim_buf_get_lines(b_buf, 0, -1, false)
     local a_lines = api.nvim_buf_get_lines(a_buf, 0, -1, false)
-    local first = InlineDiff.first_hunk_b_line(a_lines, b_lines)
+    -- 仅用于定位首个 hunk 的光标行，却会跑一遍最重的 myers+linematch 全量 diff
+    -- 与 inline 单栏路径一致用 inline_diff_max_lines 设上限：超限直接跳过，
+    -- 让光标停留在当前行（原生 diff-mode 高亮/折叠不受影响）
+    local cfg = handlers.get_config()
+    local max = cfg.inline_diff_max_lines or 10000
+    local first = (#a_lines <= max and #b_lines <= max)
+        and InlineDiff.first_hunk_b_line(a_lines, b_lines)
+        or nil
     local row = first or api.nvim_win_get_cursor(b_win)[1]
     local b_max = api.nvim_buf_line_count(b_buf)
     local a_max = api.nvim_buf_line_count(a_buf)
@@ -617,9 +624,14 @@ end
 ---@param section 'staged'|'unstaged'|'compare'|'conflicts'
 ---@param force_single boolean?  true → 强制走单栏分支（窄终端降级用）；正常 dual diff 时为 false/nil
 function M.show(state, node, section, force_single)
-  if node.is_dir then return end
+  -- 提前 return 前清掉 _reshow_view 刚设置但尚未绑定 req 的 reshow 全局，
+  -- 否则它会泄漏给下一个普通 preview 被误消费（把焦点错误地还给旧 diff 窗口）
+  local function drop_unbound_reshow()
+    if state._reshow_restore_req == nil then state._reshow_restore_win = nil end
+  end
+  if node.is_dir then drop_unbound_reshow(); return end
   local abspath = state.git_root .. '/' .. node.relpath
-  if is_binary(abspath) then return end
+  if is_binary(abspath) then drop_unbound_reshow(); return end
   local xy = node.xy or ''
 
   -- 文件本身就是单栏（A/D/??/*D）→ 任何宽度下都不会升回 dual，记下来给
@@ -636,6 +648,18 @@ function M.show(state, node, section, force_single)
   local req_id = (state._show_req_id or 0) + 1
   state._show_req_id = req_id
 
+  -- _reshow_restore_win 由 _reshow_view 在调用本函数前设置，仅供「这一次 reshow」
+  -- 在成功 attach 后把焦点还给它捕获的窗口。把它和当次 req_id 绑定：只有持有该
+  -- req_id 的 show 才能消费它。否则一旦这次 reshow 被更新的 preview 超越（req_id
+  -- 错位、alive() 提前 return 而来不及清理），残留的全局会被下一次普通 preview 误
+  -- 消费，把焦点错误地还给旧 diff 窗口。普通 preview 自己从不设置该全局，故其
+  -- req_id 不会匹配，会落到 panel 兜底分支
+  local reshow_restore_win
+  if state._reshow_restore_win and state._reshow_restore_req == nil then
+    reshow_restore_win = state._reshow_restore_win
+    state._reshow_restore_req = req_id
+  end
+
   local abspath = state.git_root .. '/' .. node.relpath
   -- 切换前的 b_buf：切到不同文件后需从旧 b_buf 拆掉 q/gf，避免它在 bufferline 里被
   -- 其它窗口打开时仍响应（a_buf 是 bufhidden=wipe，自动清理无需额外处理）
@@ -646,6 +670,15 @@ function M.show(state, node, section, force_single)
     pcall(state.view._inline_cleanup)
   end
 
+  -- 本次 show 持有 reshow 目标时，把绑定的全局清掉（消费成功 / 被超越丢弃都要清），
+  -- 避免 _reshow_restore_win / _reshow_restore_req 残留泄漏到后续 preview
+  local function clear_reshow_restore()
+    if state._reshow_restore_req == req_id then
+      state._reshow_restore_win = nil
+      state._reshow_restore_req = nil
+    end
+  end
+
   -- 公共守卫：回调进来时 req_id 错位或 tab 关了 → 丢弃结果
   -- 只 wipe vv-git 自建的 scratch；工作区 buf 可能别人还在用，不能动
   local function alive(bufs_to_wipe)
@@ -653,14 +686,15 @@ function M.show(state, node, section, force_single)
         and state.tabpage and api.nvim_tabpage_is_valid(state.tabpage) then
       return true
     end
+    clear_reshow_restore()
     wipe_scratch(bufs_to_wipe)
     return false
   end
 
   local function focus_back_to_panel()
-    local rw = state._reshow_restore_win
+    local rw = reshow_restore_win
+    clear_reshow_restore()
     if rw then
-      state._reshow_restore_win = nil
       if api.nvim_win_is_valid(rw) then
         api.nvim_set_current_win(rw)
       end
@@ -980,10 +1014,10 @@ function M.show(state, node, section, force_single)
     -- H（compare）: from_rev=commit, to_rev='HEAD'
     -- gc（show commit）: from_rev=commit^, to_rev=commit
     local cmp = state.compare
-    if not cmp then return end
+    if not cmp then clear_reshow_restore(); return end
     local from_rev = cmp.from_rev
     local to_rev   = cmp.to_rev or 'HEAD'
-    if not from_rev then return end
+    if not from_rev then clear_reshow_restore(); return end
 
     local cs = node.compare_status or 'M'
     local a_path = node.old_relpath or node.relpath  -- rename 时旧路径给 a 侧

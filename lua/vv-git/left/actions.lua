@@ -351,4 +351,40 @@ function M.accept_ours(state, id) accept_conflict_side(state, id, 'ours') end
 ---@param id table
 function M.accept_theirs(state, id) accept_conflict_side(state, id, 'theirs') end
 
+-- 多选批量 accept_ours/accept_theirs：仅对 conflicts 区的选中项生效
+---@param state table
+---@param items {section:string, relpath:string}[]
+---@param side_name 'ours'|'theirs'
+local function accept_selection(state, items, side_name)
+  local paths = {}
+  for _, item in ipairs(items) do
+    if item.section == 'conflicts' then
+      paths[#paths + 1] = item.relpath
+    end
+  end
+  -- 无 conflicts 选中项 / accept 失败：都不会触发渲染，需主动清掉 M._action 预设的
+  -- hint，否则它会在下次无关渲染（R / gitsigns / 保存）时错位光标（与单选 accept 一致）
+  if not paths[1] then
+    state._action_hint = nil
+    return
+  end
+  Git['accept_' .. side_name](state.git_root, paths, function(ok, err)
+    if not ok then
+      vim.notify('[vv-git] accept ' .. side_name .. ' failed: ' .. (err or ''), vim.log.levels.ERROR)
+      state._action_hint = nil
+      return
+    end
+    reload_conflict_result(state)
+    refresh(state)
+  end)
+end
+
+---@param state table
+---@param items {section:string, relpath:string}[]
+function M.accept_ours_selection(state, items) accept_selection(state, items, 'ours') end
+
+---@param state table
+---@param items {section:string, relpath:string}[]
+function M.accept_theirs_selection(state, items) accept_selection(state, items, 'theirs') end
+
 return M

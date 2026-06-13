@@ -35,6 +35,10 @@ local function submit(git_root, commit_all, on_success)
   if not cur or not cur.buf or not api.nvim_buf_is_valid(cur.buf) then return end
   -- 防重入：Git.commit 是异步的，提交进行中再按 <C-s> 会派生第二个 commit 进程
   if cur.submitting then return end
+  -- 快照本次提交所属的 prompt 身份：cur 是模块级单例，提交在途时若又开了新 prompt，
+  -- M.open 会装入一张全新的 cur 表。回调里只在 cur == owner（仍是本 prompt）时才
+  -- close()/复位 submitting，避免在途回调把刚开的新 prompt 窗口误关掉
+  local owner = cur
   local lines = api.nvim_buf_get_lines(cur.buf, 0, -1, false)
   local msg = table.concat(lines, '\n')
   msg = msg:gsub('^%s+', ''):gsub('%s+$', '')
@@ -47,11 +51,11 @@ local function submit(git_root, commit_all, on_success)
   local function do_commit()
     Git.commit(git_root, msg, function(ok, err)
       if not ok then
-        if cur then cur.submitting = false end
+        if cur == owner then cur.submitting = false end
         vim.notify('[vv-git] Commit failed: ' .. (err or ''), vim.log.levels.ERROR)
         return
       end
-      close() -- 清 cur，无需再复位 submitting
+      if cur == owner then close() end -- 仅本 prompt 仍是当前活动 prompt 时才关
       vim.notify('[vv-git] Commit succeeded', vim.log.levels.INFO)
       if on_success then on_success() end
     end)
@@ -60,7 +64,7 @@ local function submit(git_root, commit_all, on_success)
   if commit_all then
     Git.stage_all(git_root, function(ok, err)
       if not ok then
-        if cur then cur.submitting = false end
+        if cur == owner then cur.submitting = false end
         vim.notify('[vv-git] git add -A failed: ' .. (err or ''), vim.log.levels.ERROR); return
       end
       do_commit()

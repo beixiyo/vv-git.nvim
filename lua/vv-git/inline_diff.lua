@@ -7,7 +7,7 @@
 --
 -- 设计取舍：
 --   - word-diff 字符级拆解仿 gitsigns lua/gitsigns/diff_int.lua:split_word_diff_line：
---     把每行拆成 "字符\n字符\n..." 再丢回 vim.diff，hunks 的行号即字符级 byte 索引。
+--     把每行拆成 "字符\n字符\n..." 再丢回 vim.diff，hunks 的行号即字符级 byte 索引
 --     仅 rc==ac 的 change pair 跑（gitsigns 同此约束），不平衡的 hunks 退回行级染色
 --   - virt_lines 用 padding 把红底铺到 ~200 列宽，避免删行只染到字符末尾、剩余行尾
 --     是默认底色。代价：超长 line 会少几列底色，能接受
@@ -24,7 +24,7 @@ local diff_fn = (vim.text and vim.text.diff) or vim.diff
 local PAD_WIDTH = 200  -- 删行红底铺多宽；够覆盖大部分屏幕
 local FOLD_CONTEXT = 6 -- 每个 hunk 上下保留 N 行可见，与 vim 'diffopt' context 默认一致
 
--- ufo 软依赖：装了就调它的 detach/attach，没装就 no-op。
+-- ufo 软依赖：装了就调它的 detach/attach，没装就 no-op
 -- 必须 detach worktree b_buf 上的 ufo——否则它把 foldmethod 改回 manual + 用 lsp/treesitter
 -- provider 重算 fold ranges，把我们这套 hunk-based fold 覆盖掉
 local function ufo_call(method, buf)
@@ -45,7 +45,7 @@ local function compute_hunks(a_lines, b_lines)
 end
 
 -- word-diff：把单行拆成 "字符\n字符\n..." 喂给 vim.diff，行号 = byte 索引
--- 仿 lewis6991/gitsigns.nvim lua/gitsigns/diff_int.lua:split_word_diff_line。
+-- 仿 lewis6991/gitsigns.nvim lua/gitsigns/diff_int.lua:split_word_diff_line
 -- 末尾保留 '\n' 当哨兵：让 vim.diff 把"行尾插入"识别为字符级插入，而不是把整段
 -- 拉成 EOF 处的大改。注意是按 Lua 字节切，不是 UTF-8 codepoint——CJK 文件中
 -- 多字节 char 会按字节级 diff，可能切到一半字符；ASCII 主导文件无影响
@@ -210,11 +210,11 @@ end
 ---@param rs integer  起始行 1-based
 ---@param rc integer  行数
 ---@param rems integer[][]?  可选 word-diff 结果（{ line_idx_1based, start_byte, end_byte }），
----                          line_idx 相对于本 hunk 的 a 切片（i=1 即 a_lines[rs]）。
+---                          line_idx 相对于本 hunk 的 a 切片（i=1 即 a_lines[rs]）
 ---                          传入则按区间拆 chunk：被删字符 VVGitDiffTextDelete（深红），
----                          上下文 VVGitDiffChangeDelete（浅红）—— 与 b 侧 VVGitDiffChange 对称。
+---                          上下文 VVGitDiffChangeDelete（浅红）—— 与 b 侧 VVGitDiffChange 对称
 ---                          注意 no-rems 分支（纯删除整行）仍用 VVGitDiffAddAsDelete（深红），
----                          因为整行都"被删"，没有"未变上下文"的概念。
+---                          因为整行都"被删"，没有"未变上下文"的概念
 ---@return table[]   virt_lines（每元素是 chunk 列表 { {text, hl_group}, ... }）
 local function build_deleted_virt_lines(a_lines, rs, rc, rems)
   -- 把 rems 按 line_idx 分桶，方便逐行查询
@@ -354,7 +354,7 @@ function M.clear(b_buf)
   end
 end
 
--- 找第一个 hunk 在 b 侧的目标行（用来打开文件时自动跳到第一个变更位置）。
+-- 找第一个 hunk 在 b 侧的目标行（用来打开文件时自动跳到第一个变更位置）
 -- 规则：
 --   ac > 0（有新增/修改）→ 落在该 hunk 第一行（as）
 --   ac == 0（纯删除）   → 落在 b 第 as 行（删除位点紧挨的下一个 b 行；as=0 头部删除则取 1）
@@ -380,7 +380,14 @@ end
 function M.attach_live(b_buf, a_lines, max_lines, opts)
   local first = M.apply(b_buf, a_lines, api.nvim_buf_get_lines(b_buf, 0, -1, false), max_lines, opts)
 
+  -- cancel() 只能 stop/close uv timer，无法撤回已经 schedule_wrap 入队到主循环的回调
+  -- 切文件/关 view 时 cleanup 会先清 namespace，但若有一个 200ms 去抖回调已入队，
+  -- 它仍会在 cleanup 之后跑 M.apply，把 extmark/fold 重新画回这个已离开 view 的 buffer
+  -- 用 cancelled 标志让这种「滞后回调」彻底变成 no-op
+  local cancelled = false
+
   local recompute, cancel = require('vv-utils.timer').debounce(function()
+    if cancelled then return end
     if api.nvim_buf_is_valid(b_buf) then
       M.apply(b_buf, a_lines, api.nvim_buf_get_lines(b_buf, 0, -1, false), max_lines, opts)
     end
@@ -394,6 +401,7 @@ function M.attach_live(b_buf, a_lines, max_lines, opts)
   })
 
   local cleanup = function()
+    cancelled = true
     pcall(api.nvim_del_augroup_by_id, aug)
     cancel()
     M.clear(b_buf)

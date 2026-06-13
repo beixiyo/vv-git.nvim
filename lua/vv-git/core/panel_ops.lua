@@ -247,9 +247,13 @@ function L.attach(M)
           items[#items + 1] = { section = section, relpath = relpath }
         end
       end
-      state.selection = {}
       local fn = Actions[name .. '_selection']
-      if fn then fn(state, items) end
+      -- 仅在确实存在 _selection 处理器时才清空选择：否则缺失处理器会把多选
+      -- 静默清掉且什么都不执行（见 accept_ours/accept_theirs 缺 _selection 变体的情形）
+      if fn then
+        state.selection = {}
+        fn(state, items)
+      end
       return
     end
 

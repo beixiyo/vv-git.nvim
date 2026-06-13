@@ -185,9 +185,13 @@ function L.attach(M)
       if main and vim.api.nvim_win_is_valid(main) then
         pcall(vim.api.nvim_set_current_win, main)
       end
-      Panel.close_win(win)
+      -- 先置空再关窗：nvim_win_close 会同步触发 WinClosed，此时若 state.panel.win
+      -- 仍指向旧窗口，handler 会标记 dirty 并同步调用 on_ensure_invariant；当尚未打开
+      -- 任何 diff（state.view == nil）时不变式会误判整个 tab 无用而调度 close，
+      -- 把「隐藏 panel」变成「关闭整个 vv-git tab」。先置空可让 handler 短路
       state.panel.win = nil
       state._panel_hidden = true
+      Panel.close_win(win)
     else
       Panel.open_split(state.panel.buf, { width = state._panel_width or M._config.width })
       state.panel.win = vim.api.nvim_get_current_win()

@@ -195,6 +195,20 @@ function M.leaf_paths(node, out)
   return out
 end
 
+-- 按 relpath 在树中定位 leaf file 节点（用于校验某个选择键是否仍存在于新树）
+---@param side_root table
+---@param relpath string
+---@return table? leaf  命中且为 leaf file 才返回；目录/不存在返回 nil
+function M.leaf_at(side_root, relpath)
+  if not side_root or relpath == '' then return nil end
+  local cur = side_root
+  for _, part in ipairs(vim.split(relpath, '/', { plain = true })) do
+    cur = cur.children and cur.children[part]
+    if not cur then return nil end
+  end
+  return (not cur.is_dir) and cur or nil
+end
+
 -- 从 compare 文件列表构建树（复用内部 trie 逻辑）
 ---@param files { status:string, path:string, old_path?:string }[]
 ---@return table root  与 M.build 返回的 side_root 同构

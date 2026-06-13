@@ -65,6 +65,13 @@
 
 ### Fixed
 
+- **`<leader>b` 隐藏面板不再误关整个 tab**：未打开任何 diff（`state.view == nil`）时按 `<leader>b` 隐藏面板，因先关窗后置空导致同步 `WinClosed` handler 误判不变式而 tabclose 整个 vv-git tab。改为先 `state.panel.win = nil` 再关窗，让 handler 短路，恢复「隐藏后可再按一次重新展开」
+- **多选 accept ours/theirs 生效**：`<` / `>` 多选冲突文件后此前因缺 `accept_ours_selection` / `accept_theirs_selection` 处理器而静默清空选择且什么都不做；补上批量处理器（仅作用于 conflicts 区选中项），并加固 `_action` 仅在确实存在处理器时才清空选择
+- **inline diff cleanup 后不再被滞后回调重绘**：切文件 / 关 view 时若已有一个 200ms 去抖回调入队，`cancel()` 无法撤回，仍会把 extmark/fold 重新画回已离开 view 的 worktree buffer。新增 `cancelled` 标志让这种滞后回调彻底变成 no-op
+- **reshow 焦点目标不再跨 preview 泄漏**：reshow 的异步 git show 被更新的 preview 超越时，`_reshow_restore_win` 此前不会被清，导致下一次普通 preview 把焦点错误地还给旧 diff 窗口。改为把该全局与当次 `req_id` 绑定，仅持有者可消费，并在成功消费 / 被超越时统一清理
+- **大文件双栏 diff 不再卡顿**：`schedule_diff_sync` 仅为定位首个 hunk 光标行却跑了一遍全量 myers+linematch diff，且无行数上限。补上与 inline 单栏一致的 `inline_diff_max_lines` 上限，超限直接跳过、光标停在当前行（原生 diff-mode 高亮/折叠不受影响）
+- **在途 commit 回调不再误关重开的提交浮窗**：提交在途时再开新提交浮窗，旧提交成功回调此前无条件 `close()` 会把刚开的新浮窗关掉。改为在 submit 时快照 prompt 身份（`owner = cur`），仅 `cur == owner` 时才 close / 复位 submitting
+- **多选 discard / stage 与所见一致**：选择键跨渲染持久化，外部 git 变更（如 `git add` 把 `??` 文件移入 staged）重建树后旧键仍残留，导致 untracked 文件被误分类为 tracked 路由到 `git restore`（no-op）、确认框漏掉删除警告。`reload_index` 重建树后剪枝掉在新树对应分区已不存在的选择键
 - **diff 滚动锚点智能选择**：`<C-e>`/`<C-y>` 滚动 diff 时固定驱动 `b_win`（新/after 侧），大批量**删除**时 b_win 内容很少（filler 占位无法作为滚动余量），导致滚不到底、看不全左侧被删的行。改为取 a/b 两个 scrollbind 窗口中**缓冲区行数最多**的那个当锚点，新增/删除都能覆盖全文滚动
 - relpath / BufWritePost 仓库归属判断补 '/' 边界，姊妹目录（如 proj2 vs proj）不再误判为仓内
 - **修复 diff 视图行号丢失**：`vim.wo[win].X = val` 等同于 `:set`（同时改全局默认），`hide_chrome` 给 panel 设 `number=false` 后全局默认被污染，后续所有新窗口继承 `false`。改用 `nvim_set_option_value(..., scope='local')` 只改目标窗口。同步修复 `view.lua` 全部 19 处 `{ win = win }` 调用、`panel.lua` 的 `diff/scrollbind/cursorbind` 设置
