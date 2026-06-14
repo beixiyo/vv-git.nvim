@@ -9,13 +9,15 @@ local M = {}
 
 ---@param state table
 ---@param after fun()?
-function M.reload_index(state, after)
+---@param passive boolean?  被动刷新（auto_refresh / 保存 / gitsigns / R / commit-push）：
+---  render 保持光标停在当前文件、不按可能滞后的 cur_path 拉走（防 j/k 导航期光标拉扯）
+function M.reload_index(state, after, passive)
   local done_index = false
   local done_ahead = false
 
   local function finalize()
     if not done_index or not done_ahead then return end
-    LeftRender.render(state)
+    LeftRender.render(state, passive)
     -- 广播 git 状态变更：stage/unstage/discard/commit/push/conflict 等所有变更操作
     -- 都汇聚到 reload_index（actions → refresh、commit/push → M.refresh），故这里发一个
     -- User 事件，让 vv-explorer / vv-statuscol 等外部消费者即时刷新自己的 git 索引，

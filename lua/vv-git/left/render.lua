@@ -332,17 +332,67 @@ function M.build(state)
 end
 
 ---@param state table
-function M.render(state)
+---@param passive boolean?  被动刷新（auto_refresh / 保存 / gitsigns / R / commit-push）：
+---  渲染前记下光标当前所在文件、渲染后放回同一文件，不读可能滞后的 cur_path、不管焦点在不在 panel
+function M.render(state, passive)
   if not state.panel or not state.panel.buf then return end
   if not vim.api.nvim_buf_is_valid(state.panel.buf) then return end
+
+  -- passive 刷新防拉扯：在 flush 重写 buffer **之前**，从旧 id_by_line 反查光标当前所在的文件节点。
+  -- 纯 j/k 导航时 preview 的 set_buf 会发 BufEnter 反复点起 auto_refresh → 这条 passive 渲染；
+  -- 若像普通渲染那样按 cur_path 恢复，cur_path 由防抖 preview 滞后约 150ms、落后于光标真实行，
+  -- 就会把刚导航到的位置拉回旧行、且自触发 CursorMoved 形成自激回环。改为记住「光标此刻在哪个
+  -- 文件」、渲染后放回该文件（content 变了就跟它到新行），令本次刷新对光标成为 no-op。
+  -- 带 hint（stage/unstage/fold，非 passive）的渲染不进此分支，afc82c2 等落点逻辑不受影响
+  local keep
+  if passive and not state._action_hint and not state._section_hint then
+    local pw = state.panel.win
+    if pw and vim.api.nvim_win_is_valid(pw) then
+      local ok, pos = pcall(vim.api.nvim_win_get_cursor, pw)
+      if ok and pos then
+        local oid = (state.panel.id_by_line or {})[pos[1]]
+        keep = {
+          line = pos[1],
+          relpath = oid and oid.node and not oid.node.is_dir and oid.node.relpath or nil,
+          section = oid and oid.section or nil,
+        }
+      end
+    end
+  end
+
   local lines, extmarks, id_by_line = M.build(state)
   Panel.flush(state.panel.buf, lines, extmarks, M.ns)
   state.panel.id_by_line = id_by_line
+
+  -- relpath(+可选 section)→ 行号：render 内多处光标恢复共用的定位原语
+  -- （section 为 nil 时不约束；同名文件可能并存于 staged/unstaged，故按需带 section 过滤）
+  local function line_of(relpath, section)
+    if not relpath then return nil end
+    for lnum, id in pairs(id_by_line) do
+      if id.node and id.node.relpath == relpath and (not section or id.section == section) then
+        return lnum
+      end
+    end
+  end
 
   -- 记住当前光标 → 尝试恢复到 cur_path
   -- （初次渲染时光标可能在 header，跳到第一个文件行更合理）
   local win = state.panel.win
   if win and vim.api.nvim_win_is_valid(win) then
+    -- passive：把光标放回它原本所在的文件（content 变了跟该文件到新行，找不到再按原行号 clamp），
+    -- 不进入下方按 cur_path 的恢复，避免被滞后值拉走
+    if keep then
+      local target = line_of(keep.relpath, keep.section)
+          or math.min(keep.line, math.max(1, #lines))
+      pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
+      local id = id_by_line[target]
+      if id and id.node then
+        state.cur_path = id.node.relpath
+        state.cur_section = id.section
+      end
+      return
+    end
+
     -- section 折叠/展开后：把光标固定在该 section 标题行，避免跳到别处
     local sh = state._section_hint
     if sh then
@@ -401,23 +451,14 @@ function M.render(state)
     local cur_path = state.cur_path
     local cur_section = state.cur_section
     if cur_path then
-      -- 优先匹配同 section 同 path
-      if cur_section then
-        for lnum, id in pairs(id_by_line) do
-          if id.node and id.node.relpath == cur_path and id.section == cur_section then
-            pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
-            return
-          end
-        end
-      end
-      -- fallback：同名文件可能同时出现在 staged 与 unstaged，按 Changes 优先
-      for _, prefer in ipairs({ 'unstaged', 'staged', 'conflicts' }) do
-        for lnum, id in pairs(id_by_line) do
-          if id.node and id.node.relpath == cur_path and id.section == prefer then
-            pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
-            return
-          end
-        end
+      -- 优先匹配同 section 同 path；再不行按 Changes 优先（同名文件可能并存于 staged/unstaged）
+      local lnum = (cur_section and line_of(cur_path, cur_section))
+          or line_of(cur_path, 'unstaged')
+          or line_of(cur_path, 'staged')
+          or line_of(cur_path, 'conflicts')
+      if lnum then
+        pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
+        return
       end
     end
     -- 优先落在 Changes（unstaged）的第一个文件行

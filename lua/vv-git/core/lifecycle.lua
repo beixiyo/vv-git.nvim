@@ -200,9 +200,13 @@ function L.attach(M)
     end
   end)
 
+  -- 所有经 M.refresh 的刷新都是被动刷新（auto_refresh / BufWritePost / GitSignsChanged /
+  -- 手动 R / commit-push）——语义是「更新列表，别动我光标」，故走 passive，render 保持光标
+  -- 停在当前文件而非按滞后 cur_path 拉走（stage/unstage/discard 等带 _action_hint 的动作
+  -- 不经 M.refresh，仍走 reload_index 非 passive 路径，落点逻辑不受影响）
   M.refresh = State.guarded(function(state)
     if not state.panel or not state.git_root then return end
-    Loader.reload_index(state)
+    Loader.reload_index(state, nil, true)
   end)
 end
 
