@@ -33,18 +33,18 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡） @default 10000
 ---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用 @default 'toggle_stage'
 ---@field diff_ratio integer[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6 @default { 5, 5 }
----@field diff_nowrap boolean  -- diff 视图中强制关闭 wrap（默认 true）；wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制（neovim/neovim#29518、sindrets/diffview.nvim#198） @default true
+---@field diff_nowrap boolean  -- 置为 true 时 diff 视图强制关闭 wrap（wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制 neovim/neovim#29518、sindrets/diffview.nvim#198） @default false
 ---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效 @default nil
 ---@field binary VVGitBinaryConfig
 ---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'） @default '<Tab>'
----@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行（默认 true） @default false
+---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
 ---@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
 local defaults = {
   width = 30,
   single_col_threshold = 120,
   keymap_toggle_panel = '<leader>b',
   keymap_select = '<Tab>',
-  select_move_down = false,
+  select_move_down = true,
   fold_unchanged = true,
   diff_ratio = { 5, 5 },
   diff_fill = ' ',
@@ -53,7 +53,7 @@ local defaults = {
   auto_refresh = true,
   inline_diff_max_lines = 10000,
   right_click = 'toggle_stage',
-  diff_nowrap = true,
+  diff_nowrap = false,
   binary = {
     intercept = true,
     extensions = {
