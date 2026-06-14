@@ -4,11 +4,9 @@ local State = require('vv-git.state')
 local RightView = require('vv-git.right.view')
 local LeftRender = require('vv-git.left.render')
 local Help = require('vv-git.help')
+local Scroll = require('vv-utils.scroll')
 
 local L = {}
-
-local CE_KEY = vim.api.nvim_replace_termcodes('<C-e>', true, false, true)
-local CY_KEY = vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
 
 -- 选滚动锚点：a/b 两个 diff 窗口 scrollbind 联动，驱动哪个都会带动另一个，但驱动方自身
 -- 必须有足够内容才能滚到底。固定用 b_win（新/after 侧）在大批量「删除」时会失灵——此时
@@ -28,21 +26,12 @@ local function pick_scroll_anchor(view)
   return best
 end
 
----@param keys string
-local function scroll_diff(keys)
+---@param direction 1 | -1
+local function scroll_diff(direction)
   if not State.has() then return end
   local target = pick_scroll_anchor(State.get().view)
   if not target or not vim.api.nvim_win_is_valid(target) then return end
-  local prev = vim.api.nvim_get_current_win()
-  if prev == target then
-    pcall(vim.cmd, 'normal! 5' .. keys)
-    return
-  end
-  pcall(vim.api.nvim_set_current_win, target)
-  pcall(vim.cmd, 'normal! 5' .. keys)
-  if vim.api.nvim_win_is_valid(prev) then
-    pcall(vim.api.nvim_set_current_win, prev)
-  end
+  Scroll.window(target, direction * 5)
 end
 
 ---@param state table
@@ -161,8 +150,8 @@ function L.install(state, M)
   map('c',             function() M._commit() end,                 'commit')
   map('p',             function() M._push() end,                   'push')
   map('P',             function() M._pull() end,                   'pull')
-  map('<C-e>',         function() scroll_diff(CE_KEY) end,         'scroll_diff_down')
-  map('<C-y>',         function() scroll_diff(CY_KEY) end,         'scroll_diff_up')
+  map('<C-e>',         function() scroll_diff(1) end,               'scroll_diff_down')
+  map('<C-y>',         function() scroll_diff(-1) end,              'scroll_diff_up')
   map('H',             function() M._compare_pick() end,           'compare_pick')
   map('gc',            function() M._commit_show_pick() end,        'commit_show')
   map('g?',            function() Help.open(state) end,            'help')
