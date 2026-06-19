@@ -17,7 +17,7 @@
 
   两种模式共用同一套左栏文件列表 + 右侧双栏 diff 基础设施；`<Esc>` 退出，左栏立即恢复正常视图。
 
-- **Compare 模式树结构**：`H`/`gc` 的变更文件列表从扁平路径改为树形目录结构，与 normal 模式的 Staged/Changes 视图一致——支持目录折叠箭头、文件类型图标、单链目录合并（`src/foo/bar/` 显示为一行）、`l`/`h` 展开/折叠、目录状态聚合（显示子文件中最严重的状态字母）
+- **Compare 模式树结构**：`H`/`gc` 的变更文件列表从扁平路径改为树形目录结构，与 normal 模式的 Staged/Changes 视图一致——支持目录折叠箭头、文件类型图标、单链目录合并（`src/foo/bar/` 显示为一行）、`l`/`h` 展开/折叠
 
 - **多选操作**：`<Tab>`（可配置 `keymap_select`）切换当前文件的选中状态，选中行以 `VVGitPanelSelected` 高亮标记；选中集合非空时，`-`/`d` 批量操作所有选中文件（staged → unstage，unstaged → stage/discard，两侧可混合）；`<Esc>` 优先清空选中，无选中时关闭面板；`v`/`V`/`<C-v>` 已屏蔽（nofile buffer 里 visual 模式无意义）
 
@@ -51,6 +51,7 @@
 
 ### Changed
 
+- **文件夹行不再显示 git 状态**：左栏文件树中，目录行不再聚合显示子文件中最严重的状态字母（`M`/`A`/`D`/`?` 等），仅文件 leaf 行保留状态字母；normal 与 compare 两种模式一致
 - **`h` / `←` 在最外层文件上折叠整个 section**：此前最外层文件（无父目录可收）按 `h` 无反应；现继续往外折叠其所属 section（Staged Changes / Changes / Merge Conflicts）并把光标归到该 section 标题行，与 yazi/资源管理器「向左一路收起」的直觉一致
 - **`d` 键 staged 区行为改为 unstage**：与 VSCode 对齐——staged 区按 `d` 只做 unstage，不再同时 discard；unstaged 区保持原有 discard + 确认弹窗逻辑不变
 

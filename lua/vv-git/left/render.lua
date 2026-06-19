@@ -99,30 +99,6 @@ local function build_row(opts)
   return line, extmarks
 end
 
--- section 聚合状态字母：文件夹显示其下最"严重"的文件状态
--- 优先级：! > D > R > A > M > ?
--- 注：冲突(U*)已在 tree.status_letter 被统一映射为 '!'，此表不需要 'U'
-local SEVERITY = { ['!']=6, ['D']=5, ['R']=4, ['A']=3, ['M']=2, ['?']=1, ['C']=3 }
-
----@param node table
----@return string? letter, string? hl
-local function dir_status(node)
-  if not node.is_dir then return node.letter, node.hl end
-  local best_letter, best_hl, best_score = nil, nil, 0
-  for _, c in pairs(node.children or {}) do
-    local l, h = dir_status(c)
-    if l then
-      local s = SEVERITY[l] or 0
-      if s > best_score then
-        best_score = s
-        best_letter = l
-        best_hl = h
-      end
-    end
-  end
-  return best_letter, best_hl
-end
-
 ---@param state table  vv-git state（含 tree / folds / git_root）
 ---@return string[] lines, table[] extmarks, table id_by_line
 function M.build(state)
@@ -203,10 +179,9 @@ function M.build(state)
     local rows = Tree.flatten(side_root, scoped_folds, { group_empty_dirs = true })
     for _, r in ipairs(rows) do
       local node = r.node
+      -- 文件夹行不显示 git 状态，仅文件 leaf 显示状态字母
       local letter, hl
-      if node.is_dir then
-        letter, hl = dir_status(node)
-      else
+      if not node.is_dir then
         letter, hl = node.letter, node.hl
       end
 
@@ -263,10 +238,9 @@ function M.build(state)
     local rows = Tree.flatten(compare_root, scoped_folds, { group_empty_dirs = true })
     for _, r in ipairs(rows) do
       local node = r.node
+      -- 文件夹行不显示 git 状态，仅文件 leaf 显示状态字母
       local letter, hl
-      if node.is_dir then
-        letter, hl = dir_status(node)
-      else
+      if not node.is_dir then
         letter, hl = node.letter, node.hl
       end
 
