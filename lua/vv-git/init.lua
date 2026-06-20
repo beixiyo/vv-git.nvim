@@ -21,6 +21,11 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field intercept boolean  拦截二进制文件：不在 nvim 打开 diff，改用系统默认程序（仅 _activate/_goto_file；_preview 静默跳过） @default true
 ---@field extensions table<string, boolean>  视为二进制的扩展名集合（小写 key） @default { png = true, jpg = true, jpeg = true, ... }
 
+---@class VVGitSubrepoConfig
+---@field depth integer  扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；0 = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） @default 0
+---@field respect_gitignore boolean  发现时是否跳过被父仓库 `.gitignore` 的目录。**HOME-as-repo（`~` 几乎忽略一切）务必保持 `false`**，否则所有子仓库都被屏蔽；常规项目想隐藏被忽略目录里的 vendored 仓库才开 `true`（注意 `node_modules` 等已由 `prune` 覆盖） @default false
+---@field prune string[]  发现子仓库时**不进入扫描**的目录名列表（匹配目录 basename）。**覆盖语义**：传了就完全替换默认列表（不合并）；`.git` 始终额外跳过 @default 见下方（node_modules / .cache / .local / .cargo / .rustup 等缓存与工具链目录）
+
 ---@class VVGitConfig
 ---@field width integer @default 30
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
@@ -39,6 +44,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'） @default '<Tab>'
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
 ---@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
+---@field subrepo VVGitSubrepoConfig  嵌套子仓库扫描
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -54,6 +60,17 @@ local defaults = {
   inline_diff_max_lines = 10000,
   right_click = 'toggle_stage',
   diff_nowrap = false,
+  subrepo = {
+    depth = 0,
+    respect_gitignore = false,
+    -- 不进入扫描的目录名（数组，覆盖语义：传了就整体替换；缓存/工具链目录常含大量
+    -- vendored / registry 仓库，深扫时是主要噪音与耗时来源）
+    prune = {
+      'node_modules', 'dist', 'build', 'target', 'vendor', '.next', '.venv',
+      '.cache', '.local', '.cargo', '.rustup', '.bun', '.npm', '.nvm',
+      '.gradle', '.m2', '.deno', '.pnpm-store',
+    },
+  },
   binary = {
     intercept = true,
     extensions = {
@@ -77,9 +94,34 @@ local defaults = {
 
 M._config = vim.deepcopy(defaults)
 
+-- 子仓库扫描深度的运行时临时覆盖（`:VVGitSubrepoDepth` 设置）。
+-- 仅存于内存、随会话存活、关面板不清、重启即失效——满足「临时改、不持久化」
+---@type integer?
+M._subrepo_depth_override = nil
+
+--- 当前生效的子仓库扫描深度：临时覆盖优先，否则取 config.subrepo.depth
+---@return integer
+function M.get_subrepo_depth()
+  if M._subrepo_depth_override ~= nil then return M._subrepo_depth_override end
+  local sr = M._config and M._config.subrepo
+  return (sr and sr.depth) or 0
+end
+
+--- 临时设置子仓库扫描深度（不写盘）
+---@param n integer
+function M.set_subrepo_depth(n)
+  M._subrepo_depth_override = n
+end
+
 ---@param opts VVGitConfig?
 function M.setup(opts)
   M._config = vim.tbl_deep_extend('force', defaults, opts or {})
+
+  -- subrepo.prune 用「覆盖」语义：用户传了就整体替换默认列表。
+  -- tbl_deep_extend 对数组是按下标混合（传 { 'a' } 会得到 { 'a', 默认[2..] }），故显式覆盖
+  if opts and opts.subrepo and opts.subrepo.prune ~= nil then
+    M._config.subrepo.prune = vim.deepcopy(opts.subrepo.prune)
+  end
 
   local persisted = Fs.load_json(PERSIST_FILE)
   if persisted.width then M._config.width = persisted.width end
@@ -104,6 +146,20 @@ function M.setup(opts)
   ucmd('VVGitCompare',      function() M.open() M._compare_pick() end)
   ucmd('VVGitCommitShow',   function() M.open() M._commit_show_pick() end)
   ucmd('VVGitShow',         function(o) M.show_commit(o.args) end, { nargs = 1 })
+  ucmd('VVGitSubrepoDepth', function(o)
+    if not o.args or o.args == '' then
+      vim.notify('[vv-git] subrepo scan depth = ' .. M.get_subrepo_depth(), vim.log.levels.INFO)
+      return
+    end
+    local n = tonumber(o.args)
+    if not n or n < 0 or n ~= math.floor(n) then
+      vim.notify('[vv-git] invalid depth: ' .. tostring(o.args) .. ' (expect integer >= 0)', vim.log.levels.ERROR)
+      return
+    end
+    M.set_subrepo_depth(n)
+    vim.notify('[vv-git] subrepo scan depth → ' .. n, vim.log.levels.INFO)
+    M.refresh()
+  end, { nargs = '?', desc = 'vv-git: 临时设置子仓库扫描深度（不持久化）' })
 
   if M._config.keymap_toggle_panel then
     vim.keymap.set('n', M._config.keymap_toggle_panel, function() M.toggle_panel() end, {

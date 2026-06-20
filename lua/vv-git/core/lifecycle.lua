@@ -7,6 +7,7 @@ local RightView = require('vv-git.right.view')
 local Loader = require('vv-git.loader')
 local Guard = require('vv-git.guard')
 local Keymaps = require('vv-git.core.keymaps')
+local Subrepo = require('vv-git.subrepo')
 local Fs = require('vv-utils.fs')
 local UGit = require('vv-utils.git')
 
@@ -38,7 +39,10 @@ local function ensure_unfolded(state, relpath)
   for i = 1, #parts - 1 do
     accum = accum == '' and parts[i] or (accum .. '/' .. parts[i])
     for k, _ in pairs(state.folds) do
-      if k:match(':(.*)$') == accum then
+      -- relpath 相对父仓库根，只展开父仓库（root == nil）的 fold，
+      -- 避免误伤子仓库里同名目录的折叠状态（跨仓库过度展开）
+      local root, _, rel = Subrepo.parse_sel_key(k)
+      if root == nil and rel == accum then
         state.folds[k] = nil
       end
     end
@@ -95,6 +99,12 @@ function L.attach(M)
     state.prev_tab = prev_tab
     state.git_root = root
     state.cur_path = rel_path
+    -- 把子仓库扫描深度/配置以闭包注入 state，避免数据层 loader 反向 require 顶层 init
+    -- （闭包读 M 的实时值：:VVGitSubrepoDepth 改 override 后下次 reload 即生效）
+    state._subrepo = {
+      depth = M.get_subrepo_depth,
+      config = function() return M._config.subrepo or {} end,
+    }
     ensure_unfolded(state, rel_path)
     state.panel = {
       buf = panel_buf,

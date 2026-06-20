@@ -53,13 +53,35 @@
 | `select_move_down` | `boolean` | `true` | `<Tab>` 切换选中后自动将光标下移一行 |
 | `binary.intercept` | `boolean` | `true` | 拦截二进制文件：预览时静默跳过，`<CR>`/`gf` 改用系统默认程序打开；`false` 禁用拦截 |
 | `binary.extensions` | `table<string, boolean>` | 见下方 | 视为二进制的扩展名集合（小写 key）；`vim.tbl_deep_extend` 合并，只需写要覆盖的 key |
+| `subrepo.depth` | `integer` | `0` | 扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；`0` = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） |
+| `subrepo.respect_gitignore` | `boolean` | `false` | 发现时是否跳过被父仓库 `.gitignore` 的目录 |
+| `subrepo.prune` | `string[]` | 见下方 | 发现子仓库时**不进入扫描**的目录名列表。**覆盖**语义：传了就整体替换默认列表（不合并）；默认含 `node_modules` / `.cache` / `.local` / `.cargo` / `.rustup` / `.bun` 等缓存目录，`.git` 始终跳过 |
 
+
+## 子仓库扫描
+
+```lua
+opts = {
+  subrepo = {
+    depth = 1,                  -- 从 cwd 向下扫 1 层找子仓库
+    respect_gitignore = false,  -- 默认；HOME-as-repo 必须 false 才看得到 ~/code 等被 ignore 的项目
+    -- prune 是数组，覆盖语义：传了就整体替换默认（默认已含 node_modules / .cache /
+    -- .local / .cargo 等缓存目录）。想在默认基础上加目录，需把默认项一并列出
+    prune = { 'node_modules', '.cache', '.local', '.cargo', 'my_huge_dir' },
+  },
+}
+```
+
+**按子仓库正确路由**：每个块里文件的 diff、stage / unstage / discard、冲突 accept 都会落到其**所属仓库**（内部用 `git -C <子仓库根>` + 仓库相对路径），各仓库互不串状态
+
+- **`c` 提交 / `p` push / `P` pull**：作用于**光标所在节点的所属仓库**
+- **gitignore 目录默认照扫**：`respect_gitignore=false`（默认）下，被 `.gitignore` 的**目录**仍会被扫描，可手动配置 `respect_gitignore`
 
 ## 二进制文件拦截
 
-默认开启。预览（光标移动）时静默跳过二进制文件；`<CR>`/`gf` 遇到二进制文件时改用系统默认程序打开，不在 nvim 内尝试渲染乱码 diff。
+默认开启。预览（光标移动）时静默跳过二进制文件；`<CR>`/`gf` 遇到二进制文件时改用系统默认程序打开，不在 nvim 内尝试渲染乱码 diff
 
-内置扩展名覆盖：图片（png/jpg/gif/webp/heic/…）、视频（mp4/mkv/mov/…）、音频（mp3/wav/flac/…）、压缩包（zip/tar/gz/tgz/jar/deb/dmg/iso/…）、编译产物（exe/dll/so/wasm/bin/…）、字体（ttf/otf/woff/…）、二进制文档（pdf/docx/xlsx/…）、数据库（sqlite/db）。
+内置扩展名覆盖：图片（png/jpg/gif/webp/heic/…）、视频（mp4/mkv/mov/…）、音频（mp3/wav/flac/…）、压缩包（zip/tar/gz/tgz/jar/deb/dmg/iso/…）、编译产物（exe/dll/so/wasm/bin/…）、字体（ttf/otf/woff/…）、二进制文档（pdf/docx/xlsx/…）、数据库（sqlite/db）
 
 ```lua
 -- 放行某类扩展名（未来 nvim 支持图片预览时）
@@ -76,7 +98,7 @@ opts = { binary = { intercept = false } }
 opts = { binary = { extensions = { sketch = true, fig = true } } }
 ```
 
-`binary.extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表。
+`binary.extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表
 
 ## 自定义配色
 
@@ -98,7 +120,7 @@ opts = {
 }
 ```
 
-可覆盖的完整高亮组列表见 `lua/vv-git/hl.lua`。
+可覆盖的完整高亮组列表见 `lua/vv-git/hl.lua`
 
 ## 快捷键
 

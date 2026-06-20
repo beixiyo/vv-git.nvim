@@ -4,12 +4,19 @@
 -- state.prev_tab  = 打开 vv-git 前用户所在的 tabpage（关闭时回跳）
 -- state.panel     = 左栏 panel 表（{ buf, win, main_win }）
 -- state.view      = 右栏 diff 视图表（{ a_win, b_win, a_buf, b_buf, path, mode='diff2'|'single' }）
--- state.git_root  = 当前仓库根绝对路径
--- state.index     = vv-utils.git.index() 返回的 { status_map, is_ignored }
--- state.tree      = 变更树：{ staged, unstaged, conflicts }
--- state.folds         = { ['section:relpath'] = true }  被折叠的文件夹集合
--- state.section_folds = { [section_id] = true }  被折叠的 section（staged/unstaged/conflicts）
--- state.selection = { ['section:relpath'] = true }  多选集合（仅文件节点）
+-- state.git_root  = 父仓库根绝对路径
+-- state.index     = 父仓库 index 视图：{ status_map, rename_map }（形状与子仓库一致）
+-- state.tree      = 父仓库变更树：{ staged, unstaged, conflicts }
+-- state.subrepos  = 发现的子仓库块列表：{ { root, label, tree, index }, ... }（depth>0 时）
+--                   每个子仓库各建一棵独立树，在左栏作为「Sub-Repo: <label>」块渲染
+-- state._subrepo  = 子仓库扫描配置注入（lifecycle 在 open 时填）：{ depth():integer, config():table }
+-- state.folds         = { ['<section_id>\0<relpath>'] = true }  被折叠的文件夹集合
+-- state.section_folds = { [section_id] = true }  被折叠的 section
+--                   section_id：父仓库为裸 base（staged/unstaged/conflicts），
+--                   子仓库为 `<root>\0<base>`（见 vv-git.subrepo）。key 拼/拆统一走
+--                   Subrepo.sel_key / split_key / parse_sel_key，分隔符全用 NUL（按仓库隔离）
+-- state.subrepo_folds = { [subrepo_root] = true }  被折叠的整个 Sub-Repo 块（只留标题行）
+-- state.selection = { ['<section_id>\0<relpath>'] = true }  多选集合（仅文件节点）
 -- state.cur_path  = 当前选中文件相对路径
 
 local M = {}
@@ -31,8 +38,10 @@ function M.get()
       git_root = nil,
       index = nil,
       tree = nil,
+      subrepos = {},
       folds = {},
       section_folds = {},
+      subrepo_folds = {},
       selection = {},
       cur_path = nil,
     }

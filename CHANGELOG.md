@@ -4,7 +4,10 @@
 
 ### Added
 
+- **子仓库扫描**：新增 `subrepo.depth`（默认 `0` 不扫描）
+ 
 - **方向键导航**：面板内 `↑/↓` 同 `j`/`k`（跳上/下一个可选项）、`→` 同 `l`（展开/激活）、`←` 同 `h`（折叠），照顾习惯方向键的用户
+ 
 - **状态变更广播**：任意 git 变更（stage/unstage/discard/commit/push/conflict）完成后，`reload_index` 发一个 `User VVGitStatusChanged` 事件（`data.root` 带仓库根），供 vv-explorer / vv-statuscol 等外部消费者即时刷新自身 git 索引，无需轮询或等 `FocusGained`
 
 - **预览防抖**：`preview_debounce_ms` 光标停顿后才刷新右侧 diff，避免快速 `j`/`k` 时频繁重算；`0` = 不防抖（同步直刷）
@@ -30,20 +33,33 @@
 - **gitsigns 协同刷新**：监听 `User GitSignsChanged` 事件，在右侧 diff 预览中通过 gitsigns 暂存/取消暂存 hunk 后，左栏文件列表和右侧 diff 自动刷新，焦点保持在原窗口不跳转
 
 - **智能定位当前文件**：按 `<leader>gd` 打开或切换到 Git 面板时，若当前 buffer 有改动，会自动将光标定位到该文件并展示 diff；若目标路径在折叠的目录中，会自动展开父目录
+ 
 - **文件夹状态图标**：Git 面板中的目录图标现在支持“展开”与“收起”状态切换，视觉表现与 `vv-explorer` 及 `snacks.nvim` 完全同步
+ 
 - **鼠标操作**：单击（`<LeftRelease>`）展开/收起目录；右键（`<RightMouse>` + `getmousepos()`）执行可配置 action（默认 `toggle_stage`），屏蔽右键 visual 选区（含双击/三击）。配置项 `right_click`（`string|false`）
+ 
 - **鼠标 visual 屏蔽**：屏蔽 `<LeftDrag>`（左键拖拽）和 `<2-LeftMouse>`（双击左键），防止鼠标操作触发 visual 选区
+ 
 - **j/k 循环导航**：`j`/`k`/`<C-n>`/`<C-p>` 在可交互行间跳转，到边缘自动循环回绕，跳过空行和非交互行
+ 
 - **默认光标在 Changes**：初次渲染时光标优先定位到 Changes（unstaged）区域的第一个文件，而非 Staged Changes；当前文件同时存在于 Staged 与 Changes 时，也优先落在 Changes 一侧
+ 
 - Added `<Esc>` mapping to close the panel and diff view.
+ 
 - **窄终端单栏 fallback**：窗口列数 < `single_col_threshold` 时不再拒绝打开 / 关闭 tab，自动降级为「panel + 单栏 b 视图」，列数恢复后自动升回 dual diff
+ 
 - **单栏 inline diff 高亮**：单栏模式下用 `vim.diff()` 在 b_buf 上叠 extmark，新增/修改行整行染色 + 删除行通过 `virt_lines` 在原位上方显示，覆盖 staged 和 unstaged
+ 
 - **字符级 word-diff 高亮**：单栏 inline 模式下 rc==ac 改动行（含 a 侧 virt_lines）按字符级 `vim.diff` 拆 chunk，改动字符显深色 / 上下文显浅色，仿 gitsigns `lua/gitsigns/diff_int.lua`（`split_chars` + `denoise_hunks` + 1:1 行配对，`DENOISE_GAP=5` 避免破碎闪烁）。注意按 byte 切，CJK 多字节文件可能切到字符中间，ASCII 主导文件无影响
+ 
 - **双栏 `inline:char`**：`vim.opt.diffopt` 追加 `inline:char`（nvim 0.11+），双栏模式下 `DiffText` / `DiffTextAdd` 由 nvim 内置字符级 diff 驱动，不再"首字差异 → 末字差异"整段染色
+ 
 - 新增高亮组 `VVGitDiffTextAdd` / `VVGitDiffTextAddDelete`（nvim 0.11+ `inline:char/word` 配套：标"对侧无对应原文"的纯增/删字符），`WINHL_A` / `WINHL_B` 同步映射避免 fall-through 到全局默认色
+ 
 - **单栏自动折叠**：仿 dual mode `foldmethod=diff`，未改动行 ±6 行上下文外自动折叠（`foldmethod=manual`）；与 nvim-ufo 通过 detach/attach 协作避免冲突
+ 
 - **自动跳到第一处变更**：dual / single 两种模式打开文件时光标直接落在第一个 hunk 上 + `zz` 居中
-- **单栏 worktree 实时刷新**：unstaged 单栏的 worktree b_buf 上挂 `TextChanged` 200ms 去抖，编辑后 inline diff 跟着 hunks 重算
+ 
 - 配置项 `inline_diff_max_lines`（默认 10000）：超过此行数跳过 inline 渲染，避免大文件 vim.diff 卡顿
 
 - **Panel 宽度持久化**：调整左栏宽度后跨 session 记住，通过 `WinResized` 实时跟踪 + `VimLeavePre` / `M.close` 写入 `stdpath('data')/vv-git.json`

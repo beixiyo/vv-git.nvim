@@ -5,6 +5,7 @@ local LeftRender = require('vv-git.left.render')
 local RightView = require('vv-git.right.view')
 local Actions = require('vv-git.left.actions')
 local Keymaps = require('vv-git.core.keymaps')
+local Subrepo = require('vv-git.subrepo')
 
 local L = {}
 
@@ -76,7 +77,7 @@ function L.attach(M)
     local node, section = view.node, view.section
     state.view.path = nil
     state._reshow_restore_win = vim.api.nvim_get_current_win()
-    RightView.show(state, node, section, is_narrow(M))
+    RightView.show(state, node, section, is_narrow(M), view.root)
   end)
 
   M._preview = State.guarded(function(state)
@@ -86,15 +87,16 @@ function L.attach(M)
     if not id or id.section_header then return end
     local node = id.node
     if not node or node.is_dir then return end
-    if is_binary(M, state.git_root .. '/' .. node.relpath) then return end
+    local root = id.root or state.git_root
+    if is_binary(M, root .. '/' .. node.relpath) then return end
     local view = state.view
-    if view and view.path == node.relpath and view.section == id.section
+    if view and view.path == node.relpath and view.section == id.base and view.root == root
         and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
       return
     end
     state.cur_path = node.relpath
     state.cur_section = id.section
-    RightView.show(state, node, id.section, is_narrow(M))
+    RightView.show(state, node, id.base, is_narrow(M), root)
   end)
 
   -- 预览防抖：单例常驻 timer（仿下方 _apply_layout）。wait 用函数延迟读 config——
@@ -115,20 +117,21 @@ function L.attach(M)
   M._activate = State.guarded(function(state, expand_only)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
-    if id.section_header then
+    if id.section_header or id.subrepo_header then
       M._toggle_fold()
       return
     end
     local node = id.node
     if not node then return end
     if node.is_dir then
-      local fold_key = (id.section or '') .. ':' .. node.relpath
+      local fold_key = Subrepo.sel_key(id.section or '', node.relpath)
       if not expand_only or state.folds[fold_key] then
         M._toggle_fold()
       end
       return
     end
-    local abspath = state.git_root .. '/' .. node.relpath
+    local root = id.root or state.git_root
+    local abspath = root .. '/' .. node.relpath
     if is_binary(M, abspath) then
       require('vv-utils.sys').open_default(abspath)
       return
@@ -136,16 +139,26 @@ function L.attach(M)
     state.cur_path = node.relpath
     state.cur_section = id.section
     local view = state.view
-    if view and view.path == node.relpath and view.section == id.section
+    if view and view.path == node.relpath and view.section == id.base and view.root == root
         and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
       return
     end
-    RightView.show(state, node, id.section, is_narrow(M))
+    RightView.show(state, node, id.base, is_narrow(M), root)
   end)
 
   M._toggle_fold = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
+
+    -- Sub-Repo 块标题行：折叠/展开整个块
+    if id.subrepo_header then
+      state.subrepo_folds = state.subrepo_folds or {}
+      local r = id.subrepo_header
+      state.subrepo_folds[r] = not state.subrepo_folds[r] or nil
+      state._subrepo_hint = r
+      LeftRender.render(state)
+      return
+    end
 
     -- section 标题行：折叠/展开整个 section
     if id.section_header then
@@ -158,7 +171,7 @@ function L.attach(M)
     end
 
     if not id.node or not id.node.is_dir then return end
-    local fold_key = (id.section or '') .. ':' .. id.node.relpath
+    local fold_key = Subrepo.sel_key(id.section or '', id.node.relpath)
     state.folds[fold_key] = not state.folds[fold_key] or nil
     state.cur_path = id.node.relpath
     state.cur_section = id.section
@@ -168,6 +181,15 @@ function L.attach(M)
   M._collapse = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
+
+    -- Sub-Repo 块标题行：直接折叠整个块
+    if id.subrepo_header then
+      state.subrepo_folds = state.subrepo_folds or {}
+      state.subrepo_folds[id.subrepo_header] = true
+      state._subrepo_hint = id.subrepo_header
+      LeftRender.render(state)
+      return
+    end
 
     -- section 标题行：直接折叠该 section
     if id.section_header then
@@ -181,8 +203,8 @@ function L.attach(M)
     if not id.node then return end
     local section = id.section or ''
     local fold_key
-    if id.node.is_dir and not state.folds[section .. ':' .. id.node.relpath] then
-      fold_key = section .. ':' .. id.node.relpath
+    if id.node.is_dir and not state.folds[Subrepo.sel_key(section, id.node.relpath)] then
+      fold_key = Subrepo.sel_key(section, id.node.relpath)
     else
       local parent = vim.fs.dirname(id.node.relpath)
       if parent == '.' or parent == '' then
@@ -196,10 +218,10 @@ function L.attach(M)
         end
         return
       end
-      fold_key = section .. ':' .. parent
+      fold_key = Subrepo.sel_key(section, parent)
     end
     state.folds[fold_key] = true
-    state.cur_path = fold_key:match(':(.+)$') or id.node.relpath
+    state.cur_path = (select(2, Subrepo.split_key(fold_key))) or id.node.relpath
     state.cur_section = id.section
     LeftRender.render(state)
   end)
@@ -207,7 +229,7 @@ function L.attach(M)
   M._toggle_select = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id or not id.node or id.node.is_dir or id.section_header then return end
-    local key = (id.section or '') .. ':' .. id.node.relpath
+    local key = Subrepo.sel_key(id.section or '', id.node.relpath)
     if state.selection[key] then
       state.selection[key] = nil
     else
@@ -242,9 +264,9 @@ function L.attach(M)
     if next(state.selection) then
       local items = {}
       for key in pairs(state.selection) do
-        local section, relpath = key:match('^(.-):(.+)$')
-        if section and relpath then
-          items[#items + 1] = { section = section, relpath = relpath }
+        local root, base, relpath = Subrepo.parse_sel_key(key)
+        if base and relpath then
+          items[#items + 1] = { root = root or state.git_root, base = base, relpath = relpath }
         end
       end
       local fn = Actions[name .. '_selection']
@@ -285,7 +307,7 @@ function L.attach(M)
     local is_now_single = (view.mode == 'single')
     if want_single == is_now_single then return end
 
-    RightView.show(state, view.node, view.section, want_single)
+    RightView.show(state, view.node, view.section, want_single, view.root)
   end
 
   -- resize 去抖单例：L.attach 仅初始化时调一次，常驻一个 uv timer

@@ -350,7 +350,9 @@ end
 ---@param win integer
 ---@param state table
 ---@param ref string  'HEAD' | 'MERGE_HEAD'
-local function set_conflict_winbar(win, state, ref)
+---@param root? string  冲突文件所属仓库根（子仓库时为子仓库根）；默认父仓库根
+local function set_conflict_winbar(win, state, ref, root)
+  root = root or state.git_root
   local branch_hl = REF_HL[ref] or 'VVGitWinbarOurs'
 
   local function apply(info)
@@ -393,13 +395,16 @@ local function set_conflict_winbar(win, state, ref)
   local cache = state._conflict_info_cache
   if not cache then cache = {}; state._conflict_info_cache = cache end
 
-  if cache[ref] ~= nil then
-    apply(cache[ref] or nil)
+  -- 缓存键带 root：多个子仓库同时有冲突时，各自的 HEAD/MERGE_HEAD 信息不会互相串
+  -- 分隔符用 NUL：含 ':' 的仓库根路径不会与 ref 串键
+  local ck = root .. '\0' .. ref
+  if cache[ck] ~= nil then
+    apply(cache[ck] or nil)
     return
   end
 
-  Git.conflict_info(state.git_root, ref, function(info)
-    if cache[ref] == nil then cache[ref] = info or false end
+  Git.conflict_info(root, ref, function(info)
+    if cache[ck] == nil then cache[ck] = info or false end
     apply(info)
   end)
 end
@@ -501,8 +506,9 @@ local function accept_hunk(s, side)
 
   if was_last then
     local relpath = view.node and view.node.relpath
-    if relpath and s.git_root then
-      Git.stage(s.git_root, { relpath }, function(ok, err)
+    local root = view.root or s.git_root -- 子仓库冲突文件 stage 到其所属仓库
+    if relpath and root then
+      Git.stage(root, { relpath }, function(ok, err)
         if not ok then
           vim.notify('[vv-git] stage failed: ' .. (err or ''), vim.log.levels.ERROR)
           return
@@ -623,14 +629,16 @@ end
 ---@param node table  tree node（leaf file）
 ---@param section 'staged'|'unstaged'|'compare'|'conflicts'
 ---@param force_single boolean?  true → 强制走单栏分支（窄终端降级用）；正常 dual diff 时为 false/nil
-function M.show(state, node, section, force_single)
+---@param root string?  节点所属仓库根（子仓库时为子仓库根）；默认父仓库根
+function M.show(state, node, section, force_single, root)
   -- 提前 return 前清掉 _reshow_view 刚设置但尚未绑定 req 的 reshow 全局，
   -- 否则它会泄漏给下一个普通 preview 被误消费（把焦点错误地还给旧 diff 窗口）
   local function drop_unbound_reshow()
     if state._reshow_restore_req == nil then state._reshow_restore_win = nil end
   end
   if node.is_dir then drop_unbound_reshow(); return end
-  local abspath = state.git_root .. '/' .. node.relpath
+  local owner = root or state.git_root
+  local abspath = owner .. '/' .. node.relpath
   if is_binary(abspath) then drop_unbound_reshow(); return end
   local xy = node.xy or ''
 
@@ -660,7 +668,10 @@ function M.show(state, node, section, force_single)
     state._reshow_restore_req = req_id
   end
 
-  local abspath = state.git_root .. '/' .. node.relpath
+  -- 子仓库：node.relpath 已相对其所属仓库根（每个子仓库各建独立树），故 git show / index
+  -- 取数直接 `git -C <owner>` + node.relpath，无需路径换算；owner == 父根时退化为改造前行为。
+  -- compare 模式是父仓库专属（其文件列表来自父仓 git diff），root 传 nil → owner = 父根
+
   -- 切换前的 b_buf：切到不同文件后需从旧 b_buf 拆掉 q/gf，避免它在 bufferline 里被
   -- 其它窗口打开时仍响应（a_buf 是 bufhidden=wipe，自动清理无需额外处理）
   local prev_b_buf = state.view and state.view.b_buf
@@ -724,7 +735,7 @@ function M.show(state, node, section, force_single)
       vim.notify('[vv-git] No main window available', vim.log.levels.ERROR); return
     end
     state.view = {
-      mode = 'single', section = section, path = node.relpath,
+      mode = 'single', section = section, path = node.relpath, root = owner,
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single,
     }
@@ -772,7 +783,7 @@ function M.show(state, node, section, force_single)
     -- view.c_buf，hunk 级 accept 无从下手 → 不装 < / > 死键误导用户，改由左
     -- panel 的 accept_ours/accept_theirs（整文件级）解决冲突
     if section == 'conflicts' then
-      set_conflict_winbar(b_win, state, 'MERGE_HEAD')
+      set_conflict_winbar(b_win, state, 'MERGE_HEAD', owner)
     else
       clear_winbar(b_win)
     end
@@ -791,7 +802,7 @@ function M.show(state, node, section, force_single)
     -- 先更新 state.view（在 apply_diff_winopts 触发 BufWinEnter 之前），
     -- 否则自检 autocmd 会把"正在切换的新 buf"误认为 stale 而把视图拆掉
     state.view = {
-      mode = 'diff2', section = section, path = node.relpath,
+      mode = 'diff2', section = section, path = node.relpath, root = owner,
       a_win = a_win, a_buf = a_buf,
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single,
@@ -816,8 +827,8 @@ function M.show(state, node, section, force_single)
     -- 冲突双栏：a_win 显示 ours（HEAD），b_win 显示 theirs（MERGE_HEAD）
     -- 切离冲突文件时清掉两侧 winbar，避免标题残留到普通 staged/unstaged diff
     if section == 'conflicts' then
-      set_conflict_winbar(a_win, state, 'HEAD')
-      set_conflict_winbar(b_win, state, 'MERGE_HEAD')
+      set_conflict_winbar(a_win, state, 'HEAD', owner)
+      set_conflict_winbar(b_win, state, 'MERGE_HEAD', owner)
       install_conflict_accept_keymaps(a_buf, state)
       install_conflict_accept_keymaps(b_buf, state)
     else
@@ -837,7 +848,7 @@ function M.show(state, node, section, force_single)
       vim.notify('[vv-git] Failed to create conflict windows', vim.log.levels.ERROR); return
     end
     state.view = {
-      mode = 'conflict3', section = section, path = node.relpath,
+      mode = 'conflict3', section = section, path = node.relpath, root = owner,
       a_win = a_win, a_buf = a_buf,
       b_win = b_win, b_buf = b_buf,
       c_win = c_win, c_buf = c_buf,
@@ -872,8 +883,8 @@ function M.show(state, node, section, force_single)
     block_insert_mode(a_buf)
     block_insert_mode(b_buf)
 
-    set_conflict_winbar(a_win, state, 'HEAD')
-    set_conflict_winbar(b_win, state, 'MERGE_HEAD')
+    set_conflict_winbar(a_win, state, 'HEAD', owner)
+    set_conflict_winbar(b_win, state, 'MERGE_HEAD', owner)
     install_conflict_accept_keymaps(a_buf, state)
     install_conflict_accept_keymaps(b_buf, state)
     install_conflict_accept_keymaps(c_buf, state)
@@ -889,10 +900,10 @@ function M.show(state, node, section, force_single)
       if not alive({ a_buf, b_buf }) then return end
       on_both(a_buf, b_buf)
     end
-    create_rev_buffer(state.git_root, rev_a, node.relpath, function(buf)
+    create_rev_buffer(owner, rev_a, node.relpath, function(buf)
       a_buf = buf; a_done = true; finalize()
     end)
-    create_rev_buffer(state.git_root, rev_b, node.relpath, function(buf)
+    create_rev_buffer(owner, rev_b, node.relpath, function(buf)
       b_buf = buf; b_done = true; finalize()
     end)
   end
@@ -903,7 +914,7 @@ function M.show(state, node, section, force_single)
 
   -- 降级路径静默：UI 变成单栏就是用户可见的信号，WARN notify 反而打断工作流
   render_single_rev = function(rev)
-    create_rev_buffer(state.git_root, rev, node.relpath, function(b_buf)
+    create_rev_buffer(owner, rev, node.relpath, function(b_buf)
       if not alive({ b_buf }) then return end
       if not b_buf then
         render_single_worktree()
@@ -933,7 +944,7 @@ function M.show(state, node, section, force_single)
 
   -- unstaged 分类：rev ↔ worktree，a 侧 git show
   render_dual_rev_worktree = function(a_rev)
-    create_rev_buffer(state.git_root, a_rev, node.relpath, function(a_buf)
+    create_rev_buffer(owner, a_rev, node.relpath, function(a_buf)
       if not alive({ a_buf }) then return end
       if not a_buf then
         render_single_worktree()
@@ -976,17 +987,17 @@ function M.show(state, node, section, force_single)
       end
       attach_single(b_buf, a_lines)  -- a_lines 拿不到也无妨：attach_single 收 nil 时跳过 inline
     end
-    Git.show(state.git_root, a_rev, node.relpath, function(lines)
+    Git.show(owner, a_rev, node.relpath, function(lines)
       a_lines = lines; a_done = true; finalize()
     end)
-    create_rev_buffer(state.git_root, b_rev, node.relpath, function(buf)
+    create_rev_buffer(owner, b_rev, node.relpath, function(buf)
       b_buf = buf; b_done = true; finalize()
     end)
   end
 
   -- force_single 专用：unstaged 时拿 a_rev 内容做 inline diff，b 是 worktree（可编辑）
   render_single_worktree_with_inline = function(a_rev)
-    Git.show(state.git_root, a_rev, node.relpath, function(a_lines)
+    Git.show(owner, a_rev, node.relpath, function(a_lines)
       if not alive({}) then return end
       attach_single(get_worktree_buffer(abspath), a_lines)
     end)

@@ -10,6 +10,15 @@ local Keymaps = require('vv-git.core.keymaps')
 
 local L = {}
 
+-- commit / push / pull 是单仓库操作：路由到 panel 光标所在节点的所属仓库
+-- （「对你正看着的仓库下手」，可预测）；光标不在任何节点上则回退父仓库根
+---@param state table
+---@return string root
+local function cursor_root(state)
+  local id = Keymaps.id_under_cursor(state)
+  return (id and id.root) or state.git_root
+end
+
 ---@param M table
 ---@param path string
 ---@return boolean
@@ -63,10 +72,11 @@ function L.attach(M)
 
   M._commit = State.guarded(function(state)
     if not state.git_root then return end
-    Git.has_staged(state.git_root, function(has)
+    local root = cursor_root(state)
+    Git.has_staged(root, function(has)
       local function open_prompt()
         Prompt.open({
-          git_root = state.git_root,
+          git_root = root,
           has_staged = has,
           on_success = function() M.refresh() end,
         })
@@ -85,9 +95,10 @@ function L.attach(M)
 
   local git_net = State.guarded(function(state, action)
     if not state.git_root then return end
+    local root = cursor_root(state)
     local fn = Git[action]
     vim.notify('[vv-git] ' .. action .. '...', vim.log.levels.INFO)
-    fn(state.git_root, function(ok, out)
+    fn(root, function(ok, out)
       local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
       local prefix = ok and ('[vv-git] ' .. action .. ' succeeded') or ('[vv-git] ' .. action .. ' failed')
       vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
@@ -105,14 +116,14 @@ function L.attach(M)
 
     if view and view.path
         and (cur_win == view.a_win or cur_win == view.b_win) then
-      abspath = state.git_root .. '/' .. view.path
+      abspath = (view.root or state.git_root) .. '/' .. view.path
       if view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
         row = vim.api.nvim_win_get_cursor(view.b_win)[1]
       end
     else
       local id = Keymaps.id_under_cursor(state)
       if not id or not id.node or id.node.is_dir then return end
-      abspath = state.git_root .. '/' .. id.node.relpath
+      abspath = (id.root or state.git_root) .. '/' .. id.node.relpath
     end
 
     if is_binary(M, abspath) then
@@ -144,32 +155,34 @@ function L.attach(M)
     if not state.git_root then return end
     local cur_win = vim.api.nvim_get_current_win()
     local view = state.view
-    local relpath
+    local relpath, root
 
     if view and view.path
         and (cur_win == view.a_win or cur_win == view.b_win) then
       relpath = view.path
+      root = view.root
     else
       local id = Keymaps.id_under_cursor(state)
       if not id or not id.node then return end
       relpath = id.node.relpath
+      root = id.root
     end
 
-    local abs = vim.fs.normalize(state.git_root .. '/' .. relpath)
+    local abs = vim.fs.normalize((root or state.git_root) .. '/' .. relpath)
     Editor.copy_path({ path = abs, title = 'vv-git' })
   end)
 
   M._system_open = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id or not id.node then return end
-    local abspath = vim.fs.normalize(state.git_root .. '/' .. id.node.relpath)
+    local abspath = vim.fs.normalize((id.root or state.git_root) .. '/' .. id.node.relpath)
     require('vv-utils.sys').open_default(abspath)
   end)
 
   M._execute = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id or not id.node or id.node.is_dir then return end
-    local abspath = vim.fs.normalize(state.git_root .. '/' .. id.node.relpath)
+    local abspath = vim.fs.normalize((id.root or state.git_root) .. '/' .. id.node.relpath)
 
     local plan, err = require('vv-utils.exec').resolve(abspath)
     if not plan then

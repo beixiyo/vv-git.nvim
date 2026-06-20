@@ -4,6 +4,7 @@
 local Tree = require('vv-git.tree')
 local Icons = require('vv-git.icons')
 local Panel = require('vv-git.left.panel')
+local Subrepo = require('vv-git.subrepo')
 local ui_icons = require('vv-icons').raw.ui
 
 local M = {}
@@ -126,12 +127,18 @@ function M.build(state)
   local folds = state.folds or {}
   local section_folds = state.section_folds or {}
 
-  ---@param section_id 'staged'|'unstaged'|'conflicts'
+  ---@param root string  该 section 所属仓库根（父仓库 = state.git_root）
+  ---@param base 'staged'|'unstaged'|'conflicts'
   ---@param title string
   ---@param side_root table
-  local function render_section(section_id, title, side_root)
+  ---@param indent integer?  额外缩进层数（子仓库块内 = 1）
+  local function render_section(root, base, title, side_root, indent)
     if Tree.empty(side_root) then return end
+    indent = indent or 0
 
+    -- section_id：父仓库为裸 base，子仓库为 root\0base，让 fold/selection key 按仓库隔离
+    local section_id = Subrepo.section_id(root, state.git_root, base)
+    local seg = string.rep(INDENT_STEP, indent)
     local collapsed = section_folds[section_id] == true
 
     local count = Tree.count_files(side_root)
@@ -139,19 +146,17 @@ function M.build(state)
     local arrow_raw = collapsed and ARROW_CLOSE or ARROW_OPEN
     local arrow_block = pad_to_cols(arrow_raw, ARROW_COLS)
     local body = string.format('%s (%d)', title, count)
-    local header = arrow_block .. body
+    local header = seg .. arrow_block .. body
     lines[#lines + 1] = header
     local row = #lines - 1
 
-    local title_hl = 'VVGitPanelSection'
-    if section_id == 'staged' then
-      title_hl = 'VVGitPanelStagedDir'
-    end
+    local title_hl = (base == 'staged') and 'VVGitPanelStagedDir' or 'VVGitPanelSection'
 
-    local title_col = #arrow_block
+    local arrow_col = #seg
+    local title_col = #seg + #arrow_block
     extmarks[#extmarks + 1] = {
-      row = row, col = 0,
-      opts = { end_col = #arrow_raw, hl_group = 'VVGitPanelIndent' },
+      row = row, col = arrow_col,
+      opts = { end_col = arrow_col + #arrow_raw, hl_group = 'VVGitPanelIndent' },
     }
     extmarks[#extmarks + 1] = {
       row = row, col = title_col,
@@ -161,7 +166,7 @@ function M.build(state)
       row = row, col = title_col + #title + 1,
       opts = { end_col = #header, hl_group = 'VVGitPanelSectionCount' },
     }
-    id_by_line[#lines] = { section_header = section_id }
+    id_by_line[#lines] = { section_header = section_id, base = base, root = root }
 
     -- section 折叠：只保留标题行，跳过文件列表
     if collapsed then
@@ -169,10 +174,10 @@ function M.build(state)
       return
     end
 
-    -- fold key 加 section 前缀，避免 staged/unstaged 同名目录共享折叠状态
+    -- fold key 加 section_id 前缀，避免 staged/unstaged（及跨仓库）同名目录共享折叠状态
     local scoped_folds = {}
     for k, v in pairs(folds) do
-      local s, p = k:match('^(.-):(.*)')
+      local s, p = Subrepo.split_key(k)
       if s == section_id then scoped_folds[p] = v end
     end
 
@@ -185,9 +190,9 @@ function M.build(state)
         letter, hl = node.letter, node.hl
       end
 
-      local sel_key = section_id .. ':' .. node.relpath
+      local sel_key = Subrepo.sel_key(section_id, node.relpath)
       local line, ems = build_row({
-        depth = r.depth + 1, -- section 内再缩进一层
+        depth = r.depth + 1 + indent, -- section 内再缩进一层（子仓库块再 +1）
         is_dir = node.is_dir,
         is_open = node.is_dir and not scoped_folds[node.relpath],
         has_children = r.has_children,
@@ -195,7 +200,7 @@ function M.build(state)
         node = node,
         status_letter = letter,
         status_hl = hl,
-        section_id = section_id,
+        section_id = base,
         selected = not node.is_dir and (state.selection or {})[sel_key] == true,
       })
       lines[#lines + 1] = line
@@ -203,10 +208,46 @@ function M.build(state)
       for _, em in ipairs(ems) do
         extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
       end
-      id_by_line[#lines] = { section = section_id, node = node }
+      id_by_line[#lines] = { section = section_id, base = base, root = root, node = node }
     end
 
     push_blank()
+  end
+
+  -- 渲染一个子仓库块：「Sub-Repo: <label>」标题（可折叠）+ 其三个 section（缩进一层）
+  ---@param sr table  { root, label, tree }
+  local function render_subrepo(sr)
+    local t = sr.tree
+    if Tree.empty(t.staged) and Tree.empty(t.unstaged) and Tree.empty(t.conflicts) then
+      return -- 该子仓库无改动，不渲染空块
+    end
+
+    local collapsed = (state.subrepo_folds or {})[sr.root] == true
+    local arrow_raw = collapsed and ARROW_CLOSE or ARROW_OPEN
+    local arrow_block = pad_to_cols(arrow_raw, ARROW_COLS)
+    local label = 'Sub-Repo: ' .. sr.label
+    local header = arrow_block .. label
+    lines[#lines + 1] = header
+    local row = #lines - 1
+    extmarks[#extmarks + 1] = {
+      row = row, col = 0,
+      opts = { end_col = #arrow_raw, hl_group = 'VVGitPanelIndent' },
+    }
+    extmarks[#extmarks + 1] = {
+      row = row, col = #arrow_block,
+      opts = { end_col = #header, hl_group = 'VVGitPanelSubrepo' },
+    }
+    id_by_line[#lines] = { subrepo_header = sr.root }
+
+    -- 折叠整个块：只保留标题行
+    if collapsed then
+      push_blank()
+      return
+    end
+
+    render_section(sr.root, 'conflicts', 'Merge Conflicts', t.conflicts, 1)
+    render_section(sr.root, 'staged', 'Staged Changes', t.staged, 1)
+    render_section(sr.root, 'unstaged', 'Changes', t.unstaged, 1)
   end
 
   -- 比较模式：替换普通 section，展示 commit..HEAD 变更文件列表（树结构）
@@ -231,7 +272,7 @@ function M.build(state)
     local compare_root = Tree.build_compare(cmp.files)
     local scoped_folds = {}
     for k, v in pairs(folds) do
-      local s, p = k:match('^(.-):(.*)')
+      local s, p = Subrepo.split_key(k)
       if s == 'compare' then scoped_folds[p] = v end
     end
 
@@ -265,7 +306,7 @@ function M.build(state)
       for _, em in ipairs(ems) do
         extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
       end
-      id_by_line[#lines] = { section = 'compare', node = node }
+      id_by_line[#lines] = { section = 'compare', base = 'compare', node = node }
     end
 
     push_blank()
@@ -297,10 +338,15 @@ function M.build(state)
   end
   push_blank()
 
-  -- 冲突优先显示（VSCode 风）
-  render_section('conflicts', 'Merge Conflicts', tree.conflicts)
-  render_section('staged', 'Staged Changes', tree.staged)
-  render_section('unstaged', 'Changes', tree.unstaged)
+  -- 父仓库（冲突优先显示，VSCode 风）
+  render_section(state.git_root, 'conflicts', 'Merge Conflicts', tree.conflicts)
+  render_section(state.git_root, 'staged', 'Staged Changes', tree.staged)
+  render_section(state.git_root, 'unstaged', 'Changes', tree.unstaged)
+
+  -- 子仓库块：每个发现的子仓库作为独立的「Sub-Repo」块（含各自的 staged/changes）
+  for _, sr in ipairs(state.subrepos or {}) do
+    render_subrepo(sr)
+  end
 
   return lines, extmarks, id_by_line
 end
@@ -312,11 +358,11 @@ function M.render(state, passive)
   if not state.panel or not state.panel.buf then return end
   if not vim.api.nvim_buf_is_valid(state.panel.buf) then return end
 
-  -- passive 刷新防拉扯：在 flush 重写 buffer **之前**，从旧 id_by_line 反查光标当前所在的文件节点。
+  -- passive 刷新防拉扯：在 flush 重写 buffer **之前**，从旧 id_by_line 反查光标当前所在的文件节点
   -- 纯 j/k 导航时 preview 的 set_buf 会发 BufEnter 反复点起 auto_refresh → 这条 passive 渲染；
   -- 若像普通渲染那样按 cur_path 恢复，cur_path 由防抖 preview 滞后约 150ms、落后于光标真实行，
   -- 就会把刚导航到的位置拉回旧行、且自触发 CursorMoved 形成自激回环。改为记住「光标此刻在哪个
-  -- 文件」、渲染后放回该文件（content 变了就跟它到新行），令本次刷新对光标成为 no-op。
+  -- 文件」、渲染后放回该文件（content 变了就跟它到新行），令本次刷新对光标成为 no-op
   -- 带 hint（stage/unstage/fold，非 passive）的渲染不进此分支，afc82c2 等落点逻辑不受影响
   local keep
   if passive and not state._action_hint and not state._section_hint then
@@ -380,6 +426,19 @@ function M.render(state, passive)
       end
     end
 
+    -- Sub-Repo 块折叠/展开后：把光标固定在该块标题行
+    local rh = state._subrepo_hint
+    if rh then
+      state._subrepo_hint = nil
+      for lnum = 1, #lines do
+        local id = id_by_line[lnum]
+        if id and id.subrepo_header == rh then
+          pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
+          return
+        end
+      end
+    end
+
     -- 动作触发的渲染：落到动作前记下的「下一个文件」（跳过目录），在原 section 内顺势下移，
     -- 避免跨 section 跳动。绝对行号会因 Staged section 增长而漂移，故优先按 relpath 定位
     local hint = state._action_hint
@@ -426,10 +485,15 @@ function M.render(state, passive)
     local cur_section = state.cur_section
     if cur_path then
       -- 优先匹配同 section 同 path；再不行按 Changes 优先（同名文件可能并存于 staged/unstaged）
+      -- fallback 的三个候选 section 必须落在 cur_section 所属的同一仓库：父仓库得裸 base、
+      -- 子仓库得 `<root>\0base`，否则子仓库文件离开旧分区后裸 base 永远匹配不到复合 section_id，
+      -- 光标会被甩出 Sub-Repo 块跳到父仓库（见 cur_section 写入点：子仓库节点 = 复合 id）
+      local cur_root = cur_section and Subrepo.parse_section_id(cur_section) or nil
+      local function side_id(base) return Subrepo.section_id(cur_root, state.git_root, base) end
       local lnum = (cur_section and line_of(cur_path, cur_section))
-          or line_of(cur_path, 'unstaged')
-          or line_of(cur_path, 'staged')
-          or line_of(cur_path, 'conflicts')
+          or line_of(cur_path, side_id('unstaged'))
+          or line_of(cur_path, side_id('staged'))
+          or line_of(cur_path, side_id('conflicts'))
       if lnum then
         pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
         return

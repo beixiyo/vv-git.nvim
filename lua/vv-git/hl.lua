@@ -33,6 +33,7 @@ local function build_specs()
     VVGitPanelSectionCount = { link = 'Comment' },
     VVGitPanelDir       = { link = 'Directory' },
     VVGitPanelStagedDir = { link = 'Keyword' },
+    VVGitPanelSubrepo   = { link = 'Special', bold = true }, -- 子仓库块标题：跟随主题（Special）+ 加粗，与普通目录拉开
     VVGitPanelFile      = { link = 'Normal' },
     VVGitPanelIndent    = { link = 'Comment' },
     VVGitPanelMatch     = { link = 'Search' },
