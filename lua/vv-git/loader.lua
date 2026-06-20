@@ -178,10 +178,10 @@ function M.reload_index(state, after, passive)
     -- ls-files --others --ignored --directory）再据此过滤发现。
     -- 默认关闭——HOME-as-repo 场景 ~ 几乎忽略一切，开了会把所有子仓库都屏蔽掉
     UGit.ignored_entries(state.git_root, function(_, ignored_dirs)
-      proceed(Subrepo.discover(state.git_root, depth, prune, ignored_dirs or {}))
+      proceed(Subrepo.discover(state.git_root, depth, prune, ignored_dirs or {}, cfg.scan_worktrees))
     end)
   else
-    proceed(Subrepo.discover(state.git_root, depth, prune))
+    proceed(Subrepo.discover(state.git_root, depth, prune, nil, cfg.scan_worktrees))
   end
 end
 

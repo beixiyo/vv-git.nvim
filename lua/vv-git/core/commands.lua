@@ -70,6 +70,36 @@ function L.attach(M)
     end)
   end)
 
+  -- 列出所有 worktree → 选中即把面板切到该 worktree 看它的 diff
+  M._worktree_pick = State.guarded(function(state)
+    if not state.git_root then return end
+    local Worktree = require('vv-git.worktree')
+    Worktree.open_picker(state, function(wt)
+      local target = vim.fs.normalize(wt.path)
+      if target == state.git_root then
+        vim.notify('[vv-git] Already on this worktree', vim.log.levels.INFO)
+        return
+      end
+      if vim.fn.isdirectory(target) == 0 then
+        vim.notify('[vv-git] worktree path does not exist (maybe pruned): ' .. target, vim.log.levels.ERROR)
+        return
+      end
+
+      -- 一次干净的上下文切换：切 root，清掉随旧 root 失效的瞬态（选中/比较/折叠/右视图），
+      -- tcd 到该 worktree（tab-local，只影响 vv-git 专属 tab，不污染来时 tab），reload 后即展示其 diff
+      state.git_root = target
+      state.cur_path = nil
+      state.selection = {}
+      state.folds = {}
+      state.section_folds = {}
+      state.block_folds = {}
+      require('vv-git.compare').stop(state)
+      pcall(vim.cmd.tcd, vim.fn.fnameescape(target))
+      RightView.close(state)
+      require('vv-git.loader').reload_index(state)
+    end)
+  end)
+
   M._commit = State.guarded(function(state)
     if not state.git_root then return end
     local root = cursor_root(state)

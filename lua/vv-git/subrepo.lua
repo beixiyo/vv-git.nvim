@@ -4,13 +4,17 @@
 --   * git status 默认不递归进嵌套仓库——父仓库只把子仓库整体报成一条折叠条目，
 --     拿不到其内部文件。故对发现的每个子仓库**单独**跑一次 `git -C <子仓库> status`，
 --     每个仓库各建一棵独立的变更树，在左栏作为独立的「Sub-Repo」块渲染
---   * 发现走文件系统递归找 `.git`（目录=独立仓库、文件=submodule worktree），限深 +
+--   * 发现走文件系统递归找 `.git`（目录=独立仓库、文件=linked worktree / submodule），限深 +
 --     prune（node_modules 等）避免性能爆炸；submodule status / .gitmodules 只覆盖
 --     已注册的 submodule，看不到未注册的独立嵌套仓库，故不采用
+--   * linked worktree（本仓库另一份 checkout）默认不当子仓库——靠 vv-utils.git_dir_kind
+--     按 `.git` 文件的 gitdir 路径识别（`/worktrees/`），与目录名/布局无关；可用
+--     subrepo.scan_worktrees 开回
 --   * 块隔离：fold / selection / section_folds 的 key 都按仓库前缀（root\0section），
 --     同名文件在不同仓库间互不串状态；操作路由直接用节点所属仓库根（`git -C <root>`）
 
 local uv = vim.uv or vim.loop
+local UGit = require('vv-utils.git')
 
 local function norm(p) return vim.fs.normalize(p) end
 
@@ -25,8 +29,10 @@ local M = {}
 ---@param depth integer  目录递归最大深度（root 直接子目录为 1）；<= 0 不扫描
 ---@param prune table<string, boolean>  跳过的目录名集合（建议含 node_modules / .git）
 ---@param ignored table<string, boolean>?  被忽略的目录绝对路径集合（来自父仓库 gitignore），命中即跳过
+---@param scan_worktrees boolean?  是否把 linked worktree 也当子仓库（默认 false：worktree 是本仓库
+---  另一份 checkout，渲染成块只是重复噪音，故跳过；submodule / 真·独立嵌套仓库不受影响照常发现）
 ---@return string[] subroots  子仓库根绝对路径（已规范化），不含 root 自身
-function M.discover(root, depth, prune, ignored)
+function M.discover(root, depth, prune, ignored, scan_worktrees)
   local subroots = {}
   if not root or root == '' or not depth or depth <= 0 then return subroots end
   root = norm(root)
@@ -53,7 +59,10 @@ function M.discover(root, depth, prune, ignored)
 
         if not (ignored and ignored[nchild]) then
           if uv.fs_stat(child .. '/.git') then
-            subroots[#subroots + 1] = nchild
+            -- worktree 默认排除（同仓库另一份 checkout，非外部仓库）；submodule / 真仓库保留
+            if scan_worktrees or UGit.git_dir_kind(child) ~= 'worktree' then
+              subroots[#subroots + 1] = nchild
+            end
           end
 
           if level < depth then

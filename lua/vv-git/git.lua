@@ -349,6 +349,72 @@ function M.ahead_count(root, cb)
   )
 end
 
+---@class VVGitWorktree
+---@field path string  worktree 工作目录绝对路径（已 normalize）
+---@field is_main boolean  是否为主 worktree（list 首条）
+---@field head? string  当前 HEAD 的完整 sha
+---@field branch? string  checkout 的分支短名；detached 时为 nil
+---@field detached? boolean  是否处于 detached HEAD
+---@field bare? boolean  是否为 bare 仓库（无工作树）
+---@field locked? boolean  是否被 git 锁定
+---@field prunable? boolean  工作目录已失效、可被 prune
+
+-- 列出当前仓库的所有 worktree（git worktree list --porcelain）
+-- porcelain 用空行分隔记录，每条形如：
+--   worktree <abs-path>
+--   HEAD <full-sha>
+--   branch refs/heads/<name>   |   detached   |   bare
+--   locked [reason]            （可选）
+--   prunable [reason]          （可选）
+-- 首条记录是主 worktree（is_main）
+---@param root string
+---@param cb fun(worktrees: VVGitWorktree[]?, err?: string)
+function M.worktree_list(root, cb)
+  vim.system(
+    { 'git', '-C', root, 'worktree', 'list', '--porcelain' },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      if r.code ~= 0 then cb(nil, r.stderr or 'git worktree list failed'); return end
+
+      local list = {}
+      local cur = nil
+      local function flush()
+        if cur then list[#list + 1] = cur; cur = nil end
+      end
+
+      for _, line in ipairs(vim.split(r.stdout or '', '\n', { plain = true })) do
+        if line == '' then
+          flush()
+        else
+          -- 每行 'key value'；value 可空（detached / bare）
+          local key, val = line:match('^(%S+)%s*(.*)$')
+          if key == 'worktree' then
+            flush()
+            cur = { path = vim.fs.normalize(val), is_main = #list == 0 }
+          elseif cur then
+            if key == 'HEAD' then
+              cur.head = val
+            elseif key == 'branch' then
+              cur.branch = (val:gsub('^refs/heads/', ''))
+            elseif key == 'detached' then
+              cur.detached = true
+            elseif key == 'bare' then
+              cur.bare = true
+            elseif key == 'locked' then
+              cur.locked = true
+            elseif key == 'prunable' then
+              cur.prunable = true
+            end
+          end
+        end
+      end
+      flush()
+
+      cb(list)
+    end)
+  )
+end
+
 -- 当前分支名；detached HEAD 时退回短 hash（`branch --show-current` 此时为空）；失败为 ''
 ---@param root string
 ---@param cb fun(branch: string)

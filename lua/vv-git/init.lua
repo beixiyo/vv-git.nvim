@@ -25,6 +25,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field depth integer  扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；0 = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） @default 0
 ---@field respect_gitignore boolean  发现时是否跳过被父仓库 `.gitignore` 的目录。**HOME-as-repo（`~` 几乎忽略一切）务必保持 `false`**，否则所有子仓库都被屏蔽；常规项目想隐藏被忽略目录里的 vendored 仓库才开 `true`（注意 `node_modules` 等已由 `prune` 覆盖） @default false
 ---@field prune string[]  发现子仓库时**不进入扫描**的目录名列表（匹配目录 basename）。**覆盖语义**：传了就完全替换默认列表（不合并）；`.git` 始终额外跳过 @default 见下方（node_modules / .cache / .local / .cargo / .rustup 等缓存与工具链目录）
+---@field scan_worktrees boolean  是否把 linked worktree 也当子仓库扫描。默认 `false`
 
 ---@class VVGitConfig
 ---@field width integer @default 30
@@ -65,6 +66,7 @@ local defaults = {
   subrepo = {
     depth = 0,
     respect_gitignore = false,
+    scan_worktrees = false,
     -- 不进入扫描的目录名（数组，覆盖语义：传了就整体替换；缓存/工具链目录常含大量
     -- vendored / registry 仓库，深扫时是主要噪音与耗时来源）
     prune = {
@@ -147,6 +149,7 @@ function M.setup(opts)
   ucmd('VVGitRefresh',      function() M.refresh() end)
   ucmd('VVGitCompare',      function() M.open() M._compare_pick() end)
   ucmd('VVGitCommitShow',   function() M.open() M._commit_show_pick() end)
+  ucmd('VVGitWorktree',     function() M.open() M._worktree_pick() end)
   ucmd('VVGitShow',         function(o) M.show_commit(o.args) end, { nargs = 1 })
   ucmd('VVGitSubrepoDepth', function(o)
     if not o.args or o.args == '' then
@@ -161,7 +164,7 @@ function M.setup(opts)
     M.set_subrepo_depth(n)
     vim.notify('[vv-git] subrepo scan depth → ' .. n, vim.log.levels.INFO)
     M.refresh()
-  end, { nargs = '?', desc = 'vv-git: 临时设置子仓库扫描深度（不持久化）' })
+  end, { nargs = '?', desc = 'vv-git: temporarily set subrepo scan depth (not persisted)' })
 
   if M._config.keymap_toggle_panel then
     vim.keymap.set('n', M._config.keymap_toggle_panel, function() M.toggle_panel() end, {

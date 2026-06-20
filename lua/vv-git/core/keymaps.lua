@@ -177,6 +177,7 @@ function L.install(state, M)
   map('<C-y>',         function() scroll_diff(-1) end,              'scroll_diff_up')
   map('H',             function() M._compare_pick() end,           'compare_pick')
   map('gc',            function() M._commit_show_pick() end,        'commit_show')
+  map('gw',            function() M._worktree_pick() end,           'worktree_pick')
   map('g?',            function() Help.open(state) end,            'help')
 
   for _, key in ipairs({ 'i', 'I', 'a', 'A', 'O', 'S', 'C' }) do

@@ -6,6 +6,10 @@
 
 - **子仓库扫描**：新增 `subrepo.depth`（默认 `0` 不扫描）；每个子仓库作为独立可折叠块，标题行显示其相对路径 + 当前分支（` 󰘬 <branch>`），diff / stage / unstage / discard / 冲突 accept / commit / push 全按所属仓库路由
 
+- **Worktree 切换**（`gw` / `:VVGitWorktree`）：浮窗列出当前仓库的所有 git worktree（标记当前所在、显示分支 / detached / locked / prunable）
+
+- **worktree 不当子仓库**：子仓库扫描默认跳过 linked worktree
+
 - **分支显示**：左栏根仓库与各子仓库标题行均在最前显示当前分支（彩色分支图标 + 分支名，detached 时为短 hash）
 
 - **根仓库可折叠**：根仓库标题行带折叠箭头，`l`/`h`/单击折叠后隐藏其 commit 提示与三个 section（子仓库块不受影响），与子仓库块共用同一套折叠交互

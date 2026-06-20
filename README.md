@@ -58,6 +58,7 @@
 | `subrepo.depth` | `integer` | `0` | 扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；`0` = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） |
 | `subrepo.respect_gitignore` | `boolean` | `false` | 发现时是否跳过被父仓库 `.gitignore` 的目录 |
 | `subrepo.prune` | `string[]` | 见下方 | 发现子仓库时**不进入扫描**的目录名列表。**覆盖**语义：传了就整体替换默认列表（不合并）；默认含 `node_modules` / `.cache` / `.local` / `.cargo` / `.rustup` / `.bun` 等缓存目录，`.git` 始终跳过 |
+| `subrepo.scan_worktrees` | `boolean` | `false` | 是否把 linked worktree 也当子仓库扫描。默认 `false` |
 
 
 ## 子仓库扫描
@@ -78,6 +79,19 @@ opts = {
 
 - **`c` 提交 / `p` push / `P` pull**：作用于**光标所在节点的所属仓库**
 - **gitignore 目录默认照扫**：`respect_gitignore=false`（默认）下，被 `.gitignore` 的**目录**仍会被扫描，可手动配置 `respect_gitignore`
+- **worktree 默认不当子仓库**：可配置 `scan_worktrees=true`
+
+## Worktree 切换
+
+面板内按 `gw`（或 `:VVGitWorktree`）打开浮窗，列出当前仓库的所有 git worktree：
+
+- **当前所在**的 worktree 以 `●` 标记并高亮，光标默认停在它上面
+- 每行显示：分支名（detached 时为 `(detached <短 hash>)`、bare 为 `(bare)`）+ 工作目录路径，失效 / 锁定的 worktree 末尾标 `(prunable)` / `(locked)`
+- `<CR>` / `l` 选中 → 面板**切到该 worktree** 看它的 diff，`q` / `<Esc>` 关闭
+
+切换是一次干净的上下文切换：把 `state.git_root` 指向选中的 worktree 并 `tcd` 过去（仅作用于 vv-git 专属 tab，不污染你来时的 tab），随后 reload——之后的 diff / stage / unstage / commit / push 全部落到该 worktree。这是**只读切换器**，不做 `worktree add` / `remove`（按需用 git 命令自行管理）
+
+> worktree 与子仓库是两回事：worktree 是同一份历史的多个 checkout（共享 `.git`），故做成「切过去」而非并排成块；子仓库是独立仓库，并排渲染成块
 
 ## 二进制文件拦截
 
@@ -147,5 +161,6 @@ opts = {
 | `<C-e>` | 向下滚动 diff |
 | `<C-y>` | 向上滚动 diff |
 | `gc` | 查看 commit 本身的 diff：选分支 → 选 commit，展示该 commit 引入的变更（`commit^..commit`） |
+| `gw` | Worktree 切换：浮窗列出本仓库所有 worktree，选中即切到该 worktree 看其 diff（`:VVGitWorktree` 等价） |
 | `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |
 | `g?` | 显示帮助 |

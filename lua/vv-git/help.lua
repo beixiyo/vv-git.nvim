@@ -23,6 +23,7 @@ local ACTIONS = {
   commit        = { cat = 'Git',      icon = '' },
   commit_show   = { cat = 'Git',      icon = '' },
   compare_pick  = { cat = 'Git',      icon = '' },
+  worktree_pick = { cat = 'Git',      icon = '󰘬' },
   accept_ours   = { cat = 'Conflict', icon = '󰅁' },
   accept_theirs = { cat = 'Conflict', icon = '󰅂' },
   push          = { cat = 'Remote',   icon = '' },
