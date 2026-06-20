@@ -170,12 +170,17 @@ function L.install(state, M)
       end
       M._action(rc_action)
     end,                                                            rc_action)
-
-    for _, key in ipairs({ '<LeftDrag>', '<2-LeftMouse>', '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
-      vim.keymap.set({ 'n', 'x' }, key, '<Nop>', { buffer = buf, silent = true })
-    end
-    vim.keymap.set('x', '<RightMouse>', '<Esc>', { buffer = buf, silent = true })
   end
+
+  -- 屏蔽鼠标拖拽 / 多击触发 visual 选区——与 right_click 无关，恒装（面板已聚焦时干净拦截）
+  -- 必须含 <3-LeftMouse>/<4-LeftMouse>：三击=选行、四击=选块，漏了「快速点几下」会误触发
+  for _, key in ipairs({ '<LeftDrag>', '<2-LeftMouse>', '<3-LeftMouse>', '<4-LeftMouse>', '<RightRelease>', '<2-RightMouse>', '<3-RightMouse>', '<4-RightMouse>' }) do
+    vim.keymap.set({ 'n', 'x' }, key, '<Nop>', { buffer = buf, silent = true })
+  end
+  vim.keymap.set('x', '<RightMouse>', '<Esc>', { buffer = buf, silent = true })
+  -- 跨窗口「从别窗点进树再拖 / 多击」时上面的 buffer-local 映射拦不住（按下事件走源窗口
+  -- keymap），靠 ModeChanged 守卫兜底：面板内一旦进 visual 立即退回 normal
+  require('vv-utils.mouse').block_visual_drag(buf)
 
   map('gf',            function() M._goto_file() end,              'goto_file')
   map('Y',             function() M._yank_abs_path() end,           'yank_abs_path')

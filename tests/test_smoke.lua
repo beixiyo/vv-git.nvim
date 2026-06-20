@@ -192,9 +192,10 @@ local function test_panel_edge_file_keymaps()
 
   Keymaps.install(state, mock)
 
-  local callbacks = {}
+  local callbacks, rhsmap = {}, {}
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
     callbacks[m.lhs] = m.callback
+    rhsmap[m.lhs] = m.rhs
   end
 
   assert_eq(type(callbacks.gg), 'function', 'gg mapping is installed')
@@ -210,6 +211,15 @@ local function test_panel_edge_file_keymaps()
   assert_eq(type(callbacks['[c']), 'function', '[c (prev_chunk) mapping is installed')
   assert_true(pcall(callbacks[']c']), ']c 在无 diff 视图时安全早退')
   assert_true(pcall(callbacks['[c']), '[c 在无 diff 视图时安全早退')
+
+  -- 鼠标拖拽/多击防 visual：恒装（不再受 right_click 门控；<Nop> 的 rhs 为空串）
+  assert_true(rhsmap['<LeftDrag>'] ~= nil, '<LeftDrag> 已 Nop')
+  assert_true(rhsmap['<2-LeftMouse>'] ~= nil, '<2-LeftMouse> 已 Nop（防双击选词）')
+  assert_true(rhsmap['<3-LeftMouse>'] ~= nil, '<3-LeftMouse> 已 Nop（防三击选行）')
+  assert_true(rhsmap['<4-LeftMouse>'] ~= nil, '<4-LeftMouse> 已 Nop（防四击选块）')
+  -- 跨窗口拖入/多击兜底：面板 buffer 挂了 ModeChanged 守卫
+  local mc = vim.api.nvim_get_autocmds({ event = 'ModeChanged', buffer = buf })
+  assert_true(#mc >= 1, '面板 buffer 注册了 ModeChanged 防 visual 守卫')
 
   vim.api.nvim_win_set_buf(win, old_buf)
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
