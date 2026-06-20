@@ -71,6 +71,27 @@ local function navigate(state, direction)
 end
 
 ---@param state table
+---@param edge 'first'|'last'
+local function goto_file_edge(state, edge)
+  if not state.panel or not state.panel.win then return end
+  if not vim.api.nvim_win_is_valid(state.panel.win) then return end
+  local id_by_line = state.panel.id_by_line
+  if not id_by_line then return end
+
+  local lnums = {}
+  for lnum, id in pairs(id_by_line) do
+    if id and id.node and not id.node.is_dir then
+      lnums[#lnums + 1] = lnum
+    end
+  end
+  if #lnums == 0 then return end
+  table.sort(lnums)
+
+  local target = edge == 'first' and lnums[1] or lnums[#lnums]
+  vim.api.nvim_win_set_cursor(state.panel.win, { target, 0 })
+end
+
+---@param state table
 ---@return table?
 function L.id_under_cursor(state)
   if not state.panel or not state.panel.win then return nil end
@@ -94,6 +115,8 @@ function L.install(state, M)
   map('k',             function() navigate(state, 'k') end,       'prev_item')
   map('<C-n>',         function() navigate(state, 'j') end,       'next_item')
   map('<C-p>',         function() navigate(state, 'k') end,       'prev_item')
+  map('gg',            function() goto_file_edge(state, 'first') end, 'first_file')
+  map('G',             function() goto_file_edge(state, 'last') end,  'last_file')
   -- 方向键 ↑↓ 与 j/k 同义（跳到上/下一个可选项）
   map('<Down>',        function() navigate(state, 'j') end,       'next_item')
   map('<Up>',          function() navigate(state, 'k') end,       'prev_item')

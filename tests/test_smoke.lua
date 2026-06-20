@@ -8,11 +8,14 @@ local this = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p')
 local plugin_root = vim.fn.fnamemodify(this, ':h:h')
 local vendors_root = vim.fn.fnamemodify(plugin_root, ':h')
 local utils_root = vendors_root .. '/vv-utils.nvim'
+local icons_root = vendors_root .. '/vv-icons.nvim'
 package.path = table.concat({
   plugin_root .. '/lua/?.lua',
   plugin_root .. '/lua/?/init.lua',
   utils_root .. '/lua/?.lua',
   utils_root .. '/lua/?/init.lua',
+  icons_root .. '/lua/?.lua',
+  icons_root .. '/lua/?/init.lua',
   package.path,
 }, ';')
 
@@ -135,13 +138,84 @@ local function test_insert_mode_blocked()
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end
 
--- 测试 6: block_insert_mode 存在于 view.lua（间接：检查模块加载无报错）
+-- 测试 6: panel 中 gg/G 只跳到第一个/最后一个文件，不落到标题或目录行
+local function test_panel_edge_file_keymaps()
+  local Keymaps = require('vv-git.core.keymaps')
+  local buf = vim.api.nvim_create_buf(false, true)
+  local win = vim.api.nvim_get_current_win()
+  local old_buf = vim.api.nvim_win_get_buf(win)
+
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    ' repo',
+    'Changes (2)',
+    '  folder',
+    '    a.lua',
+    '',
+    '    z.lua',
+  })
+  vim.api.nvim_win_set_buf(win, buf)
+  vim.api.nvim_win_set_cursor(win, { 1, 0 })
+
+  local state = {
+    panel = {
+      buf = buf,
+      win = win,
+      id_by_line = {
+        [2] = { section_header = 'unstaged', base = 'unstaged' },
+        [3] = { node = { is_dir = true, relpath = 'folder' } },
+        [4] = { node = { is_dir = false, relpath = 'folder/a.lua' } },
+        [6] = { node = { is_dir = false, relpath = 'folder/z.lua' } },
+      },
+    },
+    selection = {},
+  }
+  local noop = function() end
+  local mock = {
+    _config = { keymap_select = '<Tab>', right_click = false, mappings = {} },
+    close = noop,
+    refresh = noop,
+    _activate = noop,
+    _system_open = noop,
+    _execute = noop,
+    _goto_file = noop,
+    _yank_abs_path = noop,
+    _toggle_select = noop,
+    _collapse = noop,
+    _action = noop,
+    _commit = noop,
+    _push = noop,
+    _pull = noop,
+    _compare_pick = noop,
+    _commit_show_pick = noop,
+    _preview_on_move = noop,
+  }
+
+  Keymaps.install(state, mock)
+
+  local callbacks = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
+    callbacks[m.lhs] = m.callback
+  end
+
+  assert_eq(type(callbacks.gg), 'function', 'gg mapping is installed')
+  callbacks.gg()
+  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 4, 'gg jumps to first file row')
+
+  assert_eq(type(callbacks.G), 'function', 'G mapping is installed')
+  callbacks.G()
+  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 6, 'G jumps to last file row')
+
+  vim.api.nvim_win_set_buf(win, old_buf)
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+end
+
+-- 测试 7: block_insert_mode 存在于 view.lua（间接：检查模块加载无报错）
 local function test_view_module_loads()
   local ok, _ = pcall(require, 'vv-git.right.view')
   assert_true(ok, 'vv-git.right.view loads without error')
 end
 
--- 测试 7: 源代码静态验证 — 窄终端策略为「降级单栏」而非旧的「拒开 + Terminal too narrow」
+-- 测试 8: 源代码静态验证 — 窄终端策略为「降级单栏」而非旧的「拒开 + Terminal too narrow」
 -- 现行设计：列数 < single_col_threshold 时 diff 视图降级为单栏（仅 b 侧，无 inline diff），
 -- ≥ 阈值时正常 dual diff，resize 时在 narrow↔wide 间自动迁移。本测试防回退到旧拒开设计。
 -- 注：旧版曾用「窄终端 = notify + close」，现已改回（重新实现的）单栏降级，故旧的
@@ -160,7 +234,7 @@ local function test_narrow_single_col_design()
     '不再含旧「Terminal too narrow」拒开提示（已改单栏降级）')
 end
 
--- 测试 8: 源代码静态验证 — resize 经 _apply_layout 在 narrow↔wide 间迁移，而非 notify + 关闭
+-- 测试 9: 源代码静态验证 — resize 经 _apply_layout 在 narrow↔wide 间迁移，而非 notify + 关闭
 local function test_resize_single_col_migration()
   local pops_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/core/panel_ops.lua'), '\n')
   local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
@@ -173,7 +247,7 @@ local function test_resize_single_col_migration()
     '不再含旧「Terminal shrunk below」窄化关闭提示（已改单栏迁移）')
 end
 
--- 测试 9: 源代码静态验证 — 三栏冲突 result 高度暴露为配置项
+-- 测试 10: 源代码静态验证 — 三栏冲突 result 高度暴露为配置项
 local function test_conflict_result_ratio_config()
   local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
   local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
@@ -193,6 +267,7 @@ test_discard_untracked_file()
 test_discard_untracked_dir()
 test_classify_untracked()
 test_insert_mode_blocked()
+test_panel_edge_file_keymaps()
 test_view_module_loads()
 test_narrow_single_col_design()
 test_resize_single_col_migration()

@@ -8,6 +8,8 @@ local M = {}
 local ACTIONS = {
   next_item     = { cat = 'Navigate', icon = '' },
   prev_item     = { cat = 'Navigate', icon = '' },
+  first_file    = { cat = 'Navigate', icon = '' },
+  last_file     = { cat = 'Navigate', icon = '' },
   open          = { cat = 'Navigate', icon = '' },
   expand        = { cat = 'Navigate', icon = '' },
   close_node    = { cat = 'Navigate', icon = '' },
