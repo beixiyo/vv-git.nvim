@@ -31,6 +31,8 @@ local ACTIONS = {
   yank_abs_path = { cat = 'Yank',     icon = '' },
   scroll_diff_down = { cat = 'View',  icon = '' },
   scroll_diff_up   = { cat = 'View',  icon = '' },
+  next_chunk    = { cat = 'View',     icon = '' },
+  prev_chunk    = { cat = 'View',     icon = '' },
   refresh       = { cat = 'View',     icon = '' },
   help          = { cat = 'View',     icon = '' },
   __close       = { cat = 'View',     icon = '' },

@@ -205,6 +205,12 @@ local function test_panel_edge_file_keymaps()
   callbacks.G()
   assert_eq(vim.api.nvim_win_get_cursor(win)[1], 6, 'G jumps to last file row')
 
+  -- 左侧面板驱动右侧 diff chunk 跳转：]c / [c 已安装，且无 diff 视图时安全早退（不报错）
+  assert_eq(type(callbacks[']c']), 'function', ']c (next_chunk) mapping is installed')
+  assert_eq(type(callbacks['[c']), 'function', '[c (prev_chunk) mapping is installed')
+  assert_true(pcall(callbacks[']c']), ']c 在无 diff 视图时安全早退')
+  assert_true(pcall(callbacks['[c']), '[c 在无 diff 视图时安全早退')
+
   vim.api.nvim_win_set_buf(win, old_buf)
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end

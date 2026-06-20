@@ -11,7 +11,7 @@ local L = {}
 -- 选滚动锚点：a/b 两个 diff 窗口 scrollbind 联动，驱动哪个都会带动另一个，但驱动方自身
 -- 必须有足够内容才能滚到底。固定用 b_win（新/after 侧）在大批量「删除」时会失灵——此时
 -- b_win 内容很少（filler 占位不可作为 <C-e> 的滚动余量），而 a_win（旧/before 侧）才装着
--- 全部被删的行。故取**缓冲区行数最多**的那个 diff 窗口当锚点，保证总能覆盖全文滚动。
+-- 全部被删的行。故取**缓冲区行数最多**的那个 diff 窗口当锚点，保证总能覆盖全文滚动
 ---@param view table
 ---@return integer? win
 local function pick_scroll_anchor(view)
@@ -32,6 +32,22 @@ local function scroll_diff(direction)
   local target = pick_scroll_anchor(State.get().view)
   if not target or not vim.api.nvim_win_is_valid(target) then return end
   Scroll.window(target, direction * 5)
+end
+
+-- 在左侧面板里驱动右侧 diff 窗口跳转到下/上一个 chunk
+-- `]c` / `[c` 是 Neovim 原生 diff-mode 动作，只在 `diff=true` 的窗口里有意义；面板 buffer
+-- 不是 diff 窗口，直接映射无效。这里用 nvim_win_call 把动作放到 diff 锚点窗口的上下文里执行
+-- （a/b 两窗 cursorbind 联动，驱动其一即可），光标焦点仍留在面板，与 scroll_diff 一致
+---@param direction ']' | '['
+local function jump_chunk(direction)
+  if not State.has() then return end
+  local target = pick_scroll_anchor(State.get().view)
+  if not target or not vim.api.nvim_win_is_valid(target) then return end
+  vim.api.nvim_win_call(target, function()
+    -- ]czz / [czz：跳到 chunk 后把落点居中，和「打开文件自动跳首个变更 + zz」一致
+    -- zz 在锚点窗执行，scrollbind 会带动另一侧同步居中
+    pcall(vim.cmd, 'normal! ' .. direction .. 'czz')
+  end)
 end
 
 ---@param state table
@@ -175,6 +191,8 @@ function L.install(state, M)
   map('P',             function() M._pull() end,                   'pull')
   map('<C-e>',         function() scroll_diff(1) end,               'scroll_diff_down')
   map('<C-y>',         function() scroll_diff(-1) end,              'scroll_diff_up')
+  map(']c',            function() jump_chunk(']') end,              'next_chunk')
+  map('[c',            function() jump_chunk('[') end,              'prev_chunk')
   map('H',             function() M._compare_pick() end,           'compare_pick')
   map('gc',            function() M._commit_show_pick() end,        'commit_show')
   map('gw',            function() M._worktree_pick() end,           'worktree_pick')

@@ -160,6 +160,7 @@ opts = {
 | `P` | 拉取（pull） |
 | `<C-e>` | 向下滚动 diff |
 | `<C-y>` | 向上滚动 diff |
+| `]c` / `[c` | 跳到右侧 diff 的下/上一个 chunk 并居中（在左侧面板即可驱动，无需进入 diff 窗口） |
 | `gc` | 查看 commit 本身的 diff：选分支 → 选 commit，展示该 commit 引入的变更（`commit^..commit`） |
 | `gw` | Worktree 切换：浮窗列出本仓库所有 worktree，选中即切到该 worktree 看其 diff（`:VVGitWorktree` 等价） |
 | `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |

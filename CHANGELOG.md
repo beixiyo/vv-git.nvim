@@ -4,6 +4,8 @@
 
 ### Added
 
+- **左侧面板驱动 chunk 跳转**：在文件树面板里直接按 `]c` / `[c` 跳到右侧 diff 的下/上一个 chunk，无需先进入 diff 窗口。`]c`/`[c` 是原生 diff-mode 动作、只在 `diff=true` 的窗口有意义，故复用 `scroll_diff` 的锚点逻辑（取 a/b 中行数最多的窗口）+ `nvim_win_call` 把动作放到 diff 窗口上下文执行（`]czz`/`[czz` 跳完即居中，scrollbind 带动另一侧同步），焦点仍留在面板，与 `<C-e>`/`<C-y>` 滚动一致
+
 - **子仓库扫描**：新增 `subrepo.depth`（默认 `0` 不扫描）；每个子仓库作为独立可折叠块，标题行显示其相对路径 + 当前分支（` 󰘬 <branch>`），diff / stage / unstage / discard / 冲突 accept / commit / push 全按所属仓库路由
 
 - **Worktree 切换**（`gw` / `:VVGitWorktree`）：浮窗列出当前仓库的所有 git worktree（标记当前所在、显示分支 / detached / locked / prunable）
