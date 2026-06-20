@@ -30,6 +30,7 @@
     preview = true,                    -- 光标移动到文件行时自动刷新右侧 diff
     inline_diff_max_lines = 10000,     -- 单栏 inline diff 最大行数（超过跳过高亮）
     diff_ratio = { 4, 6 },            -- 双栏 a_win:b_win 宽度比例（不填则 50:50）
+    conflict_result_ratio = 0.5,       -- 三栏冲突视图底部 result/worktree 高度比例
   },
 }
 ```
@@ -47,6 +48,7 @@
 | `inline_diff_max_lines` | `integer` | `10000` | 单栏模式下 `vim.diff` 最大支持行数，超过只显示文本不画高亮 |
 | `right_click` | `string \| false` | `'toggle_stage'` | 右键触发的 action 名（如 `'yank_abs_path'`），`false` 禁用 |
 | `diff_ratio` | `integer[]` | 无（50:50） | 双栏模式下 a_win（旧版本）与 b_win（工作区）的宽度比例，如 `{4, 6}` 表示左窄右宽；不填则等宽 |
+| `conflict_result_ratio` | `number` | `0.5` | 三栏冲突视图中底部 result/worktree 窗口的高度比例，范围 `0.1`~`0.9` |
 | `diff_nowrap` | `boolean` | `false` | 默认保持折行；置为 `true` 则 diff 视图强制关闭折行——`wrap` 在双栏模式下因两侧行高不一致会造成视觉错位，属于上游已知限制（[neovim/neovim#29518](https://github.com/neovim/neovim/issues/29518)、[diffview.nvim#198](https://github.com/sindrets/diffview.nvim/issues/198)） |
 | `highlights` | `table` | 无 | 覆盖任意 `VVGit*` 高亮组，叠加在自动计算值之上，切换主题后仍生效（见下方「自定义配色」）|
 | `keymap_select` | `string` | `'<Tab>'` | 切换当前行选中状态（多选）；目录节点忽略 |

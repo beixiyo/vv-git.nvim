@@ -173,6 +173,19 @@ local function test_resize_single_col_migration()
     '不再含旧「Terminal shrunk below」窄化关闭提示（已改单栏迁移）')
 end
 
+-- 测试 9: 源代码静态验证 — 三栏冲突 result 高度暴露为配置项
+local function test_conflict_result_ratio_config()
+  local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
+  local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
+
+  assert_true(init_src:find('conflict_result_ratio number') ~= nil,
+    'VVGitConfig 暴露 conflict_result_ratio 类型注释')
+  assert_true(init_src:find('conflict_result_ratio%s*=%s*0%.5') ~= nil,
+    'defaults 中 conflict_result_ratio 默认为 0.5')
+  assert_true(view_src:find('handlers%.get_config%(%)%.conflict_result_ratio') ~= nil,
+    'conflict 三栏布局从配置读取 result 高度比例')
+end
+
 -- 执行所有测试
 log('========== vv-git.nvim 变更验证 ==========')
 test_discard_untracked_exists()
@@ -183,6 +196,7 @@ test_insert_mode_blocked()
 test_view_module_loads()
 test_narrow_single_col_design()
 test_resize_single_col_migration()
+test_conflict_result_ratio_config()
 log('========== 测试完成 ==========')
 print(string.format('总计: %d 通过, %d 失败', _passed, _failed))
 if _failed > 0 then os.exit(1) end

@@ -159,6 +159,11 @@ local function main_window(state)
   return nil
 end
 
+local function conflict_result_ratio()
+  local ratio = tonumber(handlers.get_config().conflict_result_ratio) or 0.5
+  return math.min(0.9, math.max(0.1, ratio))
+end
+
 -- 冲突三栏：在 b_win 下方新建 c_win（result 窗格）；先建 c 再分割顶部，
 -- 确保 c_win 横跨整个 diff 区域（和 a/b 等宽）
 -- 返回顺序：b_win, a_win, c_win（与 ensure_windows 的 b, a 对齐，只多一个 c）
@@ -182,7 +187,7 @@ local function ensure_conflict_windows(state)
   -- Step 1：在 main 下方先 split c_win，此时 c 和 main 等宽（= 整个 diff 区）
   api.nvim_set_current_win(main)
   local total_h = api.nvim_win_get_height(main)
-  local c_height = math.max(8, math.floor(total_h * 0.35))
+  local c_height = math.max(8, math.floor(total_h * conflict_result_ratio()))
   vim.cmd('belowright ' .. c_height .. 'split')
   local c_win = api.nvim_get_current_win()
 
