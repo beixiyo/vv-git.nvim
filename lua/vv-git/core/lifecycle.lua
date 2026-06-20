@@ -87,6 +87,9 @@ function L.attach(M)
 
     vim.cmd('tab split')
     local tabpage = vim.api.nvim_get_current_tabpage()
+    -- 约定：让自研 vv-bufferline 跳过整个 vv-git tab（panel/diff/冲突窗都不叠分屏标签栏）
+    -- 同步在建 tab 后立刻标记，赶在 bufferline 的 scheduled refresh 之前，避免它先画一次再清
+    pcall(vim.api.nvim_tabpage_set_var, tabpage, 'vv_bufferline_ignore', true)
     local main_win = vim.api.nvim_get_current_win()
     require('vv-utils.ui_window').show_chrome(main_win)
 
