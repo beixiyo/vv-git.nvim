@@ -43,10 +43,12 @@ end
 ---@param state table
 ---@param pidx table?  父仓库 Git.index 结果
 ---@param is_subroot table<string, boolean>
-local function build_parent_repo(state, pidx, is_subroot)
+---@param branch string?  当前分支名
+local function build_parent_repo(state, pidx, is_subroot, branch)
   local pmap = strip_subroots(pidx and pidx.status_map, is_subroot)
   state.index = make_repo_index(pmap, pidx and pidx.rename_map)
   state.tree = Tree.build(pmap, state.git_root)
+  state.branch = branch
 end
 
 -- 子仓库块：各建一棵独立树（路径相对其自身根，故 git 操作直接 `git -C <root>`），
@@ -55,7 +57,8 @@ end
 ---@param subroots string[]
 ---@param indexes table<string, table>
 ---@param is_subroot table<string, boolean>
-local function build_subrepos(state, subroots, indexes, is_subroot)
+---@param branches table<string, string>  root → 分支名
+local function build_subrepos(state, subroots, indexes, is_subroot, branches)
   state.subrepos = {}
   for _, sr in ipairs(subroots) do
     local idx = indexes[sr]
@@ -63,6 +66,7 @@ local function build_subrepos(state, subroots, indexes, is_subroot)
     state.subrepos[#state.subrepos + 1] = {
       root = sr,
       label = sr:sub(#state.git_root + 2), -- 相对父根：'nested' / 'nested/deep'
+      branch = branches[sr],
       tree = Tree.build(smap, sr),
       index = make_repo_index(smap, idx and idx.rename_map),
     }
@@ -129,15 +133,16 @@ function M.reload_index(state, after, passive)
     local is_subroot = {}
     for _, r in ipairs(subroots) do is_subroot[r] = true end
 
-    local indexes = {}
-    local pending = #roots_to_index
+    -- 每个仓库各取一次 status 与分支名，全部到齐后统一建树（counter join）
+    local indexes, branches = {}, {}
+    local pending = #roots_to_index * 2
 
-    local function on_index_done()
+    local function on_part_done()
       pending = pending - 1
       if pending > 0 then return end
 
-      build_parent_repo(state, indexes[state.git_root], is_subroot)
-      build_subrepos(state, subroots, indexes, is_subroot)
+      build_parent_repo(state, indexes[state.git_root], is_subroot, branches[state.git_root])
+      build_subrepos(state, subroots, indexes, is_subroot, branches)
       prune_selection(state)
 
       done_index = true
@@ -147,7 +152,11 @@ function M.reload_index(state, after, passive)
     for _, r in ipairs(roots_to_index) do
       Git.index(r, function(idx)
         indexes[r] = idx
-        on_index_done()
+        on_part_done()
+      end)
+      Git.current_branch(r, function(br)
+        branches[r] = br
+        on_part_done()
       end)
     end
   end

@@ -6,6 +6,7 @@
 -- state.view      = 右栏 diff 视图表（{ a_win, b_win, a_buf, b_buf, path, mode='diff2'|'single' }）
 -- state.git_root  = 父仓库根绝对路径
 -- state.index     = 父仓库 index 视图：{ status_map, rename_map }（形状与子仓库一致）
+-- state.branch    = 父仓库当前分支名（detached 时为短 hash）；header 行显示 󰘬 <branch>
 -- state.tree      = 父仓库变更树：{ staged, unstaged, conflicts }
 -- state.subrepos  = 发现的子仓库块列表：{ { root, label, tree, index }, ... }（depth>0 时）
 --                   每个子仓库各建一棵独立树，在左栏作为「Sub-Repo: <label>」块渲染
@@ -15,7 +16,7 @@
 --                   section_id：父仓库为裸 base（staged/unstaged/conflicts），
 --                   子仓库为 `<root>\0<base>`（见 vv-git.subrepo）。key 拼/拆统一走
 --                   Subrepo.sel_key / split_key / parse_sel_key，分隔符全用 NUL（按仓库隔离）
--- state.subrepo_folds = { [subrepo_root] = true }  被折叠的整个 Sub-Repo 块（只留标题行）
+-- state.block_folds = { [repo_root] = true }  被折叠的整个仓库块（根仓库 state.git_root / 子仓库根；只留标题行）
 -- state.selection = { ['<section_id>\0<relpath>'] = true }  多选集合（仅文件节点）
 -- state.cur_path  = 当前选中文件相对路径
 
@@ -41,7 +42,7 @@ function M.get()
       subrepos = {},
       folds = {},
       section_folds = {},
-      subrepo_folds = {},
+      block_folds = {},
       selection = {},
       cur_path = nil,
     }

@@ -6,6 +6,7 @@ local Icons = require('vv-git.icons')
 local Panel = require('vv-git.left.panel')
 local Subrepo = require('vv-git.subrepo')
 local ui_icons = require('vv-icons').raw.ui
+local git_icons = require('vv-icons').raw.git
 
 local M = {}
 
@@ -15,6 +16,8 @@ local INDENT_STEP = '  '
 local ARROW_OPEN = ui_icons.fold_open.glyph
 local ARROW_CLOSE = ui_icons.fold_closed.glyph
 local ARROW_COLS = 2
+local BRANCH_ICON = (git_icons.git_branches or {}).glyph or ''
+local BRANCH_ICON_HL = (git_icons.git_branches or {}).hl or 'VVGitPanelBranch' -- 语义色（MiniIconsOrange）
 -- nerd font 多数 2 cols；若 MiniIcons 返回 1-col 字符，pad_to_cols 会补空格
 -- 已知局限：>2 col 的 icon 不会被截断，可能与邻行错位（实际很罕见）
 local ICON_COLS = 2
@@ -118,9 +121,46 @@ function M.build(state)
 
   local function push_blank() lines[#lines + 1] = '' end
 
-  -- Header: 仓库名
+  -- 渲染一个仓库块标题行（根仓库 / 子仓库通用）：
+  --   `<箭头> <分支icon> <分支>  <name>`
+  -- 箭头可折叠（block_header=root）；分支 icon 用其自身语义色（MiniIconsOrange），
+  -- 分支名低调（VVGitPanelBranch），name 由调用方指定 hl（根=Title，子仓库=VVGitPanelSubrepo）
+  ---@param root string  仓库根（折叠 key / id.block_header）
+  ---@param name string  显示名（根=仓库名，子仓库=相对路径）
+  ---@param name_hl string
+  ---@param branch string?
+  ---@return boolean collapsed
+  local function render_repo_header(root, name, name_hl, branch)
+    local collapsed = (state.block_folds or {})[root] == true
+    local arrow_raw = collapsed and ARROW_CLOSE or ARROW_OPEN
+    local header = pad_to_cols(arrow_raw, ARROW_COLS)
+    local ems = { { col = 0, len = #arrow_raw, hl = 'VVGitPanelIndent' } }
+
+    -- 分支前缀： 󰘬 <branch>（icon 彩色，branch 低调），放在 name 之前
+    if branch and branch ~= '' then
+      if BRANCH_ICON ~= '' then
+        ems[#ems + 1] = { col = #header, len = #BRANCH_ICON, hl = BRANCH_ICON_HL }
+        header = header .. BRANCH_ICON .. ' '
+      end
+      ems[#ems + 1] = { col = #header, len = #branch, hl = 'VVGitPanelBranch' }
+      header = header .. branch .. '  '
+    end
+
+    ems[#ems + 1] = { col = #header, len = #name, hl = name_hl }
+    header = header .. name
+
+    lines[#lines + 1] = header
+    local row = #lines - 1
+    for _, e in ipairs(ems) do
+      extmarks[#extmarks + 1] = { row = row, col = e.col, opts = { end_col = e.col + e.len, hl_group = e.hl } }
+    end
+    id_by_line[#lines] = { block_header = root }
+    return collapsed
+  end
+
+  -- Header: 根仓库块标题（可折叠：折叠后只留标题行，隐藏 commit 提示与父仓库 section）
   local root_name = vim.fn.fnamemodify(state.git_root or '', ':t')
-  push_text(' ' .. root_name, 'Title')
+  local root_collapsed = render_repo_header(state.git_root, root_name, 'Title', state.branch)
   push_blank()
 
   local tree = state.tree
@@ -214,34 +254,18 @@ function M.build(state)
     push_blank()
   end
 
-  -- 渲染一个子仓库块：「Sub-Repo: <label>」标题（可折叠）+ 其三个 section（缩进一层）
-  ---@param sr table  { root, label, tree }
+  -- 渲染一个子仓库块：标题（相对路径 + 分支，可折叠）+ 其三个 section（缩进一层）
+  ---@param sr table  { root, label, tree, branch }
   local function render_subrepo(sr)
     local t = sr.tree
     if Tree.empty(t.staged) and Tree.empty(t.unstaged) and Tree.empty(t.conflicts) then
       return -- 该子仓库无改动，不渲染空块
     end
 
-    local collapsed = (state.subrepo_folds or {})[sr.root] == true
-    local arrow_raw = collapsed and ARROW_CLOSE or ARROW_OPEN
-    local arrow_block = pad_to_cols(arrow_raw, ARROW_COLS)
-    local label = 'Sub-Repo: ' .. sr.label
-    local header = arrow_block .. label
-    lines[#lines + 1] = header
-    local row = #lines - 1
-    extmarks[#extmarks + 1] = {
-      row = row, col = 0,
-      opts = { end_col = #arrow_raw, hl_group = 'VVGitPanelIndent' },
-    }
-    extmarks[#extmarks + 1] = {
-      row = row, col = #arrow_block,
-      opts = { end_col = #header, hl_group = 'VVGitPanelSubrepo' },
-    }
-    id_by_line[#lines] = { subrepo_header = sr.root }
-
-    -- 折叠整个块：只保留标题行
+    -- 标题不写「Sub-Repo:」字面——块的缩进结构已表明它是子仓库
+    local collapsed = render_repo_header(sr.root, sr.label, 'VVGitPanelSubrepo', sr.branch)
     if collapsed then
-      push_blank()
+      push_blank() -- 折叠整个块：只保留标题行
       return
     end
 
@@ -321,29 +345,32 @@ function M.build(state)
     return lines, extmarks, id_by_line
   end
 
-  local staged_count = Tree.count_files(tree.staged)
-  local unstaged_count = Tree.count_files(tree.unstaged)
-  local hint
-  if staged_count > 0 then
-    hint = string.format('  c  Commit %d staged', staged_count)
-  elseif unstaged_count > 0 then
-    hint = string.format('  c  Commit ALL %d (no staged)', unstaged_count)
-  else
-    hint = '  working tree clean'
+  -- 根仓库折叠：隐藏 commit 提示与三个父 section，只保留已渲染的标题行；子仓库块照常
+  if not root_collapsed then
+    local staged_count = Tree.count_files(tree.staged)
+    local unstaged_count = Tree.count_files(tree.unstaged)
+    local hint
+    if staged_count > 0 then
+      hint = string.format('  c  Commit %d staged', staged_count)
+    elseif unstaged_count > 0 then
+      hint = string.format('  c  Commit ALL %d (no staged)', unstaged_count)
+    else
+      hint = '  working tree clean'
+    end
+    push_text(hint, 'VVGitCommitHint')
+
+    if state.ahead_count and state.ahead_count > 0 then
+      push_text(string.format('  p  Push %d commit(s)', state.ahead_count), 'VVGitCommitHint')
+    end
+    push_blank()
+
+    -- 父仓库（冲突优先显示，VSCode 风）
+    render_section(state.git_root, 'conflicts', 'Merge Conflicts', tree.conflicts)
+    render_section(state.git_root, 'staged', 'Staged Changes', tree.staged)
+    render_section(state.git_root, 'unstaged', 'Changes', tree.unstaged)
   end
-  push_text(hint, 'VVGitCommitHint')
 
-  if state.ahead_count and state.ahead_count > 0 then
-    push_text(string.format('  p  Push %d commit(s)', state.ahead_count), 'VVGitCommitHint')
-  end
-  push_blank()
-
-  -- 父仓库（冲突优先显示，VSCode 风）
-  render_section(state.git_root, 'conflicts', 'Merge Conflicts', tree.conflicts)
-  render_section(state.git_root, 'staged', 'Staged Changes', tree.staged)
-  render_section(state.git_root, 'unstaged', 'Changes', tree.unstaged)
-
-  -- 子仓库块：每个发现的子仓库作为独立的「Sub-Repo」块（含各自的 staged/changes）
+  -- 子仓库块：每个发现的子仓库作为独立块（含各自的 staged/changes），不受根折叠影响
   for _, sr in ipairs(state.subrepos or {}) do
     render_subrepo(sr)
   end
@@ -427,12 +454,12 @@ function M.render(state, passive)
     end
 
     -- Sub-Repo 块折叠/展开后：把光标固定在该块标题行
-    local rh = state._subrepo_hint
+    local rh = state._block_hint
     if rh then
-      state._subrepo_hint = nil
+      state._block_hint = nil
       for lnum = 1, #lines do
         local id = id_by_line[lnum]
-        if id and id.subrepo_header == rh then
+        if id and id.block_header == rh then
           pcall(vim.api.nvim_win_set_cursor, win, { lnum, 0 })
           return
         end

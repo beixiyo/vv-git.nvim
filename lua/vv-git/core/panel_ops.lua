@@ -117,7 +117,7 @@ function L.attach(M)
   M._activate = State.guarded(function(state, expand_only)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
-    if id.section_header or id.subrepo_header then
+    if id.section_header or id.block_header then
       M._toggle_fold()
       return
     end
@@ -150,12 +150,12 @@ function L.attach(M)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
 
-    -- Sub-Repo 块标题行：折叠/展开整个块
-    if id.subrepo_header then
-      state.subrepo_folds = state.subrepo_folds or {}
-      local r = id.subrepo_header
-      state.subrepo_folds[r] = not state.subrepo_folds[r] or nil
-      state._subrepo_hint = r
+    -- 仓库块（根仓库 / 子仓库）标题行：折叠/展开整个块
+    if id.block_header then
+      state.block_folds = state.block_folds or {}
+      local r = id.block_header
+      state.block_folds[r] = not state.block_folds[r] or nil
+      state._block_hint = r
       LeftRender.render(state)
       return
     end
@@ -182,11 +182,11 @@ function L.attach(M)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end
 
-    -- Sub-Repo 块标题行：直接折叠整个块
-    if id.subrepo_header then
-      state.subrepo_folds = state.subrepo_folds or {}
-      state.subrepo_folds[id.subrepo_header] = true
-      state._subrepo_hint = id.subrepo_header
+    -- 仓库块（根仓库 / 子仓库）标题行：直接折叠整个块
+    if id.block_header then
+      state.block_folds = state.block_folds or {}
+      state.block_folds[id.block_header] = true
+      state._block_hint = id.block_header
       LeftRender.render(state)
       return
     end

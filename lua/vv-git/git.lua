@@ -349,4 +349,25 @@ function M.ahead_count(root, cb)
   )
 end
 
+-- 当前分支名；detached HEAD 时退回短 hash（`branch --show-current` 此时为空）；失败为 ''
+---@param root string
+---@param cb fun(branch: string)
+function M.current_branch(root, cb)
+  vim.system(
+    { 'git', '-C', root, 'branch', '--show-current' },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      local b = (r.code == 0) and vim.trim(r.stdout or '') or ''
+      if b ~= '' then cb(b); return end
+      vim.system(
+        { 'git', '-C', root, 'rev-parse', '--short', 'HEAD' },
+        { text = true },
+        vim.schedule_wrap(function(r2)
+          cb((r2.code == 0) and vim.trim(r2.stdout or '') or '')
+        end)
+      )
+    end)
+  )
+end
+
 return M
