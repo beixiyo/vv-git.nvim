@@ -151,6 +151,7 @@ function M.setup(opts)
   ucmd('VVGitCommitShow',   function() M.open() M._commit_show_pick() end)
   ucmd('VVGitWorktree',     function() M.open() M._worktree_pick() end)
   ucmd('VVGitShow',         function(o) M.show_commit(o.args) end, { nargs = 1 })
+  ucmd('VVGitLoad',         function() end)
   ucmd('VVGitSubrepoDepth', function(o)
     if not o.args or o.args == '' then
       vim.notify('[vv-git] subrepo scan depth = ' .. M.get_subrepo_depth(), vim.log.levels.INFO)
