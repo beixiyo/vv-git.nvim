@@ -43,7 +43,7 @@ local function jump_chunk(direction)
   if not State.has() then return end
   local target = pick_scroll_anchor(State.get().view)
   if not target or not vim.api.nvim_win_is_valid(target) then return end
-  vim.api.nvim_win_call(target, function()
+  Scroll.with_view_animation(target, function()
     -- ]czz / [czz：跳到 chunk 后把落点居中，和「打开文件自动跳首个变更 + zz」一致
     -- zz 在锚点窗执行，scrollbind 会带动另一侧同步居中
     pcall(vim.cmd, 'normal! ' .. direction .. 'czz')

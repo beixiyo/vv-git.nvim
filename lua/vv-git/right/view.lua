@@ -12,6 +12,7 @@
 local api = vim.api
 local Git = require('vv-git.git')
 local InlineDiff = require('vv-git.inline_diff')
+local Scroll = require('vv-utils.scroll')
 
 local M = {}
 
@@ -73,6 +74,16 @@ local FILETYPE_A = 'vv-git-a'
 
 local REF_HL = { HEAD = 'VVGitWinbarOurs', MERGE_HEAD = 'VVGitWinbarTheirs' }
 
+---@param direction ']'|'['
+local function jump_diff_chunk(direction)
+  local win = api.nvim_get_current_win()
+  if not api.nvim_get_option_value('diff', { win = win }) then return end
+
+  Scroll.with_view_animation(win, function()
+    pcall(vim.cmd, 'normal! ' .. direction .. 'czz')
+  end)
+end
+
 -- 右侧 diff 窗口的 buffer-local 快捷键（show 时装到 a_buf / b_buf，close 时拆）
 -- 回调走注入的 handlers，view 不再反向 require init
 local RIGHT_KEYS_SPEC = {
@@ -80,6 +91,8 @@ local RIGHT_KEYS_SPEC = {
   { '<Esc>', function() handlers.on_close() end,          'close' },
   { 'gf',    function() handlers.on_goto_file() end,      'goto_file' },
   { 'Y',     function() handlers.on_yank_abs_path() end,  'yank_abs_path' },
+  { ']c',    function() jump_diff_chunk(']') end,         'next_chunk' },
+  { '[c',    function() jump_diff_chunk('[') end,         'prev_chunk' },
 }
 
 -- fold 键全部包到 buffer-local，用 `:normal!`（带 !）跑 vanilla 实现，绕过用户的

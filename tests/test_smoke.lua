@@ -231,7 +231,21 @@ local function test_view_module_loads()
   assert_true(ok, 'vv-git.right.view loads without error')
 end
 
--- 测试 8: 源代码静态验证 — 窄终端策略为「降级单栏」而非旧的「拒开 + Terminal too narrow」
+-- 测试 8: 右侧 diff 视图聚焦时，[c/]c 也走 vv-utils.scroll 动画包装
+local function test_right_diff_chunk_keymaps()
+  local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
+
+  assert_true(view_src:find("'%]c'") ~= nil,
+    'right view 安装 ]c next_chunk 映射')
+  assert_true(view_src:find("'%[c'") ~= nil,
+    'right view 安装 [c prev_chunk 映射')
+  assert_true(view_src:find('Scroll%.with_view_animation') ~= nil,
+    'right view chunk 跳转走 vv-utils.scroll 动画包装')
+  assert_true(view_src:find("nvim_get_option_value%('diff'") ~= nil,
+    'right view chunk 跳转只在 diff 窗口接管')
+end
+
+-- 测试 9: 源代码静态验证 — 窄终端策略为「降级单栏」而非旧的「拒开 + Terminal too narrow」
 -- 现行设计：列数 < single_col_threshold 时 diff 视图降级为单栏（仅 b 侧，无 inline diff），
 -- ≥ 阈值时正常 dual diff，resize 时在 narrow↔wide 间自动迁移。本测试防回退到旧拒开设计。
 -- 注：旧版曾用「窄终端 = notify + close」，现已改回（重新实现的）单栏降级，故旧的
@@ -250,7 +264,7 @@ local function test_narrow_single_col_design()
     '不再含旧「Terminal too narrow」拒开提示（已改单栏降级）')
 end
 
--- 测试 9: 源代码静态验证 — resize 经 _apply_layout 在 narrow↔wide 间迁移，而非 notify + 关闭
+-- 测试 10: 源代码静态验证 — resize 经 _apply_layout 在 narrow↔wide 间迁移，而非 notify + 关闭
 local function test_resize_single_col_migration()
   local pops_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/core/panel_ops.lua'), '\n')
   local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
@@ -263,7 +277,7 @@ local function test_resize_single_col_migration()
     '不再含旧「Terminal shrunk below」窄化关闭提示（已改单栏迁移）')
 end
 
--- 测试 10: 源代码静态验证 — 三栏冲突 result 高度暴露为配置项
+-- 测试 11: 源代码静态验证 — 三栏冲突 result 高度暴露为配置项
 local function test_conflict_result_ratio_config()
   local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
   local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
@@ -285,6 +299,7 @@ test_classify_untracked()
 test_insert_mode_blocked()
 test_panel_edge_file_keymaps()
 test_view_module_loads()
+test_right_diff_chunk_keymaps()
 test_narrow_single_col_design()
 test_resize_single_col_migration()
 test_conflict_result_ratio_config()
