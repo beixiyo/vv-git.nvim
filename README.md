@@ -26,6 +26,7 @@
     keymap_toggle_panel = '<leader>b', -- 全局切换左栏的映射（false 禁用）
     keymap_select = '<Tab>',           -- 切换当前文件选中状态（多选）
     fold_unchanged = true,             -- 折叠未改动代码
+    fold_staged = false,               -- 打开面板时默认折叠 Staged Changes section（仅此一层）
     diff_fill = ' ',                   -- diff 空行填充符（Vim 默认 '-'）
     preview = true,                    -- 光标移动到文件行时自动刷新右侧 diff
     inline_diff_max_lines = 10000,     -- 单栏 inline diff 最大行数（超过跳过高亮）
@@ -43,6 +44,7 @@
 | `single_col_threshold` | `integer` | `120` | 窗口列数低于此值时降级为单栏（仅 b 侧 + inline diff），≥ 此值双栏；resize 自动迁移 |
 | `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 全局切换左栏可见性的映射；`false` 禁用 |
 | `fold_unchanged` | `boolean` | `true` | 未改动代码是否默认折叠（dual: `foldmethod=diff`；single: manual fold） |
+| `fold_staged` | `boolean` | `false` | 自动把父仓库的 `Staged Changes` section 折成标题行（仅此一层，子仓库块不受影响） |
 | `diff_fill` | `string` | `' '` | diff 空行填充符，映射到 `fillchars` 的 `diff:X` |
 | `preview` | `boolean` | `true` | 光标在左栏移动时自动刷新右侧 diff，无需手动 `<CR>` |
 | `inline_diff_max_lines` | `integer` | `10000` | 单栏模式下 `vim.diff` 最大支持行数，超过只显示文本不画高亮 |

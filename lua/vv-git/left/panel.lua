@@ -27,8 +27,8 @@ local function apply_win_opts(win)
     winfixbuf = true,
   })
   -- 显式从 diff-group 摘出。未显式设过的 win-local 选项处于"default 态"，
-  -- 在 VimResized / panel 重建 / 第三方浮窗创建等路径上可能被继承/污染进 diff-group。
-  -- 写死 false 让本 panel 永不进 diff 计算，新浮窗从 panel 继承也拿不到污染状态。
+  -- 在 VimResized / panel 重建 / 第三方浮窗创建等路径上可能被继承/污染进 diff-group
+  -- 写死 false 让本 panel 永不进 diff 计算，新浮窗从 panel 继承也拿不到污染状态
   -- 对照 diffview panel.lua:50-52 同样做法
   -- scope='local'：不污染全局默认（vim.wo 等于 :set，会改全局）
   local api = vim.api

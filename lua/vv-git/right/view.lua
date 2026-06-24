@@ -687,7 +687,7 @@ function M.show(state, node, section, force_single, root)
   end
 
   -- 子仓库：node.relpath 已相对其所属仓库根（每个子仓库各建独立树），故 git show / index
-  -- 取数直接 `git -C <owner>` + node.relpath，无需路径换算；owner == 父根时退化为改造前行为。
+  -- 取数直接 `git -C <owner>` + node.relpath，无需路径换算；owner == 父根时退化为改造前行为
   -- compare 模式是父仓库专属（其文件列表来自父仓 git diff），root 传 nil → owner = 父根
 
   -- 切换前的 b_buf：切到不同文件后需从旧 b_buf 拆掉 q/gf，避免它在 bufferline 里被

@@ -20,11 +20,11 @@ local function norm(p) return vim.fs.normalize(p) end
 
 local M = {}
 
---- 限深递归发现 root 下的嵌套 git 仓库。
+--- 限深递归发现 root 下的嵌套 git 仓库
 --- 命中含 `.git`（目录或文件）的目录即记为子仓库根，并在 depth 允许范围内继续下钻，
---- 以覆盖「仓库里再嵌套仓库」。只处理真实目录（跳过符号链接，避免环）。
+--- 以覆盖「仓库里再嵌套仓库」。只处理真实目录（跳过符号链接，避免环）
 --- 被父仓库 gitignore 的目录整个跳过（不记录、不下钻）——与「忽略文件不显示」一致，
---- 避免在 build/ 这类被忽略目录里翻出 vendored 仓库造成噪音。
+--- 避免在 build/ 这类被忽略目录里翻出 vendored 仓库造成噪音
 ---@param root string  父仓库根（绝对路径）
 ---@param depth integer  目录递归最大深度（root 直接子目录为 1）；<= 0 不扫描
 ---@param prune table<string, boolean>  跳过的目录名集合（建议含 node_modules / .git）
@@ -81,11 +81,11 @@ end
 --
 -- section id 约定：父仓库用裸 base（'staged'/'unstaged'/'conflicts'/'compare'），
 -- 子仓库用 `<root>\0<base>`。fold / selection / section_folds 的 key（形如
--- `<section_id>\0<relpath>`）天然按仓库隔离，父仓库的 key 与改造前等价。
+-- `<section_id>\0<relpath>`）天然按仓库隔离，父仓库的 key 与改造前等价
 --
 -- 分隔符统一用 NUL：仓库根路径、base、relpath 都不可能含 NUL，故任意含特殊字符
 -- （含 ':'、空格等）的根路径或文件名都能无歧义 round-trip。所有 key 的拼/拆都必须
--- 走本模块的 section_id / sel_key / split_key / parse_* 函数，不要在别处手写分隔符。
+-- 走本模块的 section_id / sel_key / split_key / parse_* 函数，不要在别处手写分隔符
 
 --- 构造 section id：父仓库返回裸 base，子仓库返回 `root\0base`
 ---@param root string?  节点所属仓库根（nil 或等于父根 → 父仓库）

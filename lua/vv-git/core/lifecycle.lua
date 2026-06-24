@@ -109,6 +109,16 @@ function L.attach(M)
       config = function() return M._config.subrepo or {} end,
     }
     ensure_unfolded(state, rel_path)
+
+    -- 配置项 fold_staged：打开面板时把父仓库的 Staged Changes section 默认折成标题行
+    -- （仅此一层，section_id 用裸 'staged'；子仓库块的 staged 不受影响）。只在这条
+    -- fresh-open 路径一次性写入 section_folds，用户之后可正常展开/折叠；重开面板（state
+    -- 被 clear 后重建）才再次套用默认。toggle_panel / 复用已开面板都不会重置
+    if M._config.fold_staged then
+      state.section_folds = state.section_folds or {}
+      state.section_folds[Subrepo.section_id(state.git_root, state.git_root, 'staged')] = true
+    end
+
     state.panel = {
       buf = panel_buf,
       win = panel_win,

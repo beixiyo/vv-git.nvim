@@ -4,6 +4,8 @@
 
 ### Added
 
+- **自动折叠 Staged Changes**：新增 `fold_staged`（默认 `false`）；开启后打开面板时把父仓库的 `Staged Changes` section 默认折成标题行
+
 - **左侧面板驱动 chunk 跳转**：在文件树面板里直接按 `]c` / `[c` 跳到右侧 diff 的下/上一个 chunk，无需先进入 diff 窗口。`]c`/`[c` 是原生 diff-mode 动作、只在 `diff=true` 的窗口有意义，故复用 `scroll_diff` 的锚点逻辑（取 a/b 中行数最多的窗口）+ `nvim_win_call` 把动作放到 diff 窗口上下文执行（`]czz`/`[czz` 跳完即居中，scrollbind 带动另一侧同步），焦点仍留在面板，与 `<C-e>`/`<C-y>` 滚动一致
 
 - **子仓库扫描**：新增 `subrepo.depth`（默认 `0` 不扫描）；每个子仓库作为独立可折叠块，标题行显示其相对路径 + 当前分支（` 󰘬 <branch>`），diff / stage / unstage / discard / 冲突 accept / commit / push 全按所属仓库路由
@@ -15,20 +17,20 @@
 - **分支显示**：左栏根仓库与各子仓库标题行均在最前显示当前分支（彩色分支图标 + 分支名，detached 时为短 hash）
 
 - **根仓库可折叠**：根仓库标题行带折叠箭头，`l`/`h`/单击折叠后隐藏其 commit 提示与三个 section（子仓库块不受影响），与子仓库块共用同一套折叠交互
- 
+
 - **方向键导航**：面板内 `↑/↓` 同 `j`/`k`（跳上/下一个可选项）、`→` 同 `l`（展开/激活）、`←` 同 `h`（折叠），照顾习惯方向键的用户
- 
+
 - **状态变更广播**：任意 git 变更（stage/unstage/discard/commit/push/conflict）完成后，`reload_index` 发一个 `User VVGitStatusChanged` 事件（`data.root` 带仓库根），供 vv-explorer / vv-statuscol 等外部消费者即时刷新自身 git 索引，无需轮询或等 `FocusGained`
 
 - **预览防抖**：`preview_debounce_ms` 光标停顿后才刷新右侧 diff，避免快速 `j`/`k` 时频繁重算；`0` = 不防抖（同步直刷）
 
 - **Section 折叠**：`Staged Changes` / `Changes` / `Merge Conflicts` 标题行现在带折叠箭头，光标在标题上时 `<CR>`/`o`/`l` 切换展开/折叠、`h` 直接折叠、单击（`<LeftRelease>`）也可切换；折叠后只保留标题行，文件列表隐藏。折叠状态按 section 独立记录（`state.section_folds`），折叠/展开后光标固定在标题行不跳走
 
-- **查看 commit diff**（`gc`）：选分支 → 选 commit，展示该 commit 本身引入的变更（`commit^..commit`），即这次提交改了什么。初始 commit（无父节点）自动用 empty-tree 兜底。
+- **查看 commit diff**（`gc`）：选分支 → 选 commit，展示该 commit 本身引入的变更（`commit^..commit`），即这次提交改了什么。初始 commit（无父节点）自动用 empty-tree 兜底
 
-- **与 HEAD 比较**（`H`）：选分支 → 选 commit，展示该 commit 与当前 HEAD 之间的差异（`commit..HEAD`），即"从那时到现在改了什么"。
+- **与 HEAD 比较**（`H`）：选分支 → 选 commit，展示该 commit 与当前 HEAD 之间的差异（`commit..HEAD`），即"从那时到现在改了什么"
 
-  两种模式共用同一套左栏文件列表 + 右侧双栏 diff 基础设施；`<Esc>` 退出，左栏立即恢复正常视图。
+  两种模式共用同一套左栏文件列表 + 右侧双栏 diff 基础设施；`<Esc>` 退出，左栏立即恢复正常视图
 
 - **Compare 模式树结构**：`H`/`gc` 的变更文件列表从扁平路径改为树形目录结构，与 normal 模式的 Staged/Changes 视图一致——支持目录折叠箭头、文件类型图标、单链目录合并（`src/foo/bar/` 显示为一行）、`l`/`h` 展开/折叠
 
@@ -43,33 +45,33 @@
 - **gitsigns 协同刷新**：监听 `User GitSignsChanged` 事件，在右侧 diff 预览中通过 gitsigns 暂存/取消暂存 hunk 后，左栏文件列表和右侧 diff 自动刷新，焦点保持在原窗口不跳转
 
 - **智能定位当前文件**：按 `<leader>gd` 打开或切换到 Git 面板时，若当前 buffer 有改动，会自动将光标定位到该文件并展示 diff；若目标路径在折叠的目录中，会自动展开父目录
- 
+
 - **文件夹状态图标**：Git 面板中的目录图标现在支持“展开”与“收起”状态切换，视觉表现与 `vv-explorer` 及 `snacks.nvim` 完全同步
- 
+
 - **鼠标操作**：单击（`<LeftRelease>`）展开/收起目录；右键（`<RightMouse>` + `getmousepos()`）执行可配置 action（默认 `toggle_stage`），屏蔽右键 visual 选区（含双击/三击）。配置项 `right_click`（`string|false`）
- 
+
 - **鼠标 visual 屏蔽**：屏蔽 `<LeftDrag>`（左键拖拽）和 `<2-LeftMouse>`（双击左键），防止鼠标操作触发 visual 选区
- 
+
 - **j/k 循环导航**：`j`/`k`/`<C-n>`/`<C-p>` 在可交互行间跳转，到边缘自动循环回绕，跳过空行和非交互行
- 
+
 - **默认光标在 Changes**：初次渲染时光标优先定位到 Changes（unstaged）区域的第一个文件，而非 Staged Changes；当前文件同时存在于 Staged 与 Changes 时，也优先落在 Changes 一侧
- 
+
 - Added `<Esc>` mapping to close the panel and diff view.
- 
+
 - **窄终端单栏 fallback**：窗口列数 < `single_col_threshold` 时不再拒绝打开 / 关闭 tab，自动降级为「panel + 单栏 b 视图」，列数恢复后自动升回 dual diff
- 
+
 - **单栏 inline diff 高亮**：单栏模式下用 `vim.diff()` 在 b_buf 上叠 extmark，新增/修改行整行染色 + 删除行通过 `virt_lines` 在原位上方显示，覆盖 staged 和 unstaged
- 
+
 - **字符级 word-diff 高亮**：单栏 inline 模式下 rc==ac 改动行（含 a 侧 virt_lines）按字符级 `vim.diff` 拆 chunk，改动字符显深色 / 上下文显浅色，仿 gitsigns `lua/gitsigns/diff_int.lua`（`split_chars` + `denoise_hunks` + 1:1 行配对，`DENOISE_GAP=5` 避免破碎闪烁）。注意按 byte 切，CJK 多字节文件可能切到字符中间，ASCII 主导文件无影响
- 
+
 - **双栏 `inline:char`**：`vim.opt.diffopt` 追加 `inline:char`（nvim 0.11+），双栏模式下 `DiffText` / `DiffTextAdd` 由 nvim 内置字符级 diff 驱动，不再"首字差异 → 末字差异"整段染色
- 
+
 - 新增高亮组 `VVGitDiffTextAdd` / `VVGitDiffTextAddDelete`（nvim 0.11+ `inline:char/word` 配套：标"对侧无对应原文"的纯增/删字符），`WINHL_A` / `WINHL_B` 同步映射避免 fall-through 到全局默认色
- 
+
 - **单栏自动折叠**：仿 dual mode `foldmethod=diff`，未改动行 ±6 行上下文外自动折叠（`foldmethod=manual`）；与 nvim-ufo 通过 detach/attach 协作避免冲突
- 
+
 - **自动跳到第一处变更**：dual / single 两种模式打开文件时光标直接落在第一个 hunk 上 + `zz` 居中
- 
+
 - 配置项 `inline_diff_max_lines`（默认 10000）：超过此行数跳过 inline 渲染，避免大文件 vim.diff 卡顿
 
 - **Panel 宽度持久化**：调整左栏宽度后跨 session 记住，通过 `WinResized` 实时跟踪 + `VimLeavePre` / `M.close` 写入 `stdpath('data')/vv-git.json`

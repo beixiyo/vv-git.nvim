@@ -152,7 +152,7 @@ function M.show(root, rev, relpath, cb)
       end
       local text = r.stdout or ''
       -- Windows 保存的文件 git show 原样回 \r\n；split('\n') 后行尾会残留 \r
-      -- 导致 Neovim diff 视觉对齐异常 + 搜索匹配错位。统一归一化为 LF。
+      -- 导致 Neovim diff 视觉对齐异常 + 搜索匹配错位。统一归一化为 LF
       text = text:gsub('\r\n', '\n')
       -- 去掉末尾的 trailing newline 避免多一行空行
       if text:sub(-1) == '\n' then text = text:sub(1, -2) end

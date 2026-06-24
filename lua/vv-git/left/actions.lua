@@ -32,7 +32,7 @@ local function notify_err(label, err)
   vim.notify('[vv-git] ' .. label .. ' failed: ' .. (err or ''), vim.log.levels.ERROR)
 end
 
--- 把一个 git 操作包成 join() 可用的 op（接收 done）：失败只提示、仍调 done 不掐断链路。
+-- 把一个 git 操作包成 join() 可用的 op（接收 done）：失败只提示、仍调 done 不掐断链路
 -- 注意：单键动作（toggle_stage / discard staged 分支）失败要「即返回、不刷新」，语义不同，
 -- 不走本工厂、只复用 notify_err
 ---@param fn fun(root:string, paths:string[], cb:fun(ok:boolean, err:string?))
@@ -57,7 +57,7 @@ local function untracked_warn(n)
 end
 
 -- 给某仓库的 staged 列表补上 rename 旧路径（就地扩展）：unstage rename 需带旧路径，
--- 否则 git restore --staged 会遗漏旧路径的 deletion 状态；stage 不能带（旧文件已不存在）。
+-- 否则 git restore --staged 会遗漏旧路径的 deletion 状态；stage 不能带（旧文件已不存在）
 -- rename_map 的 key 为绝对路径
 ---@param repo table?  Subrepo.repo_of 结果（含 index.rename_map）
 ---@param root string

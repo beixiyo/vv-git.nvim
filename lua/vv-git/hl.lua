@@ -59,7 +59,7 @@ end
 -- 组（panel / commit / fold）才用 default=true，让用户的 colorscheme 能自定义
 --
 -- 之前所有组都加 default=true，导致同一会话里改 alpha 后再 setup 时新色值是 no-op
--- （:hi default 语义就是"已存在就不覆盖"），必须 nvim 重启才生效。
+-- （:hi default 语义就是"已存在就不覆盖"），必须 nvim 重启才生效
 --
 -- 用前缀匹配区分两类：VVGitDiff* 强制 set；其余（VVGitPanel*/VVGitFold/VVGitCommit*）
 -- 走 default。比维护一张白名单更稳——新增 diff 色组不会忘记同步

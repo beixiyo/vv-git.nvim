@@ -76,7 +76,7 @@ end
 -- 清理过期的多选键：选择键（section_id\0relpath）跨渲染持久化，但树重建后某些路径可能已
 -- 变更分区或消失（如外部 git add 把 ?? 文件移入 staged）。若不剪枝，
 -- discard_selection/toggle_stage_selection 会按「当前树」重新分类一个已不在该分区的路径，
--- 导致 untracked 文件被误路由到 git restore（no-op）、确认框漏掉删除警告。
+-- 导致 untracked 文件被误路由到 git restore（no-op）、确认框漏掉删除警告
 -- 按 key 里的仓库前缀定位到对应仓库的树，丢弃已不是 leaf 文件的选择键
 ---@param state table
 local function prune_selection(state)
@@ -121,7 +121,7 @@ function M.reload_index(state, after, passive)
     finalize()
   end)
 
-  -- 多仓库：父仓库 + 发现的子仓库各跑一次 git status，counter join 后各建一棵独立树。
+  -- 多仓库：父仓库 + 发现的子仓库各跑一次 git status，counter join 后各建一棵独立树
   -- 父仓库剔除「指向子仓库根」的折叠条目（?? sub/ 或 M sub），改由子仓库自己的块呈现
   ---@param subroots string[]
   local function proceed(subroots)
@@ -175,7 +175,7 @@ function M.reload_index(state, after, passive)
 
   if cfg.respect_gitignore then
     -- 可选：跳过被父仓库 gitignore 的目录。先拿忽略目录集合（快路径
-    -- ls-files --others --ignored --directory）再据此过滤发现。
+    -- ls-files --others --ignored --directory）再据此过滤发现
     -- 默认关闭——HOME-as-repo 场景 ~ 几乎忽略一切，开了会把所有子仓库都屏蔽掉
     UGit.ignored_entries(state.git_root, function(_, ignored_dirs)
       proceed(Subrepo.discover(state.git_root, depth, prune, ignored_dirs or {}, cfg.scan_worktrees))

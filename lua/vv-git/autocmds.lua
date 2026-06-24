@@ -27,9 +27,9 @@ function M.setup(handlers, config)
       if name == '' then return end
       name = vim.fs.normalize(name)
       if name ~= state.git_root and name:sub(1, #state.git_root + 1) ~= state.git_root .. '/' then return end
-      -- 与 GitSignsChanged 共用同一去抖：若两者同 tick 到达，只调度一次 on_refresh()。
+      -- 与 GitSignsChanged 共用同一去抖：若两者同 tick 到达，只调度一次 on_refresh()
       -- 但 reshow 需求要 OR 合并到 _refresh_need_reshow——否则先到的 BufWritePost
-      -- 会让随后的 GitSignsChanged 短路，丢掉它的 on_reshow_view()。
+      -- 会让随后的 GitSignsChanged 短路，丢掉它的 on_reshow_view()
       if state._refresh_scheduled then return end
       state._refresh_scheduled = true
       vim.schedule(function()
@@ -65,12 +65,12 @@ function M.setup(handlers, config)
   })
 
   -- BufEnter / FocusGained：捕获 BufWritePost / GitSignsChanged 之外的外部变化——
-  -- 终端 git checkout / pull / stash、其它工具或 AI 直接改文件、alt-tab 回到 nvim 等。
-  -- 只要面板开着，就在 state.git_root 上重跑 git status 刷新左栏。
+  -- 终端 git checkout / pull / stash、其它工具或 AI 直接改文件、alt-tab 回到 nvim 等
+  -- 只要面板开着，就在 state.git_root 上重跑 git status 刷新左栏
   --
   -- 不再按 buffer 类型过滤（点进 panel / diff 也要能刷新）。这两个事件触发偏频繁，尤其
   -- BufEnter 会被 diff 预览结束时的「焦点回弹到 panel」反复带起，靠 debounce 收敛：连续
-  -- 浏览只在停下后刷一次。render 仅重绘左栏、不切窗口/buffer，故不会自我触发形成回环。
+  -- 浏览只在停下后刷一次。render 仅重绘左栏、不切窗口/buffer，故不会自我触发形成回环
   if config.auto_refresh ~= false then
     local refresh_debounced = require('vv-utils.timer').debounce(State.guarded(function(state)
       if not state.git_root then return end
@@ -94,16 +94,16 @@ function M.setup(handlers, config)
   })
 
   -- 任何方式关了 vv-git tab 都走这里：统一清 state + b_buf 上的 buf-local 快捷键
-  -- 注：TabClosed 的 args.file 是 1-based 序号，state.tabpage 是 id（handle），两者不能直接比。
+  -- 注：TabClosed 的 args.file 是 1-based 序号，state.tabpage 是 id（handle），两者不能直接比
   --    改用"我们的 tabpage 是否仍 valid"来判断——tabpage 被关后 handle 会失效
   vim.api.nvim_create_autocmd('TabClosed', {
     group = aug,
     callback = State.guarded(function(state)
       if state.tabpage and not vim.api.nvim_tabpage_is_valid(state.tabpage) then
         pcall(RightView.close, state)
-        -- panel_buf 是 bufhidden=hide：tab 关闭只会隐藏 buf，不会真删。
+        -- panel_buf 是 bufhidden=hide：tab 关闭只会隐藏 buf，不会真删
         -- 每次 open 新建一个 buf → 不显式 wipe 会 N 次 open/close 后残留 N 个
-        -- vv-git://panel/X 幽灵 buffer（bufferline / :ls 可见）。
+        -- vv-git://panel/X 幽灵 buffer（bufferline / :ls 可见）
         local pb = state.panel and state.panel.buf
         if pb and vim.api.nvim_buf_is_valid(pb) then
           pcall(vim.api.nvim_buf_delete, pb, { force = true })

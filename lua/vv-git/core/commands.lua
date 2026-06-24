@@ -55,7 +55,7 @@ function L.attach(M)
     end)
   end)
 
-  -- 展示指定 commit 的 diff（hash 由外部选好，跳过 open_picker）。供公开 M.show_commit / 外部集成（telescope git_log 等）用。
+  -- 展示指定 commit 的 diff（hash 由外部选好，跳过 open_picker）。供公开 M.show_commit / 外部集成（telescope git_log 等）用
   M._commit_show = State.guarded(function(state, hash)
     if not state.git_root or not hash or hash == '' then return end
     local Compare = require('vv-git.compare')

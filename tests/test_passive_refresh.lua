@@ -1,5 +1,5 @@
 -- 回归：passive 刷新（auto_refresh / 保存 / gitsigns / R / commit）不拉扯光标
--- render(state, true) 保持光标停在当前文件、不按滞后 cur_path 拉走；非 passive 仍走 cur_path。
+-- render(state, true) 保持光标停在当前文件、不按滞后 cur_path 拉走；非 passive 仍走 cur_path
 -- 用法: cd vv-git.nvim && nvim --headless -u NONE -l tests/test_passive_refresh.lua
 local this = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p')
 local plugin_root = vim.fn.fnamemodify(this, ':h:h')

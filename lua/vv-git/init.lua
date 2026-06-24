@@ -32,6 +32,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
 ---@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用 @default '<leader>b'
 ---@field fold_unchanged boolean  -- diff 视图默认折叠未改动代码 @default true
+---@field fold_staged boolean  -- 打开面板时默认把父仓库的 Staged Changes section 折成标题行（仅此一层，子仓库块不受影响）；只在 open 时一次性写入，之后可手动展开/折叠 @default false
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X @default ' '
 ---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l @default true
 ---@field auto_refresh boolean  -- BufEnter / FocusGained 时防抖刷新左栏 git 状态，捕获终端 checkout/pull、外部改文件等 @default true
@@ -54,6 +55,7 @@ local defaults = {
   keymap_select = '<Tab>',
   select_move_down = true,
   fold_unchanged = true,
+  fold_staged = false,
   diff_ratio = { 5, 5 },
   conflict_result_ratio = 0.5,
   diff_fill = ' ',
@@ -98,7 +100,7 @@ local defaults = {
 
 M._config = vim.deepcopy(defaults)
 
--- 子仓库扫描深度的运行时临时覆盖（`:VVGitSubrepoDepth` 设置）。
+-- 子仓库扫描深度的运行时临时覆盖（`:VVGitSubrepoDepth` 设置）
 -- 仅存于内存、随会话存活、关面板不清、重启即失效——满足「临时改、不持久化」
 ---@type integer?
 M._subrepo_depth_override = nil
@@ -121,7 +123,7 @@ end
 function M.setup(opts)
   M._config = vim.tbl_deep_extend('force', defaults, opts or {})
 
-  -- subrepo.prune 用「覆盖」语义：用户传了就整体替换默认列表。
+  -- subrepo.prune 用「覆盖」语义：用户传了就整体替换默认列表
   -- tbl_deep_extend 对数组是按下标混合（传 { 'a' } 会得到 { 'a', 默认[2..] }），故显式覆盖
   if opts and opts.subrepo and opts.subrepo.prune ~= nil then
     M._config.subrepo.prune = vim.deepcopy(opts.subrepo.prune)
@@ -210,8 +212,8 @@ end
 ---@return table
 function M.config() return M._config end
 
---- 打开面板并直接展示指定 commit 的 diff（commit^..commit，初始 commit 用 empty-tree）。
---- 供外部集成调用（如 telescope git_log 选中 commit 后展示），跳过 vv-git 自己的 picker。
+--- 打开面板并直接展示指定 commit 的 diff（commit^..commit，初始 commit 用 empty-tree）
+--- 供外部集成调用（如 telescope git_log 选中 commit 后展示），跳过 vv-git 自己的 picker
 ---@param hash string
 ---@param on_close? fun()  面板关闭（按 q）后回调，用于回到调用方 UI（如 resume telescope）
 function M.show_commit(hash, on_close)
@@ -221,7 +223,7 @@ function M.show_commit(hash, on_close)
 
   if on_close then
     -- 面板开在独立 tabpage，按 q → M.close → tabclose；挂一次性 WinClosed 在面板窗口上，
-    -- 关闭时回调（schedule 到 tab 关完、已切回原 tab 后再执行）。
+    -- 关闭时回调（schedule 到 tab 关完、已切回原 tab 后再执行）
     local State = require('vv-git.state')
     local s = State.has() and State.get() or nil
     local win = s and s.panel and s.panel.win
