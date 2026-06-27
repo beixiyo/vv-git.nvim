@@ -181,6 +181,13 @@ function M.build(state)
     local seg = string.rep(INDENT_STEP, indent)
     local collapsed = section_folds[section_id] == true
 
+    -- 只有 staged changes 时不折叠：仅剩 staged（unstaged 与 conflicts 均为空）时强制展开
+    if collapsed and base == 'staged' and root == state.git_root and tree then
+      if Tree.empty(tree.unstaged) and Tree.empty(tree.conflicts) then
+        collapsed = false
+      end
+    end
+
     local count = Tree.count_files(side_root)
     -- 行首箭头占位（与文件夹行的 arrow_block 同宽，2 cols），点击/回车可折叠整个 section
     local arrow_raw = collapsed and ARROW_CLOSE or ARROW_OPEN
