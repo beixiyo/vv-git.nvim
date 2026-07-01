@@ -82,5 +82,43 @@ state._action_hint = { section = 'unstaged', lnum = line_of('a.txt'), next_path 
 Render.render(state, true)  -- passive=true 但有 _action_hint，应让 _action_hint 优先
 check(vim.api.nvim_win_get_cursor(win)[1] == lc, 'Test D: 带 _action_hint 时忽略 passive，落到 next_path=c.txt')
 
+-- Test E：fold_staged 默认折叠时，从 staged-only 文件打开应展开 staged 并聚焦该文件
+state.tree = Tree.build({
+  [ROOT .. '/staged-only.txt'] = 'M ',
+  [ROOT .. '/other-change.txt'] = ' M',
+}, ROOT)
+state.folds = {}
+state.section_folds = { staged = true }
+state.cur_path, state.cur_section = 'staged-only.txt', nil
+Render.render(state)
+local staged_target
+for lnum, id in pairs(state.panel.id_by_line) do
+  if id.node and id.node.relpath == 'staged-only.txt' and id.section == 'staged' then
+    staged_target = lnum
+    break
+  end
+end
+check(staged_target ~= nil, 'Test E: 当前 staged-only 文件所在 section 被展开')
+check(vim.api.nvim_win_get_cursor(win)[1] == staged_target, 'Test E: 光标落到 staged-only 文件行')
+
+-- Test F：同一文件既 staged 又有工作区变更时，staged 保持折叠，光标落到 Changes
+state.tree = Tree.build({
+  [ROOT .. '/both-sides.txt'] = 'MM',
+}, ROOT)
+state.folds = {}
+state.section_folds = { staged = true }
+state.cur_path, state.cur_section = 'both-sides.txt', nil
+Render.render(state)
+local staged_both, unstaged_both
+for lnum, id in pairs(state.panel.id_by_line) do
+  if id.node and id.node.relpath == 'both-sides.txt' then
+    if id.section == 'staged' then staged_both = lnum end
+    if id.section == 'unstaged' then unstaged_both = lnum end
+  end
+end
+check(staged_both == nil, 'Test F: staged+unstaged 当前文件不展开 staged section')
+check(unstaged_both ~= nil, 'Test F: staged+unstaged 当前文件显示在 Changes')
+check(vim.api.nvim_win_get_cursor(win)[1] == unstaged_both, 'Test F: 光标落到工作区 Changes 文件行')
+
 print(string.format('\n总计: %d 通过, %d 失败', pass, fail))
 if fail > 0 then vim.cmd('cq') end

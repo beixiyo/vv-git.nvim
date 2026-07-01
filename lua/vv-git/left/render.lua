@@ -182,8 +182,19 @@ function M.build(state)
     local collapsed = section_folds[section_id] == true
 
     -- 只有 staged changes 时不折叠：仅剩 staged（unstaged 与 conflicts 均为空）时强制展开
+    -- 当前 buffer 对应的文件仅在 staged 里时也强制展开，否则 <leader>gd 从 staged-only
+    -- 文件打开时会被默认折叠挡住，光标无法落到该文件行。若同一文件还有工作区变更，
+    -- 光标会落到 Changes，Staged Changes 保持默认折叠
     if collapsed and base == 'staged' and root == state.git_root and tree then
-      if Tree.empty(tree.unstaged) and Tree.empty(tree.conflicts) then
+      local only_staged = Tree.empty(tree.unstaged) and Tree.empty(tree.conflicts)
+      local target_in_staged = state.cur_path and Tree.leaf_at(side_root, state.cur_path) ~= nil
+      local target_in_worktree = false
+      if state.cur_path then
+        target_in_worktree = Tree.leaf_at(tree.unstaged, state.cur_path) ~= nil
+            or Tree.leaf_at(tree.conflicts, state.cur_path) ~= nil
+      end
+      local target_staged_only = target_in_staged and not target_in_worktree
+      if only_staged or target_staged_only then
         collapsed = false
       end
     end
