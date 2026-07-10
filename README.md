@@ -62,6 +62,10 @@
 | `subrepo.prune` | `string[]` | 见下方 | 发现子仓库时**不进入扫描**的目录名列表。**覆盖**语义：传了就整体替换默认列表（不合并）；默认含 `node_modules` / `.cache` / `.local` / `.cargo` / `.rustup` / `.bun` 等缓存目录，`.git` 始终跳过 |
 | `subrepo.scan_worktrees` | `boolean` | `false` | 是否把 linked worktree 也当子仓库扫描。默认 `false` |
 
+## vv-scrollbar 集成
+
+同时安装 `vv-scrollbar.nvim` 时，双栏 diff 的左侧基准窗口会自动禁用滚动条，
+仅右侧工作区保留滚动条；单栏和冲突结果窗口保持正常，无需额外配置
 
 ## 子仓库扫描
 

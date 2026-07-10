@@ -172,6 +172,13 @@ local function main_window(state)
   return nil
 end
 
+---@param win integer?
+local function disable_scrollbar(win)
+  if win and api.nvim_win_is_valid(win) then
+    vim.w[win].vv_scrollbar_disabled = true
+  end
+end
+
 local function conflict_result_ratio()
   local ratio = tonumber(handlers.get_config().conflict_result_ratio) or 0.5
   return math.min(0.9, math.max(0.1, ratio))
@@ -188,7 +195,10 @@ local function ensure_conflict_windows(state)
   local b_ok = view and view.b_win and api.nvim_win_is_valid(view.b_win)
   local c_ok = view and view.c_win and api.nvim_win_is_valid(view.c_win)
 
-  if a_ok and b_ok and c_ok then return view.b_win, view.a_win, view.c_win end
+  if a_ok and b_ok and c_ok then
+    disable_scrollbar(view.a_win)
+    return view.b_win, view.a_win, view.c_win
+  end
 
   -- 关掉旧 a/c（b_win 是 main_window 锚点，绝对不关）
   if a_ok then pcall(api.nvim_win_close, view.a_win, true) end
@@ -208,6 +218,7 @@ local function ensure_conflict_windows(state)
   api.nvim_set_current_win(main)
   vim.cmd('leftabove vsplit')
   local a_win = api.nvim_get_current_win()
+  disable_scrollbar(a_win)
 
   return main, a_win, c_win
 end
@@ -232,12 +243,16 @@ local function ensure_windows(state, want_dual)
   local b_ok = view and view.b_win and api.nvim_win_is_valid(view.b_win)
 
   if want_dual then
-    if a_ok and b_ok then return view.b_win, view.a_win end
+    if a_ok and b_ok then
+      disable_scrollbar(view.a_win)
+      return view.b_win, view.a_win
+    end
     if b_ok and not a_ok then
       -- 在 b_win 左侧新开 a_win
       api.nvim_set_current_win(view.b_win)
       vim.cmd('leftabove vsplit')
       local a = api.nvim_get_current_win()
+      disable_scrollbar(a)
       return view.b_win, a
     end
     -- 全新创建：用 main_window 作为 b，然后左侧 vsplit 出 a
@@ -246,6 +261,7 @@ local function ensure_windows(state, want_dual)
     api.nvim_set_current_win(main)
     vim.cmd('leftabove vsplit')
     local a = api.nvim_get_current_win()
+    disable_scrollbar(a)
     return main, a
   else
     -- 单栏：只要 b，关掉 a
