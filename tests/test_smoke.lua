@@ -290,6 +290,58 @@ local function test_conflict_result_ratio_config()
     'conflict 三栏布局从配置读取 result 高度比例')
 end
 
+local function test_staged_scrollbar_source()
+  local RightView = require('vv-git.right.view')
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  vim.fn.writefile({ 'one', 'two', 'three' }, tmpdir .. '/sample.txt')
+  vim.fn.writefile({ 'removed one', 'removed two' }, tmpdir .. '/removed.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.name', 'vv-git test' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.email', 'test@example.com' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt', 'removed.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'initial' })
+  vim.fn.writefile({ 'one', 'two', 'staged', 'three' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt' })
+  vim.fn.delete(tmpdir .. '/removed.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'removed.txt' })
+
+  local main_win = vim.api.nvim_get_current_win()
+  local state = {
+    tabpage = vim.api.nvim_get_current_tabpage(),
+    git_root = tmpdir,
+    panel = { main_win = main_win },
+  }
+  RightView.show(state, { is_dir = false, relpath = 'sample.txt', xy = 'M ' }, 'staged', false, tmpdir)
+
+  local ready = vim.wait(3000, function()
+    return state.view and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
+  end)
+  assert_true(ready, 'staged diff right buffer rendered')
+
+  local source = ready and vim.b[state.view.b_buf].vv_scrollbar_git_source or nil
+  assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
+    'staged right window keeps scrollbar marker track visible')
+  assert_eq(source and source.root, tmpdir, 'staged scrollbar source carries git root')
+  assert_eq(source and source.path, 'sample.txt', 'staged scrollbar source carries relative path')
+  assert_eq(source and source.mode, 'staged', 'staged scrollbar source selects cached diff')
+  assert_eq(source and source.side, 'new', 'staged modified file projects onto index side')
+
+  RightView.show(state, { is_dir = false, relpath = 'removed.txt', xy = 'D ' }, 'staged', false, tmpdir)
+  local deletion_ready = vim.wait(3000, function()
+    return state.view and state.view.path == 'removed.txt'
+      and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
+  end)
+  assert_true(deletion_ready, 'staged deletion right buffer rendered')
+
+  local deletion_source = deletion_ready and vim.b[state.view.b_buf].vv_scrollbar_git_source or nil
+  assert_eq(deletion_source and deletion_source.path, 'removed.txt', 'staged deletion carries relative path')
+  assert_eq(deletion_source and deletion_source.side, 'old', 'staged deletion projects onto HEAD side')
+
+  pcall(RightView.close, state)
+  vim.fn.delete(tmpdir, 'rf')
+end
+
 -- 执行所有测试
 log('========== vv-git.nvim 变更验证 ==========')
 test_discard_untracked_exists()
@@ -303,6 +355,7 @@ test_right_diff_chunk_keymaps()
 test_narrow_single_col_design()
 test_resize_single_col_migration()
 test_conflict_result_ratio_config()
+test_staged_scrollbar_source()
 log('========== 测试完成 ==========')
 print(string.format('总计: %d 通过, %d 失败', _passed, _failed))
 if _failed > 0 then os.exit(1) end

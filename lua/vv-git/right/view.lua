@@ -179,6 +179,13 @@ local function disable_scrollbar(win)
   end
 end
 
+local function keep_scrollbar(win)
+  if win and api.nvim_win_is_valid(win) then
+    vim.w[win].vv_scrollbar_disabled = nil
+    vim.w[win].vv_scrollbar_always_show = true
+  end
+end
+
 local function conflict_result_ratio()
   local ratio = tonumber(handlers.get_config().conflict_result_ratio) or 0.5
   return math.min(0.9, math.max(0.1, ratio))
@@ -757,6 +764,19 @@ function M.show(state, node, section, force_single, root)
   local render_dual_rev_rev, render_dual_rev_worktree
   local render_conflict_triple
 
+  --- 给 staged scratch buffer 提供真实 Git 来源，供 vv-scrollbar 投影行级 marker
+  ---@param buf integer
+  ---@param side 'new'|'old'
+  local function set_staged_scrollbar_source(buf, side)
+    if section ~= 'staged' or not vim.b[buf].vv_git_scratch then return end
+    vim.b[buf].vv_scrollbar_git_source = {
+      root = owner,
+      path = node.relpath,
+      mode = 'staged',
+      side = side,
+    }
+  end
+
   -- 单栏挂载：只 b_win + b_buf；不动 diff opts
   -- a_lines（可选）：传入则在 b_buf 上叠 inline diff（行级 add/change + 删除虚拟行）
   -- 仅 force_single 的常规改动文件会传；intrinsic_single（A/D/?? 等）不传，保持空白
@@ -773,6 +793,8 @@ function M.show(state, node, section, force_single, root)
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single,
     }
+    keep_scrollbar(b_win)
+    set_staged_scrollbar_source(b_buf, xy:sub(1, 1) == 'D' and 'old' or 'new')
     local ok, err = pcall(api.nvim_win_set_buf, b_win, b_buf)
     if not ok then
       if not tostring(err):find('E828') then error(err) end
@@ -841,6 +863,8 @@ function M.show(state, node, section, force_single, root)
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single,
     }
+    keep_scrollbar(b_win)
+    set_staged_scrollbar_source(b_buf, 'new')
 
     local ratio = handlers.get_config().diff_ratio
     if ratio and ratio[1] and ratio[2] and (ratio[1] + ratio[2]) > 0 then
@@ -888,6 +912,7 @@ function M.show(state, node, section, force_single, root)
       c_win = c_win, c_buf = c_buf,
       node = node, intrinsic_single = intrinsic_single,
     }
+    keep_scrollbar(b_win)
 
     apply_diff_winopts(a_win, a_buf, WINHL_A)
     apply_diff_winopts(b_win, b_buf, WINHL_B)

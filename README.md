@@ -65,7 +65,8 @@
 ## vv-scrollbar 集成
 
 同时安装 `vv-scrollbar.nvim` 时，双栏 diff 的左侧基准窗口会自动禁用滚动条，
-仅右侧工作区保留滚动条；单栏和冲突结果窗口保持正常，无需额外配置
+右侧则将 marker 轨道保持常驻；staged 右侧会把 index 对 HEAD 的行级改动投影为 Git marker。
+单栏和冲突结果窗口保持正常，无需额外配置
 
 ## 子仓库扫描
 
