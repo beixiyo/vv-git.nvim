@@ -110,6 +110,56 @@ local function test_classify_untracked()
   assert_eq(unstaged, true, 'untracked is unstaged')
 end
 
+-- 测试 5: 首次提交前可取消暂存，且保留工作区文件
+local function test_unstage_without_head()
+  local Git = require('vv-git.git')
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
+  vim.fn.writefile({ 'draft' }, tmpdir .. '/draft.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'draft.txt' })
+
+  local done = false
+  Git.unstage(tmpdir, { 'draft.txt' }, function(ok, err)
+    assert_true(ok, 'unborn repository unstage succeeded: ' .. tostring(err or ''))
+    done = true
+  end)
+
+  assert_true(vim.wait(3000, function() return done end), 'unborn repository unstage completed')
+  assert_true(vim.uv.fs_stat(tmpdir .. '/draft.txt') ~= nil, 'unborn repository unstage keeps worktree file')
+  assert_eq(vim.fn.system({ 'git', '-C', tmpdir, 'status', '--short', 'draft.txt' }), '?? draft.txt\n',
+    'unborn repository file becomes untracked')
+
+  vim.fn.delete(tmpdir, 'rf')
+end
+
+-- 测试 6: 已有 HEAD 时仍从 index 恢复，不移除 tracked 状态
+local function test_unstage_with_head()
+  local Git = require('vv-git.git')
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.name', 'vv-git test' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.email', 'test@example.com' })
+  vim.fn.writefile({ 'initial' }, tmpdir .. '/tracked.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'tracked.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'initial' })
+  vim.fn.writefile({ 'changed' }, tmpdir .. '/tracked.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'tracked.txt' })
+
+  local done = false
+  Git.unstage(tmpdir, { 'tracked.txt' }, function(ok, err)
+    assert_true(ok, 'repository with HEAD unstage succeeded: ' .. tostring(err or ''))
+    done = true
+  end)
+
+  assert_true(vim.wait(3000, function() return done end), 'repository with HEAD unstage completed')
+  assert_eq(vim.fn.system({ 'git', '-C', tmpdir, 'status', '--short', 'tracked.txt' }), ' M tracked.txt\n',
+    'tracked file remains tracked and unstaged')
+
+  vim.fn.delete(tmpdir, 'rf')
+end
+
 -- 测试 5: insert mode keys 被阻止（panel buffer）
 local function test_insert_mode_blocked()
   -- 只验证 panel buffer 创建后是否有 Nop 映射
@@ -348,6 +398,8 @@ test_discard_untracked_exists()
 test_discard_untracked_file()
 test_discard_untracked_dir()
 test_classify_untracked()
+test_unstage_without_head()
+test_unstage_with_head()
 test_insert_mode_blocked()
 test_panel_edge_file_keymaps()
 test_view_module_loads()

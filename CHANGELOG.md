@@ -94,6 +94,8 @@
 
 ### Fixed
 
+- **首次提交前可以取消暂存**：新初始化且尚无 `HEAD` 的仓库不再因 `git restore --staged` 报 `fatal: could not resolve HEAD`；此时自动改用 `git rm --cached` 将文件移出 index，同时保留工作区文件。已有提交的仓库仍使用 `git restore --staged`
+
 - **禁止鼠标多击 / 拖拽在左侧树里选中 visual**：补全漏掉的 `<3-LeftMouse>`（三击选行）/ `<4-LeftMouse>`（四击选块）nop、把防 visual 的 nop 从 `if right_click` 里挪出来恒装，并挂 `vv-utils.mouse.block_visual_drag` 兜底「从别窗点进树再拖 / 多击」的跨窗口路径（buffer-local Nop 拦不住）
 
 - **面板内 `j`/`k` 导航光标不再上下拉扯**：`auto_refresh`（`ea55f15` 引入）的 `BufEnter` 触发在纯 `j`/`k` 导航期会被 preview 的 `nvim_win_set_buf`（同一 tab 内对 a/b diff 窗各切一次 buffer，对非当前窗口也发 `BufEnter`）反复点起 200ms 防抖 `refresh` → `reload_index` → `render`，`render` 末尾按「防抖 preview 滞后约 150ms 的 `cur_path`」把光标硬拉回旧行，跳动又自触发 `CursorMoved` 形成自激回环（停不下来、来回抖）。改在**渲染层**根治、不动触发器（保留 `BufEnter` 的灵敏刷新）：所有经 `M.refresh` 的被动刷新（`auto_refresh` / 保存 / gitsigns / 手动 `R` / commit-push）现在走 `passive` 渲染——`render` 在重写 buffer **之前**先记下「光标此刻在哪个文件」，渲染后把光标放回该文件（内容变了就跟它到新行、找不到再按原行号 clamp），完全不读滞后的 `cur_path`、也不管焦点在不在 panel，使刷新对光标成为 no-op，断掉回环。带 `_action_hint`/`_section_hint` 的动作（stage 落点 afc82c2 / fold / 多选）不是 passive，落点逻辑不受影响；「点进面板/外部变化自动刷新」保持原灵敏度

@@ -82,8 +82,22 @@ end
 ---@param paths string[]
 ---@param cb fun(ok:boolean, stderr?:string)
 function M.unstage(root, paths, cb)
-  -- restore --staged 比 reset HEAD 更干净（git 2.23+）
-  run_paths(root, { 'restore', '--staged', '--' }, paths, cb)
+  if #paths == 0 then cb(true); return end
+
+  -- restore --staged 默认从 HEAD 恢复 index；首次提交前 HEAD 尚不存在
+  vim.system(
+    { 'git', '-C', root, 'rev-parse', '--verify', 'HEAD' },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      if r.code == 0 then
+        run_paths(root, { 'restore', '--staged', '--' }, paths, cb)
+        return
+      end
+
+      -- unborn branch 中 staged 文件都是新增项，移出 index 即可，工作区文件保留
+      run_paths(root, { 'rm', '--cached', '--' }, paths, cb)
+    end)
+  )
 end
 
 ---@param root string
