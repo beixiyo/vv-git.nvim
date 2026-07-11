@@ -68,6 +68,10 @@
 右侧则将 marker 轨道保持常驻；staged 右侧会把 index 对 HEAD 的行级改动投影为 Git marker。
 单栏和冲突结果窗口保持正常，无需额外配置
 
+同时安装 `vv-statuscol.nvim` 时，所有 diff / result 窗口会隐藏 statuscol 的 Git 双轨，
+避免与滚动条 marker 和 diff 染色重复；该控制是 window-local，同一文件在普通编辑窗口中的
+staged / unstaged 双轨仍然显示
+
 ## 子仓库扫描
 
 ```lua

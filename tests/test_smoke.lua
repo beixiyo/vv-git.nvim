@@ -372,6 +372,8 @@ local function test_staged_scrollbar_source()
   local source = ready and vim.b[state.view.b_buf].vv_scrollbar_git_source or nil
   assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
     'staged right window keeps scrollbar marker track visible')
+  assert_eq(vim.w[state.view.b_win].vv_statuscol_git_disabled, true,
+    'vv-git preview window hides statuscol git markers')
   assert_eq(source and source.root, tmpdir, 'staged scrollbar source carries git root')
   assert_eq(source and source.path, 'sample.txt', 'staged scrollbar source carries relative path')
   assert_eq(source and source.mode, 'staged', 'staged scrollbar source selects cached diff')
@@ -388,7 +390,10 @@ local function test_staged_scrollbar_source()
   assert_eq(deletion_source and deletion_source.path, 'removed.txt', 'staged deletion carries relative path')
   assert_eq(deletion_source and deletion_source.side, 'old', 'staged deletion projects onto HEAD side')
 
+  local preview_win = state.view.b_win
   pcall(RightView.close, state)
+  assert_eq(vim.w[preview_win].vv_statuscol_git_disabled, nil,
+    'closing vv-git restores statuscol git markers for the reused window')
   vim.fn.delete(tmpdir, 'rf')
 end
 

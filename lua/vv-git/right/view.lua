@@ -176,6 +176,7 @@ end
 local function disable_scrollbar(win)
   if win and api.nvim_win_is_valid(win) then
     vim.w[win].vv_scrollbar_disabled = true
+    vim.w[win].vv_statuscol_git_disabled = true
   end
 end
 
@@ -183,6 +184,7 @@ local function keep_scrollbar(win)
   if win and api.nvim_win_is_valid(win) then
     vim.w[win].vv_scrollbar_disabled = nil
     vim.w[win].vv_scrollbar_always_show = true
+    vim.w[win].vv_statuscol_git_disabled = true
   end
 end
 
@@ -220,6 +222,7 @@ local function ensure_conflict_windows(state)
   local c_height = math.max(8, math.floor(total_h * conflict_result_ratio()))
   vim.cmd('belowright ' .. c_height .. 'split')
   local c_win = api.nvim_get_current_win()
+  vim.w[c_win].vv_statuscol_git_disabled = true
 
   -- Step 2：回 main，再 vsplit 出 a_win（左），main 变 b_win（右）
   api.nvim_set_current_win(main)
@@ -1166,6 +1169,7 @@ function M.close(state)
   -- b_win 是工作区文件，不主动关，只清 diff opts
   if view.b_win and api.nvim_win_is_valid(view.b_win) then
     clear_diff_winopts(view.b_win)
+    vim.w[view.b_win].vv_statuscol_git_disabled = nil
   end
   -- 拆 buf-local 快捷键；a_buf 是 bufhidden=wipe 自动清，b_buf 需显式处理
   if view.b_buf then remove_right_keymaps(view.b_buf) end
