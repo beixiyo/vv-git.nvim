@@ -13,6 +13,7 @@
 -- state._subrepo  = 子仓库扫描配置注入（lifecycle 在 open 时填）：{ depth():integer, config():table }
 -- state.folds         = { ['<section_id>\0<relpath>'] = true }  被折叠的文件夹集合
 -- state.section_folds = { [section_id] = true }  被折叠的 section
+-- state._fold_staged_pending = true  fresh-open 时待消费的 staged 默认折叠判定
 --                   section_id：父仓库为裸 base（staged/unstaged/conflicts），
 --                   子仓库为 `<root>\0<base>`（见 vv-git.subrepo）。key 拼/拆统一走
 --                   Subrepo.sel_key / split_key / parse_sel_key，分隔符全用 NUL（按仓库隔离）

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.1] - 2026-07-16
+
+### Fixed
+
+- **Staged Changes 手动折叠不再被自动展开抵消**：`fold_staged` 的 staged-only 自动展开改为仅在 fresh-open 时消费一次，并同步 `section_folds` 真实状态；之后在顶层 staged 文件上按 `h` / `←` 可稳定折叠整个 section，后续 render 与被动刷新不再将其重新展开
+
 ## [0.1.0] - 2026-07-13
 
 ### Added

@@ -89,6 +89,7 @@ state.tree = Tree.build({
 }, ROOT)
 state.folds = {}
 state.section_folds = { staged = true }
+state._fold_staged_pending = true
 state.cur_path, state.cur_section = 'staged-only.txt', nil
 Render.render(state)
 local staged_target
@@ -107,6 +108,7 @@ state.tree = Tree.build({
 }, ROOT)
 state.folds = {}
 state.section_folds = { staged = true }
+state._fold_staged_pending = true
 state.cur_path, state.cur_section = 'both-sides.txt', nil
 Render.render(state)
 local staged_both, unstaged_both
@@ -119,6 +121,30 @@ end
 check(staged_both == nil, 'Test F: staged+unstaged 当前文件不展开 staged section')
 check(unstaged_both ~= nil, 'Test F: staged+unstaged 当前文件显示在 Changes')
 check(vim.api.nvim_win_get_cursor(win)[1] == unstaged_both, 'Test F: 光标落到工作区 Changes 文件行')
+
+-- Test G：仅 staged changes 时初次自动展开，但之后的手动折叠必须保留
+state.tree = Tree.build({
+  [ROOT .. '/only-staged.txt'] = 'M ',
+}, ROOT)
+state.folds = {}
+state.section_folds = { staged = true }
+state._fold_staged_pending = true
+state.cur_path, state.cur_section = 'only-staged.txt', nil
+Render.render(state)
+
+local function staged_line_of(relpath)
+  for lnum, id in pairs(state.panel.id_by_line) do
+    if id.node and id.node.relpath == relpath and id.section == 'staged' then return lnum end
+  end
+end
+
+check(staged_line_of('only-staged.txt') ~= nil, 'Test G: 仅 staged changes 时初次自动展开')
+check(state.section_folds.staged == nil, 'Test G: 自动展开同步真实 fold state')
+
+state.section_folds.staged = true
+Render.render(state)
+check(staged_line_of('only-staged.txt') == nil, 'Test G: 后续手动折叠不被自动展开抵消')
+check(state.section_folds.staged == true, 'Test G: 手动折叠状态保持一致')
 
 print(string.format('\n总计: %d 通过, %d 失败', pass, fail))
 if fail > 0 then vim.cmd('cq') end

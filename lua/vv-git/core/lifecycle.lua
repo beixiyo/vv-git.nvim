@@ -117,6 +117,7 @@ function L.attach(M)
     if M._config.fold_staged then
       state.section_folds = state.section_folds or {}
       state.section_folds[Subrepo.section_id(state.git_root, state.git_root, 'staged')] = true
+      state._fold_staged_pending = true
     end
 
     state.panel = {

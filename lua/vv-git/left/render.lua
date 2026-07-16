@@ -181,24 +181,6 @@ function M.build(state)
     local seg = string.rep(INDENT_STEP, indent)
     local collapsed = section_folds[section_id] == true
 
-    -- 只有 staged changes 时不折叠：仅剩 staged（unstaged 与 conflicts 均为空）时强制展开
-    -- 当前 buffer 对应的文件仅在 staged 里时也强制展开，否则 <leader>gd 从 staged-only
-    -- 文件打开时会被默认折叠挡住，光标无法落到该文件行。若同一文件还有工作区变更，
-    -- 光标会落到 Changes，Staged Changes 保持默认折叠
-    if collapsed and base == 'staged' and root == state.git_root and tree then
-      local only_staged = Tree.empty(tree.unstaged) and Tree.empty(tree.conflicts)
-      local target_in_staged = state.cur_path and Tree.leaf_at(side_root, state.cur_path) ~= nil
-      local target_in_worktree = false
-      if state.cur_path then
-        target_in_worktree = Tree.leaf_at(tree.unstaged, state.cur_path) ~= nil
-            or Tree.leaf_at(tree.conflicts, state.cur_path) ~= nil
-      end
-      local target_staged_only = target_in_staged and not target_in_worktree
-      if only_staged or target_staged_only then
-        collapsed = false
-      end
-    end
-
     local count = Tree.count_files(side_root)
     -- 行首箭头占位（与文件夹行的 arrow_block 同宽，2 cols），点击/回车可折叠整个 section
     local arrow_raw = collapsed and ARROW_CLOSE or ARROW_OPEN
@@ -396,12 +378,41 @@ function M.build(state)
   return lines, extmarks, id_by_line
 end
 
+-- fold_staged 只是 fresh-open 的默认值。若当前文件仅在 staged 中，或整棵树
+-- 只有 staged changes，初次渲染需展开 section 才能让光标落到文件行。这个判定
+-- 必须只消费一次并同步真实 fold state，否则后续每次 render 都会抵消用户手动折叠
+---@param state table
+local function apply_fold_staged_default(state)
+  local tree = state.tree
+  if not state._fold_staged_pending or not tree then return end
+
+  state._fold_staged_pending = nil
+
+  local staged_id = Subrepo.section_id(state.git_root, state.git_root, 'staged')
+  local staged_collapsed = (state.section_folds or {})[staged_id] == true
+  if not staged_collapsed then return end
+
+  local only_staged = Tree.empty(tree.unstaged) and Tree.empty(tree.conflicts)
+  local target_in_staged = state.cur_path and Tree.leaf_at(tree.staged, state.cur_path) ~= nil
+  local target_in_worktree = false
+  if state.cur_path then
+    target_in_worktree = Tree.leaf_at(tree.unstaged, state.cur_path) ~= nil
+        or Tree.leaf_at(tree.conflicts, state.cur_path) ~= nil
+  end
+
+  if only_staged or (target_in_staged and not target_in_worktree) then
+    state.section_folds[staged_id] = nil
+  end
+end
+
 ---@param state table
 ---@param passive boolean?  被动刷新（auto_refresh / 保存 / gitsigns / R / commit-push）：
 ---  渲染前记下光标当前所在文件、渲染后放回同一文件，不读可能滞后的 cur_path、不管焦点在不在 panel
 function M.render(state, passive)
   if not state.panel or not state.panel.buf then return end
   if not vim.api.nvim_buf_is_valid(state.panel.buf) then return end
+
+  apply_fold_staged_default(state)
 
   -- passive 刷新防拉扯：在 flush 重写 buffer **之前**，从旧 id_by_line 反查光标当前所在的文件节点
   -- 纯 j/k 导航时 preview 的 set_buf 会发 BufEnter 反复点起 auto_refresh → 这条 passive 渲染；
