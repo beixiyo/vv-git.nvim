@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0] - 2026-07-16
+
+### Added
+
+- **开放 revision 对比 API**：新增 `show_commit`、`compare_with_head`、`compare_refs`、`compare_file` 与 `stop_compare`，同时提供对应命令，方便 Telescope 等外部 picker 展示 tag、commit、任意两个 ref 以及当前文件的原生 diff
+- **面板操作键高亮**：commit、push 和退出 compare mode 的按键提示使用独立高亮组，避免被整行提示色覆盖
+
+### Fixed
+
+- **文件对比退出后恢复调用方**：单文件 ref 对比改用当前 tab 的原生垂直分屏；按 `q` / `<Esc>` 退出后关闭 diff、恢复窗口选项和调用方 picker，并保留源 buffer 原有的局部按键映射
+
 ## [0.1.1] - 2026-07-16
 
 ### Fixed

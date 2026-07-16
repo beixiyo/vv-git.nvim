@@ -55,6 +55,30 @@ function M.open_picker(state, cb)
   end)
 end
 
+-- 进入任意两个 ref 的比较模式：from_rev..to_rev
+---@param state table
+---@param from_rev string
+---@param to_rev string
+---@param short string
+---@param label string
+---@param on_done fun()
+function M.start_refs(state, from_rev, to_rev, short, label, on_done)
+  Git.diff_names(state.git_root, from_rev, to_rev, function(files, err)
+    if not files then
+      vim.notify('[vv-git] Compare failed: ' .. (err or 'git diff error'), vim.log.levels.ERROR)
+      return
+    end
+    state.compare = {
+      from_rev = from_rev,
+      to_rev   = to_rev,
+      short    = short,
+      label    = label,
+      files    = files,
+    }
+    on_done()
+  end)
+end
+
 -- 进入"与 HEAD 比较"模式：from_rev..HEAD
 ---@param state table
 ---@param from_rev string
@@ -62,20 +86,7 @@ end
 ---@param label string
 ---@param on_done fun()
 function M.start(state, from_rev, short, label, on_done)
-  Git.diff_names(state.git_root, from_rev, 'HEAD', function(files, err)
-    if not files then
-      vim.notify('[vv-git] Compare failed: ' .. (err or 'git diff error'), vim.log.levels.ERROR)
-      return
-    end
-    state.compare = {
-      from_rev = from_rev,
-      to_rev   = 'HEAD',
-      short    = short,
-      label    = label,
-      files    = files,
-    }
-    on_done()
-  end)
+  M.start_refs(state, from_rev, 'HEAD', short, label, on_done)
 end
 
 -- git empty-tree hash（无父 commit 时用作 from_rev）

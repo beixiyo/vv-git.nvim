@@ -182,3 +182,13 @@ opts = {
 | `gw` | Worktree 切换：浮窗列出本仓库所有 worktree，选中即切到该 worktree 看其 diff（`:VVGitWorktree` 等价） |
 | `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |
 | `g?` | 显示帮助 |
+
+## 外部 revision 集成
+
+- `:VVGitShow <ref>` / `require('vv-git').show_commit(ref, on_close?)` 展示任意 commit-ish ref 引入的变更，包括 tag
+- `:VVGitCompareRef <ref>` / `require('vv-git').compare_with_head(ref, on_close?)` 展示累计的 `<ref>..HEAD` 差异
+- `:VVGitCompareRefs <from-ref> <to-ref>` / `require('vv-git').compare_refs(from_ref, to_ref, on_close?)` 对比任意两个 Git ref
+- `:VVGitCompareFile <ref>` / `require('vv-git').compare_file(ref, opts?)` 在当前 tab 的原生垂直分屏中，对比当前 buffer 或 worktree 文件与指定 ref 中的同一文件；包含未保存的 buffer 内容，不依赖外部 diff 工具
+- `:VVGitCompareStop` / `require('vv-git').stop_compare()` 退出当前 ref 比较模式，恢复普通工作区变更视图
+
+面板 API 都可传入可选的关闭回调，便于 Telescope 或其他 picker 在 vv-git tab 关闭后恢复。`compare_file` 接受 `{ bufnr?, path?, root?, on_close? }`。

@@ -119,6 +119,26 @@ function M.build(state)
     end
   end
 
+  ---@param key string
+  ---@param text string
+  ---@param text_hl? string
+  local function push_key_hint(key, text, text_hl)
+    local prefix = '  '
+    local line = prefix .. key .. '  ' .. text
+    push_text(line, text_hl or 'VVGitCommitHint')
+    extmarks[#extmarks + 1] = {
+      row = #lines - 1,
+      col = #prefix,
+      opts = {
+        end_col = #prefix + #key,
+        hl_group = 'VVGitPanelKey',
+        -- Neovim 0.12 给未显式指定 priority 的整行 extmark 使用 4096；
+        -- 按键必须更高，否则会被 VVGitCommitHint / Comment 的整行颜色覆盖。
+        priority = 5000,
+      },
+    }
+  end
+
   local function push_blank() lines[#lines + 1] = '' end
 
   -- 渲染一个仓库块标题行（根仓库 / 子仓库通用）：
@@ -334,7 +354,7 @@ function M.build(state)
     end
 
     push_blank()
-    push_text('  <Esc>  Exit compare mode', 'Comment')
+    push_key_hint('<Esc>', 'Exit compare mode', 'Comment')
 
     return lines, extmarks, id_by_line
   end
@@ -349,18 +369,16 @@ function M.build(state)
   if not root_collapsed then
     local staged_count = Tree.count_files(tree.staged)
     local unstaged_count = Tree.count_files(tree.unstaged)
-    local hint
     if staged_count > 0 then
-      hint = string.format('  c  Commit %d staged', staged_count)
+      push_key_hint('c', string.format('Commit %d staged', staged_count))
     elseif unstaged_count > 0 then
-      hint = string.format('  c  Commit ALL %d (no staged)', unstaged_count)
+      push_key_hint('c', string.format('Commit ALL %d (no staged)', unstaged_count))
     else
-      hint = '  working tree clean'
+      push_text('  working tree clean', 'VVGitCommitHint')
     end
-    push_text(hint, 'VVGitCommitHint')
 
     if state.ahead_count and state.ahead_count > 0 then
-      push_text(string.format('  p  Push %d commit(s)', state.ahead_count), 'VVGitCommitHint')
+      push_key_hint('p', string.format('Push %d commit(s)', state.ahead_count))
     end
     push_blank()
 

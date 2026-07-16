@@ -150,6 +150,16 @@ function M.setup(opts)
   ucmd('VVGitTogglePanel',  function() M.toggle_panel() end)
   ucmd('VVGitRefresh',      function() M.refresh() end)
   ucmd('VVGitCompare',      function() M.open() M._compare_pick() end)
+  ucmd('VVGitCompareRef',   function(o) M.compare_with_head(o.args) end, { nargs = 1 })
+  ucmd('VVGitCompareRefs',  function(o)
+    if #o.fargs ~= 2 then
+      vim.notify('[vv-git] VVGitCompareRefs expects exactly two refs', vim.log.levels.ERROR)
+      return
+    end
+    M.compare_refs(o.fargs[1], o.fargs[2])
+  end, { nargs = '+' })
+  ucmd('VVGitCompareFile',  function(o) M.compare_file(o.args) end, { nargs = 1 })
+  ucmd('VVGitCompareStop',  function() M.stop_compare() end)
   ucmd('VVGitCommitShow',   function() M.open() M._commit_show_pick() end)
   ucmd('VVGitWorktree',     function() M.open() M._worktree_pick() end)
   ucmd('VVGitShow',         function(o) M.show_commit(o.args) end, { nargs = 1 })
@@ -212,29 +222,63 @@ end
 ---@return table
 function M.config() return M._config end
 
+---@param on_close fun()?
+local function attach_on_close(on_close)
+  if not on_close then return end
+
+  -- 面板开在独立 tabpage，按 q → M.close → tabclose；挂一次性 WinClosed 在面板窗口上，
+  -- 关闭时回调（schedule 到 tab 关完、已切回原 tab 后再执行）
+  local State = require('vv-git.state')
+  local s = State.has() and State.get() or nil
+  local win = s and s.panel and s.panel.win
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_create_autocmd('WinClosed', {
+      pattern = tostring(win),
+      once = true,
+      callback = function() vim.schedule(on_close) end,
+    })
+  end
+end
+
 --- 打开面板并直接展示指定 commit 的 diff（commit^..commit，初始 commit 用 empty-tree）
 --- 供外部集成调用（如 telescope git_log 选中 commit 后展示），跳过 vv-git 自己的 picker
----@param hash string
+---@param ref string
 ---@param on_close? fun()  面板关闭（按 q）后回调，用于回到调用方 UI（如 resume telescope）
-function M.show_commit(hash, on_close)
-  if not hash or hash == '' then return end
+function M.show_commit(ref, on_close)
+  if not ref or ref == '' then return end
   M.open()
-  M._commit_show(hash)
+  M._commit_show(ref)
+  attach_on_close(on_close)
+end
 
-  if on_close then
-    -- 面板开在独立 tabpage，按 q → M.close → tabclose；挂一次性 WinClosed 在面板窗口上，
-    -- 关闭时回调（schedule 到 tab 关完、已切回原 tab 后再执行）
-    local State = require('vv-git.state')
-    local s = State.has() and State.get() or nil
-    local win = s and s.panel and s.panel.win
-    if win and vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_create_autocmd('WinClosed', {
-        pattern = tostring(win),
-        once = true,
-        callback = function() vim.schedule(on_close) end,
-      })
-    end
-  end
+--- 打开面板并比较任意 Git ref 与 HEAD（ref..HEAD）
+---@param ref string
+---@param on_close? fun()  面板关闭后回调，用于恢复外部 picker
+function M.compare_with_head(ref, on_close)
+  M.compare_refs(ref, 'HEAD', on_close)
+end
+
+--- 打开面板并比较任意两个 Git ref（from_ref..to_ref）
+---@param from_ref string
+---@param to_ref string
+---@param on_close? fun()  面板关闭后回调，用于恢复外部 picker
+function M.compare_refs(from_ref, to_ref, on_close)
+  if not from_ref or from_ref == '' or not to_ref or to_ref == '' then return end
+  M.open()
+  M._compare_refs(from_ref, to_ref)
+  attach_on_close(on_close)
+end
+
+--- 在当前 tab 的原生分屏中比较指定 ref 与当前 buffer / worktree 文件
+---@param ref string
+---@param opts? VVGitCompareFileOpts
+function M.compare_file(ref, opts)
+  require('vv-git.file_compare').open(ref, opts)
+end
+
+--- 退出当前面板的 ref 比较模式，返回普通工作区变更视图
+function M.stop_compare()
+  M._compare_stop()
 end
 
 -- 子模块往 M 上挂方法（open/close/toggle/_preview/_activate/_commit 等）

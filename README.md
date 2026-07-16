@@ -181,3 +181,13 @@ These mappings are active inside the left panel:
 | `gw` | Switch worktrees: list every worktree for this repository in a floating window and switch to the selected worktree to inspect its diff (equivalent to `:VVGitWorktree`) |
 | `H` | Compare with HEAD: select a branch, then a commit, and show the `commit..HEAD` difference |
 | `g?` | Show help |
+
+## External Revision Integration
+
+- `:VVGitShow <ref>` / `require('vv-git').show_commit(ref, on_close?)` displays the change introduced by any commit-ish ref, including tags
+- `:VVGitCompareRef <ref>` / `require('vv-git').compare_with_head(ref, on_close?)` displays the cumulative `<ref>..HEAD` difference
+- `:VVGitCompareRefs <from-ref> <to-ref>` / `require('vv-git').compare_refs(from_ref, to_ref, on_close?)` compares any two Git refs
+- `:VVGitCompareFile <ref>` / `require('vv-git').compare_file(ref, opts?)` compares the current buffer or worktree file with the same file at a Git ref in a native vertical split; unsaved buffer lines are included and no external diff tool is required
+- `:VVGitCompareStop` / `require('vv-git').stop_compare()` leaves the current ref comparison and restores the regular workspace changes view
+
+The panel APIs accept an optional close callback so Telescope or another picker can resume after the vv-git tab closes. `compare_file` accepts `{ bufnr?, path?, root?, on_close? }`.

@@ -139,10 +139,7 @@ function L.install(state, M)
   map('q',             function() M.close() end,                   '__close')
   map('<Esc>',         function()
     if state.compare then
-      require('vv-git.compare').stop(state)
-      state.selection = {}
-      RightView.close(state)
-      LeftRender.render(state)
+      M._compare_stop()
     elseif next(state.selection) then
       state.selection = {}
       LeftRender.render(state)

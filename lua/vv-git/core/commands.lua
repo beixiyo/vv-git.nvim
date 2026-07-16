@@ -43,6 +43,28 @@ function L.attach(M)
     end)
   end)
 
+  M._compare_ref = State.guarded(function(state, ref)
+    M._compare_refs(ref, 'HEAD')
+  end)
+
+  M._compare_refs = State.guarded(function(state, from_ref, to_ref)
+    if not state.git_root or not from_ref or from_ref == '' or not to_ref or to_ref == '' then return end
+    local Compare = require('vv-git.compare')
+    Compare.start_refs(state, from_ref, to_ref, from_ref:sub(1, 7), from_ref .. '..' .. to_ref, function()
+      state.selection = {}
+      RightView.close(state)
+      LeftRender.render(state)
+    end)
+  end)
+
+  M._compare_stop = State.guarded(function(state)
+    if not state.compare then return end
+    require('vv-git.compare').stop(state)
+    state.selection = {}
+    RightView.close(state)
+    LeftRender.render(state)
+  end)
+
   M._commit_show_pick = State.guarded(function(state)
     if not state.git_root then return end
     local Compare = require('vv-git.compare')

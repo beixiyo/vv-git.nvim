@@ -397,6 +397,184 @@ local function test_staged_scrollbar_source()
   vim.fn.delete(tmpdir, 'rf')
 end
 
+local function test_compare_tag_with_head()
+  local Compare = require('vv-git.compare')
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.name', 'vv-git test' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.email', 'test@example.com' })
+  vim.fn.writefile({ 'v1' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'v1' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'tag', '-a', 'v1.0.0', '-m', 'release v1' })
+  vim.fn.writefile({ 'v2' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qam', 'v2' })
+
+  local done = false
+  local state = { git_root = tmpdir }
+  Compare.start(state, 'v1.0.0', 'v1.0.0', 'v1.0.0..HEAD', function() done = true end)
+  assert_true(vim.wait(3000, function() return done end), 'tag..HEAD compare completed')
+  assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', 'tag ref preserved as compare source')
+  assert_eq(state.compare and state.compare.to_rev, 'HEAD', 'tag compare targets HEAD')
+  assert_eq(state.compare and state.compare.files[1] and state.compare.files[1].path, 'sample.txt',
+    'tag..HEAD compare returns changed file')
+
+  done = false
+  Compare.start_refs(state, 'v1.0.0', 'HEAD', 'v1.0.0', 'v1.0.0..HEAD', function() done = true end)
+  assert_true(vim.wait(3000, function() return done end), 'arbitrary refs compare completed')
+  assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', 'arbitrary refs preserve source ref')
+  assert_eq(state.compare and state.compare.to_rev, 'HEAD', 'arbitrary refs preserve target ref')
+
+  vim.fn.delete(tmpdir, 'rf')
+end
+
+local function test_compare_file_uses_live_buffer()
+  local FileCompare = require('vv-git.file_compare')
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.name', 'vv-git test' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.email', 'test@example.com' })
+  vim.fn.writefile({ 'committed' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'initial' })
+
+  vim.cmd('edit ' .. vim.fn.fnameescape(tmpdir .. '/sample.txt'))
+  local source_buf = vim.api.nvim_get_current_buf()
+  local source_win = vim.api.nvim_get_current_win()
+  local source_tab = vim.api.nvim_get_current_tabpage()
+  vim.api.nvim_buf_set_lines(source_buf, 0, -1, false, { 'unsaved' })
+
+  local original_q_called = false
+  local original_escape_called = false
+  vim.keymap.set('n', 'q', function() original_q_called = true end, {
+    buffer = source_buf,
+    desc = 'original q mapping',
+  })
+  vim.keymap.set('n', '<Esc>', function() original_escape_called = true end, {
+    buffer = source_buf,
+    desc = 'original escape mapping',
+  })
+
+  local closed = false
+  FileCompare.open('HEAD', {
+    bufnr = source_buf,
+    on_close = function() closed = true end,
+  })
+
+  local ref_buf
+  assert_true(vim.wait(3000, function()
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      local name = vim.api.nvim_buf_get_name(buf)
+      if name:find('/HEAD/sample.txt', 1, true) then ref_buf = buf end
+    end
+    return ref_buf ~= nil
+  end), 'file compare opens the requested revision buffer')
+
+  assert_eq(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)[1], 'unsaved',
+    'file compare includes unsaved buffer lines')
+  assert_eq(vim.api.nvim_buf_get_lines(ref_buf, 0, -1, false)[1], 'committed',
+    'file compare loads the requested ref')
+
+  local diff_windows = 0
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_get_option_value('diff', { win = win }) then diff_windows = diff_windows + 1 end
+  end
+  assert_eq(diff_windows, 2, 'file compare opens a native two-column diff')
+
+  local close_map
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(source_buf, 'n')) do
+    if map.lhs == 'q' then close_map = map; break end
+  end
+  assert_true(close_map and type(close_map.callback) == 'function', 'file compare installs q close callback')
+  close_map.callback()
+  assert_true(vim.wait(1000, function() return closed end), 'file compare invokes close callback')
+  assert_eq(vim.api.nvim_get_current_tabpage(), source_tab, 'file compare returns to the source tab')
+  assert_true(vim.api.nvim_win_is_valid(source_win), 'file compare keeps the source window')
+  assert_eq(vim.api.nvim_get_option_value('diff', { win = source_win }), false,
+    'file compare restores source window diff option')
+
+  local restored_maps = {}
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(source_buf, 'n')) do
+    restored_maps[map.lhs] = map
+  end
+  assert_eq(restored_maps.q and restored_maps.q.desc, 'original q mapping',
+    'file compare restores the original q mapping')
+  assert_eq(restored_maps['<Esc>'] and restored_maps['<Esc>'].desc, 'original escape mapping',
+    'file compare restores the original escape mapping')
+  restored_maps.q.callback()
+  restored_maps['<Esc>'].callback()
+  assert_true(original_q_called, 'restored q mapping remains callable')
+  assert_true(original_escape_called, 'restored escape mapping remains callable')
+
+  local restored_after_error = false
+  FileCompare.open('missing-ref', {
+    bufnr = source_buf,
+    on_close = function() restored_after_error = true end,
+  })
+  assert_true(vim.wait(3000, function() return restored_after_error end),
+    'file compare restores caller when the ref cannot be loaded')
+
+  pcall(vim.api.nvim_buf_delete, source_buf, { force = true })
+  vim.fn.delete(tmpdir, 'rf')
+end
+
+local function test_panel_action_keys_are_highlighted()
+  local Tree = require('vv-git.tree')
+  local Render = require('vv-git.left.render')
+  local Panel = require('vv-git.left.panel')
+  local root = '/tmp/vv-git-panel-key-test'
+  local tree = Tree.build({ [root .. '/sample.txt'] = 'M ' }, root)
+  local lines, extmarks = Render.build({
+    git_root = root,
+    branch = 'main',
+    tree = tree,
+    folds = {},
+    section_folds = {},
+    selection = {},
+    ahead_count = 2,
+  })
+
+  local highlighted = {}
+  for _, mark in ipairs(extmarks) do
+    if mark.opts and mark.opts.hl_group == 'VVGitPanelKey' then
+      highlighted[lines[mark.row + 1]:sub(mark.col + 1, mark.opts.end_col)] = true
+    end
+  end
+
+  assert_true(highlighted.c == true, 'commit action key uses VVGitPanelKey highlight')
+  assert_true(highlighted.p == true, 'push action key uses VVGitPanelKey highlight')
+
+  local panel_buf = Panel.create_buf()
+  Panel.flush(panel_buf, lines, extmarks, Render.ns)
+  local key_priority
+  local hint_priority
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(panel_buf, Render.ns, 0, -1, { details = true })) do
+    local details = mark[4]
+    if details.hl_group == 'VVGitPanelKey' then key_priority = details.priority end
+    if details.hl_group == 'VVGitCommitHint' then hint_priority = details.priority end
+  end
+  assert_true(key_priority and hint_priority and key_priority > hint_priority,
+    'action key highlight renders above the full-line hint highlight')
+  Panel.wipe_buf(panel_buf)
+
+  local compare_lines, compare_marks = Render.build({
+    git_root = root,
+    branch = 'main',
+    folds = {},
+    compare = { files = {}, label = 'HEAD~..HEAD' },
+  })
+  local escape_highlighted = false
+  for _, mark in ipairs(compare_marks) do
+    if mark.opts and mark.opts.hl_group == 'VVGitPanelKey' then
+      local text = compare_lines[mark.row + 1]:sub(mark.col + 1, mark.opts.end_col)
+      if text == '<Esc>' then escape_highlighted = true end
+    end
+  end
+  assert_true(escape_highlighted, 'compare exit key uses VVGitPanelKey highlight')
+end
+
 -- 执行所有测试
 log('========== vv-git.nvim 变更验证 ==========')
 test_discard_untracked_exists()
@@ -413,6 +591,9 @@ test_narrow_single_col_design()
 test_resize_single_col_migration()
 test_conflict_result_ratio_config()
 test_staged_scrollbar_source()
+test_compare_tag_with_head()
+test_compare_file_uses_live_buffer()
+test_panel_action_keys_are_highlighted()
 log('========== 测试完成 ==========')
 print(string.format('总计: %d 通过, %d 失败', _passed, _failed))
 if _failed > 0 then os.exit(1) end
