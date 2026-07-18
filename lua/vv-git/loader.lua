@@ -2,6 +2,7 @@
 -- 抽出此层避免 init.lua ↔ actions.lua 经 M._reload_index 绕回来的循环依赖
 
 local Git = require('vv-git.git')
+local State = require('vv-git.state')
 local Tree = require('vv-git.tree')
 local LeftRender = require('vv-git.left.render')
 local Subrepo = require('vv-git.subrepo')
@@ -43,12 +44,13 @@ end
 ---@param state table
 ---@param pidx table?  父仓库 Git.index 结果
 ---@param is_subroot table<string, boolean>
----@param branch string?  当前分支名
-local function build_parent_repo(state, pidx, is_subroot, branch)
+---@param info VVGitRepoInfo?  当前仓库分支 / remote 状态
+local function build_parent_repo(state, pidx, is_subroot, info)
   local pmap = strip_subroots(pidx and pidx.status_map, is_subroot)
   state.index = make_repo_index(pmap, pidx and pidx.rename_map)
   state.tree = Tree.build(pmap, state.git_root)
-  state.branch = branch
+  state.repo_info = info
+  state.branch = info and info.branch or nil
 end
 
 -- 子仓库块：各建一棵独立树（路径相对其自身根，故 git 操作直接 `git -C <root>`），
@@ -57,8 +59,8 @@ end
 ---@param subroots string[]
 ---@param indexes table<string, table>
 ---@param is_subroot table<string, boolean>
----@param branches table<string, string>  root → 分支名
-local function build_subrepos(state, subroots, indexes, is_subroot, branches)
+---@param infos table<string, VVGitRepoInfo>  root → 分支 / remote 状态
+local function build_subrepos(state, subroots, indexes, is_subroot, infos)
   state.subrepos = {}
   for _, sr in ipairs(subroots) do
     local idx = indexes[sr]
@@ -66,7 +68,8 @@ local function build_subrepos(state, subroots, indexes, is_subroot, branches)
     state.subrepos[#state.subrepos + 1] = {
       root = sr,
       label = sr:sub(#state.git_root + 2), -- 相对父根：'nested' / 'nested/deep'
-      branch = branches[sr],
+      branch = infos[sr] and infos[sr].branch or nil,
+      repo_info = infos[sr],
       tree = Tree.build(smap, sr),
       index = make_repo_index(smap, idx and idx.rename_map),
     }
@@ -96,11 +99,16 @@ end
 ---@param passive boolean?  被动刷新（auto_refresh / 保存 / gitsigns / R / commit-push）：
 ---  render 保持光标停在当前文件、不按可能滞后的 cur_path 拉走（防 j/k 导航期光标拉扯）
 function M.reload_index(state, after, passive)
+  state._reload_seq = (state._reload_seq or 0) + 1
+  local seq = state._reload_seq
   local done_index = false
-  local done_ahead = false
+
+  local function active()
+    return State.is_current(state) and seq == state._reload_seq
+  end
 
   local function finalize()
-    if not done_index or not done_ahead then return end
+    if not active() or not done_index then return end
     LeftRender.render(state, passive)
     -- 广播 git 状态变更：stage/unstage/discard/commit/push/conflict 等所有变更操作
     -- 都汇聚到 reload_index（actions → refresh、commit/push → M.refresh），故这里发一个
@@ -114,14 +122,7 @@ function M.reload_index(state, after, passive)
     if after then after() end
   end
 
-  -- ahead_count 与子仓库发现/索引无依赖，先并行发起
-  Git.ahead_count(state.git_root, function(count)
-    state.ahead_count = count
-    done_ahead = true
-    finalize()
-  end)
-
-  -- 多仓库：父仓库 + 发现的子仓库各跑一次 git status，counter join 后各建一棵独立树
+  -- 多仓库：父仓库 + 发现的子仓库各跑一次 index 与 repo info，counter join 后各建一棵独立树
   -- 父仓库剔除「指向子仓库根」的折叠条目（?? sub/ 或 M sub），改由子仓库自己的块呈现
   ---@param subroots string[]
   local function proceed(subroots)
@@ -133,16 +134,19 @@ function M.reload_index(state, after, passive)
     local is_subroot = {}
     for _, r in ipairs(subroots) do is_subroot[r] = true end
 
-    -- 每个仓库各取一次 status 与分支名，全部到齐后统一建树（counter join）
-    local indexes, branches = {}, {}
+    if not active() then return end
+
+    -- 每个仓库各取一次文件 index 与分支/remote 状态，全部到齐后统一建树（counter join）
+    local indexes, infos = {}, {}
     local pending = #roots_to_index * 2
 
     local function on_part_done()
+      if not active() then return end
       pending = pending - 1
       if pending > 0 then return end
 
-      build_parent_repo(state, indexes[state.git_root], is_subroot, branches[state.git_root])
-      build_subrepos(state, subroots, indexes, is_subroot, branches)
+      build_parent_repo(state, indexes[state.git_root], is_subroot, infos[state.git_root])
+      build_subrepos(state, subroots, indexes, is_subroot, infos)
       prune_selection(state)
 
       done_index = true
@@ -151,11 +155,16 @@ function M.reload_index(state, after, passive)
 
     for _, r in ipairs(roots_to_index) do
       Git.index(r, function(idx)
+        if not active() then return end
         indexes[r] = idx
         on_part_done()
       end)
-      Git.current_branch(r, function(br)
-        branches[r] = br
+      Git.repo_info(r, function(info, err)
+        if not active() then return end
+        if not info and err then
+          vim.notify('[vv-git] failed to inspect repository: ' .. r .. '\n' .. err, vim.log.levels.ERROR)
+        end
+        infos[r] = info
         on_part_done()
       end)
     end

@@ -23,7 +23,7 @@
 {
   'beixiyo/vv-git.nvim',
   dependencies = { 'beixiyo/vv-utils.nvim' },
-  cmd = { 'VVGit', 'VVGitToggle', 'VVGitClose' },
+  cmd = { 'VVGit', 'VVGitToggle', 'VVGitClose', 'VVGitPublish' },
   keys = { '<leader>b' },
   ---@type VVGitConfig
   opts = {
@@ -174,6 +174,7 @@ These mappings are active inside the left panel:
 | `c` | Commit |
 | `p` | Push |
 | `P` | Pull |
+| `u` | Publish the current branch: use `origin` when present, the only existing remote when unambiguous, select among multiple remotes, or ask only for an `origin` URL when none exists |
 | `<C-e>` | Scroll the diff down |
 | `<C-y>` | Scroll the diff up |
 | `]c` / `[c` | Jump to and center the next/previous chunk in the right-side diff while remaining in the left panel |
@@ -181,6 +182,8 @@ These mappings are active inside the left panel:
 | `gw` | Switch worktrees: list every worktree for this repository in a floating window and switch to the selected worktree to inspect its diff (equivalent to `:VVGitWorktree`) |
 | `H` | Compare with HEAD: select a branch, then a commit, and show the `commit..HEAD` difference |
 | `g?` | Show help |
+
+After the first commit or after switching to an unpublished branch, the panel shows `u  Publish <branch>`. The branch name comes directly from Git, so it is never requested separately. Outside the panel, use `:VVGitPublish`
 
 ## External Revision Integration
 

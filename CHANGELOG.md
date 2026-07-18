@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- 新增 `u` / `:VVGitPublish`，按当前仓库的 upstream 与 remote 状态智能发布新分支；无 remote 时只询问 `origin` URL
+
+### Fixed
+
+- 面板动作提示独立显示真实大小写键位，`c`、`p`、`P` 不再因单词首字母高亮而冲突
+- push / pull 数量按 `1 commit` 与 `N commits` 正确显示，不再使用括号复数占位
+
 ## [0.2.0] - 2026-07-16
 
 ### Added

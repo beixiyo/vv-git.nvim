@@ -23,7 +23,7 @@
 {
   'beixiyo/vv-git.nvim',
   dependencies = { 'beixiyo/vv-utils.nvim' },
-  cmd = { 'VVGit', 'VVGitToggle', 'VVGitClose' },
+  cmd = { 'VVGit', 'VVGitToggle', 'VVGitClose', 'VVGitPublish' },
   keys = { '<leader>b' },
   ---@type VVGitConfig
   opts = {
@@ -175,6 +175,7 @@ opts = {
 | `c` | 提交（commit） |
 | `p` | 推送（push） |
 | `P` | 拉取（pull） |
+| `u` | 发布当前分支：已有 upstream 时提示使用 `p`；有 `origin` 时直接 `push -u`；只有一个其它 remote 时使用该 remote；多个 remote 时选择；没有 remote 时只输入 URL，自动添加 `origin` 并发布 |
 | `<C-e>` | 向下滚动 diff |
 | `<C-y>` | 向上滚动 diff |
 | `]c` / `[c` | 跳到右侧 diff 的下/上一个 chunk 并居中（在左侧面板即可驱动，无需进入 diff 窗口） |
@@ -182,6 +183,8 @@ opts = {
 | `gw` | Worktree 切换：浮窗列出本仓库所有 worktree，选中即切到该 worktree 看其 diff（`:VVGitWorktree` 等价） |
 | `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |
 | `g?` | 显示帮助 |
+
+提交完成或切换到尚未发布的新分支后，面板会显示 `u  Publish <branch>`。当前分支名由 Git 直接读取，因此不额外询问分支；仅当仓库完全没有 remote 时询问 `origin` URL。也可在面板外执行 `:VVGitPublish`
 
 ## 外部 revision 集成
 

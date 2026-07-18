@@ -7,8 +7,9 @@
 -- state.git_root  = 父仓库根绝对路径
 -- state.index     = 父仓库 index 视图：{ status_map, rename_map }（形状与子仓库一致）
 -- state.branch    = 父仓库当前分支名（detached 时为短 hash）；header 行显示 󰘬 <branch>
+-- state.repo_info = 父仓库分支 / remote / upstream / ahead-behind 状态
 -- state.tree      = 父仓库变更树：{ staged, unstaged, conflicts }
--- state.subrepos  = 发现的子仓库块列表：{ { root, label, tree, index }, ... }（depth>0 时）
+-- state.subrepos  = 发现的子仓库块列表：{ { root, label, tree, index, repo_info }, ... }（depth>0 时）
 --                   每个子仓库各建一棵独立树，在左栏作为「Sub-Repo: <label>」块渲染
 -- state._subrepo  = 子仓库扫描配置注入（lifecycle 在 open 时填）：{ depth():integer, config():table }
 -- state.folds         = { ['<section_id>\0<relpath>'] = true }  被折叠的文件夹集合
@@ -39,6 +40,7 @@ function M.get()
       view = nil,
       git_root = nil,
       index = nil,
+      repo_info = nil,
       tree = nil,
       subrepos = {},
       folds = {},
@@ -52,6 +54,10 @@ function M.get()
 end
 
 function M.clear() M._state = nil end
+
+---@param state table
+---@return boolean
+function M.is_current(state) return M._state == state end
 
 -- 把「需要 state 存在才执行」的函数包一层：state 为空时直接短路；
 -- 否则把 state 作为第一参数传入，其余参数透传（autocmd 的 args / 普通调用的 ...）

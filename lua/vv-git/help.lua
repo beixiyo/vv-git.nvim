@@ -28,6 +28,7 @@ local ACTIONS = {
   accept_theirs = { cat = 'Conflict', icon = '󰅂' },
   push          = { cat = 'Remote',   icon = '' },
   pull          = { cat = 'Remote',   icon = '' },
+  publish       = { cat = 'Remote',   icon = '' },
   yank_abs_path = { cat = 'Yank',     icon = '' },
   scroll_diff_down = { cat = 'View',  icon = '' },
   scroll_diff_up   = { cat = 'View',  icon = '' },

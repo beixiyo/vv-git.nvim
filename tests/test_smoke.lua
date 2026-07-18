@@ -235,6 +235,7 @@ local function test_panel_edge_file_keymaps()
     _commit = noop,
     _push = noop,
     _pull = noop,
+    _publish = noop,
     _compare_pick = noop,
     _commit_show_pick = noop,
     _preview_on_move = noop,
@@ -255,6 +256,7 @@ local function test_panel_edge_file_keymaps()
   assert_eq(type(callbacks.G), 'function', 'G mapping is installed')
   callbacks.G()
   assert_eq(vim.api.nvim_win_get_cursor(win)[1], 6, 'G jumps to last file row')
+  assert_eq(type(callbacks.u), 'function', 'u (publish) mapping is installed')
 
   -- 左侧面板驱动右侧 diff chunk 跳转：]c / [c 已安装，且无 diff 视图时安全早退（不报错）
   assert_eq(type(callbacks[']c']), 'function', ']c (next_chunk) mapping is installed')
@@ -533,7 +535,11 @@ local function test_panel_action_keys_are_highlighted()
     folds = {},
     section_folds = {},
     selection = {},
-    ahead_count = 2,
+    repo_info = {
+      branch = 'main', branch_name = 'main', head = 'abc123',
+      detached = false, unborn = false, remotes = { 'origin' },
+      upstream = 'origin/main', ahead = 1, behind = 2,
+    },
   })
 
   local highlighted = {}
@@ -545,6 +551,11 @@ local function test_panel_action_keys_are_highlighted()
 
   assert_true(highlighted.c == true, 'commit action key uses VVGitPanelKey highlight')
   assert_true(highlighted.p == true, 'push action key uses VVGitPanelKey highlight')
+  assert_true(highlighted.P == true, 'pull action key preserves uppercase P')
+  assert_true(vim.tbl_contains(lines, '  c  Commit 1 staged file'), 'commit hint uses exact lowercase key')
+  assert_true(vim.tbl_contains(lines, '  p  Push 1 commit'), 'single commit uses singular noun')
+  assert_true(vim.tbl_contains(lines, '  P  Pull 2 commits'), 'multiple commits use plural noun')
+  assert_true(not table.concat(lines, '\n'):find('commit%(s%)'), 'panel never renders a parenthesized plural placeholder')
 
   local panel_buf = Panel.create_buf()
   Panel.flush(panel_buf, lines, extmarks, Render.ns)
@@ -575,6 +586,78 @@ local function test_panel_action_keys_are_highlighted()
   assert_true(escape_highlighted, 'compare exit key uses VVGitPanelKey highlight')
 end
 
+local function test_repo_info_parser_and_publish()
+  local Git = require('vv-git.git')
+  local parsed = assert(Git._parse_repo_info(table.concat({
+    '# branch.oid abcdef1234567890',
+    '# branch.head main',
+    '# branch.upstream origin/main',
+    '# branch.ab +1 -2',
+  }, '\n'), 'backup\norigin\n'))
+  assert_eq(parsed.branch_name, 'main', 'repo info parses branch name')
+  assert_eq(parsed.upstream, 'origin/main', 'repo info parses upstream')
+  assert_eq(parsed.ahead, 1, 'repo info parses ahead count')
+  assert_eq(parsed.behind, 2, 'repo info parses behind count')
+  assert_eq(table.concat(parsed.remotes, ','), 'backup,origin', 'repo info sorts remotes')
+
+  local unborn = assert(Git._parse_repo_info(table.concat({
+    '# branch.oid (initial)',
+    '# branch.head main',
+  }, '\n'), ''))
+  assert_true(unborn.unborn, 'repo info detects unborn branch')
+  assert_true(unborn.head == nil, 'unborn branch has no HEAD')
+
+  local detached = assert(Git._parse_repo_info(table.concat({
+    '# branch.oid abcdef1234567890',
+    '# branch.head (detached)',
+  }, '\n'), 'origin\n'))
+  assert_true(detached.detached, 'repo info detects detached HEAD')
+  assert_eq(detached.branch, 'abcdef1', 'detached branch display uses short hash')
+
+  local tmpdir = vim.fn.tempname()
+  local remote = vim.fn.tempname() .. '.git'
+  vim.fn.mkdir(tmpdir, 'p')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-b', 'main' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.email', 'vv-git@example.test' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.name', 'vv-git test' })
+  vim.fn.writefile({ 'hello' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'initial' })
+  vim.fn.system({ 'git', 'init', '--bare', remote })
+
+  local added
+  Git.add_remote(tmpdir, 'origin', remote, function(ok) added = ok end)
+  assert_true(vim.wait(3000, function() return added ~= nil end), 'add_remote callback completed')
+  assert_true(added, 'add_remote succeeds')
+
+  local published
+  Git.publish(tmpdir, 'origin', function(ok) published = ok end)
+  assert_true(vim.wait(3000, function() return published ~= nil end), 'publish callback completed')
+  assert_true(published, 'publish succeeds against local bare remote')
+
+  local info
+  Git.repo_info(tmpdir, function(value) info = value end)
+  assert_true(vim.wait(3000, function() return info ~= nil end), 'repo_info callback completed')
+  assert_eq(info.upstream, 'origin/main', 'publish establishes upstream')
+  assert_eq(info.ahead, 0, 'published branch is not ahead')
+
+  vim.fn.delete(tmpdir, 'rf')
+  vim.fn.delete(remote, 'rf')
+end
+
+local function test_state_lifecycle_identity()
+  local State = require('vv-git.state')
+  State.clear()
+  local old = State.get()
+  assert_true(State.is_current(old), 'state identity accepts current panel state')
+  State.clear()
+  assert_true(not State.is_current(old), 'state identity rejects closed panel state')
+  local new = State.get()
+  assert_true(not State.is_current(old), 'state identity rejects state from previous panel lifecycle')
+  assert_true(State.is_current(new), 'state identity accepts reopened panel state')
+  State.clear()
+end
+
 -- 执行所有测试
 log('========== vv-git.nvim 变更验证 ==========')
 test_discard_untracked_exists()
@@ -594,6 +677,8 @@ test_staged_scrollbar_source()
 test_compare_tag_with_head()
 test_compare_file_uses_live_buffer()
 test_panel_action_keys_are_highlighted()
+test_repo_info_parser_and_publish()
+test_state_lifecycle_identity()
 log('========== 测试完成 ==========')
 print(string.format('总计: %d 通过, %d 失败', _passed, _failed))
 if _failed > 0 then os.exit(1) end

@@ -130,7 +130,10 @@ function L.attach(M)
         Prompt.open({
           git_root = root,
           has_staged = has,
-          on_success = function() M.refresh() end,
+          on_success = function()
+            state._block_hint = root
+            M.refresh()
+          end,
         })
       end
       if has then
@@ -160,6 +163,75 @@ function L.attach(M)
 
   function M._push() git_net('push') end
   function M._pull() git_net('pull') end
+
+  M._publish = State.guarded(function(state)
+    if not state.git_root then return end
+    local root = cursor_root(state)
+
+    Git.repo_info(root, function(info, err)
+      if not State.is_current(state) then return end
+      if not info then
+        vim.notify('[vv-git] failed to inspect repository\n' .. (err or 'unknown error'), vim.log.levels.ERROR)
+        return
+      end
+      if info.detached then
+        vim.notify('[vv-git] Detached HEAD. Create or switch to a branch before publishing.', vim.log.levels.WARN)
+        return
+      end
+      if info.unborn or not info.head then
+        vim.notify('[vv-git] Commit the branch before publishing.', vim.log.levels.WARN)
+        return
+      end
+      if info.upstream then
+        vim.notify('[vv-git] Already tracking ' .. info.upstream .. '. Use p to push.', vim.log.levels.INFO)
+        return
+      end
+
+      local function publish_to(remote, remote_added)
+        vim.notify('[vv-git] Publishing ' .. info.branch_name .. ' to ' .. remote .. '...', vim.log.levels.INFO)
+        Git.publish(root, remote, function(ok, out)
+          local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
+          local prefix = ok
+              and ('[vv-git] Published ' .. info.branch_name .. ' to ' .. remote)
+              or ('[vv-git] Publish failed' .. (remote_added and ' (origin was added)' or ''))
+          vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
+          if (ok or remote_added) and State.is_current(state) then
+            state._block_hint = root
+            M.refresh()
+          end
+        end)
+      end
+
+      local function choose_existing_remote()
+        for _, remote in ipairs(info.remotes) do
+          if remote == 'origin' then publish_to('origin', false); return end
+        end
+        if #info.remotes == 1 then publish_to(info.remotes[1], false); return end
+
+        vim.ui.select(info.remotes, { prompt = 'Publish ' .. info.branch_name .. ' to remote:' }, function(remote)
+          if remote and State.is_current(state) then publish_to(remote, false) end
+        end)
+      end
+
+      if #info.remotes > 0 then
+        choose_existing_remote()
+        return
+      end
+
+      vim.ui.input({ prompt = 'Remote URL for origin: ' }, function(url)
+        if not State.is_current(state) then return end
+        url = url and vim.trim(url) or ''
+        if url == '' then return end
+        Git.add_remote(root, 'origin', url, function(ok, out)
+          if not ok then
+            vim.notify('[vv-git] Add origin failed' .. (out and ('\n' .. out) or ''), vim.log.levels.ERROR)
+            return
+          end
+          publish_to('origin', true)
+        end)
+      end)
+    end)
+  end)
 
   M._goto_file = State.guarded(function(state)
     local cur_win = vim.api.nvim_get_current_win()

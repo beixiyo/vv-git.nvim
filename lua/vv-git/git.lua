@@ -345,20 +345,109 @@ function M.accept_ours(root, paths, cb) accept_side(root, '--ours', paths, cb) e
 ---@param cb fun(ok:boolean, stderr?:string)
 function M.accept_theirs(root, paths, cb) accept_side(root, '--theirs', paths, cb) end
 
--- 获取未推送的 commit 数量
+---@class VVGitRepoInfo
+---@field branch? string  显示分支；detached 时为短 hash
+---@field branch_name? string  可发布的本地分支名；detached 时为 nil
+---@field head? string  HEAD oid；unborn 时为 nil
+---@field detached boolean
+---@field unborn boolean
+---@field remotes string[]
+---@field upstream? string
+---@field ahead integer
+---@field behind integer
+
+---解析 `git status --porcelain=v2 --branch` 与 `git remote` 输出
+---@param status_output string
+---@param remote_output string
+---@return VVGitRepoInfo? info, string? err
+function M._parse_repo_info(status_output, remote_output)
+  local oid = status_output:match('# branch%.oid ([^\r\n]+)')
+  local head = status_output:match('# branch%.head ([^\r\n]+)')
+  if not oid or not head then return nil, 'git status did not report branch metadata' end
+
+  local unborn = oid == '(initial)'
+  local detached = head == '(detached)'
+  local ahead, behind = status_output:match('# branch%.ab %+(%d+) %-(%d+)')
+  local remotes = {}
+
+  for remote in remote_output:gmatch('[^\r\n]+') do
+    remote = vim.trim(remote)
+    if remote ~= '' then remotes[#remotes + 1] = remote end
+  end
+  table.sort(remotes)
+
+  return {
+    branch = detached and (not unborn and oid:sub(1, 7) or nil) or head,
+    branch_name = not detached and head or nil,
+    head = not unborn and oid or nil,
+    detached = detached,
+    unborn = unborn,
+    remotes = remotes,
+    upstream = status_output:match('# branch%.upstream ([^\r\n]+)'),
+    ahead = tonumber(ahead) or 0,
+    behind = tonumber(behind) or 0,
+  }
+end
+
+---一次获取分支、HEAD、remote、upstream 与 ahead/behind，避免把查询失败误判成 no remote
 ---@param root string
----@param cb fun(count: integer)
-function M.ahead_count(root, cb)
+---@param cb fun(info: VVGitRepoInfo?, err?: string)
+function M.repo_info(root, cb)
+  local status_result, remote_result
+
+  local function finish()
+    if not status_result or not remote_result then return end
+    if status_result.code ~= 0 then
+      cb(nil, status_result.stderr or 'git status failed')
+      return
+    end
+    if remote_result.code ~= 0 then
+      cb(nil, remote_result.stderr or 'git remote failed')
+      return
+    end
+
+    local info, err = M._parse_repo_info(status_result.stdout or '', remote_result.stdout or '')
+    cb(info, err)
+  end
+
   vim.system(
-    { 'git', '-C', root, 'rev-list', '--count', 'HEAD@{u}..HEAD' },
+    { 'git', '-C', root, 'status', '--porcelain=v2', '--branch' },
+    { text = true },
+    vim.schedule_wrap(function(r) status_result = r; finish() end)
+  )
+  vim.system(
+    { 'git', '-C', root, 'remote' },
+    { text = true },
+    vim.schedule_wrap(function(r) remote_result = r; finish() end)
+  )
+end
+
+---@param root string
+---@param name string
+---@param url string
+---@param cb fun(ok:boolean, output?:string)
+function M.add_remote(root, name, url, cb)
+  vim.system(
+    { 'git', '-C', root, 'remote', 'add', name, url },
     { text = true },
     vim.schedule_wrap(function(r)
-      if r.code ~= 0 then
-        cb(0)
-      else
-        local count = tonumber(vim.trim(r.stdout or '0')) or 0
-        cb(count)
-      end
+      local out = (r.stdout or '') .. (r.stderr or '')
+      cb(r.code == 0, out ~= '' and out or nil)
+    end)
+  )
+end
+
+---发布当前分支，并将远端同名分支设为 upstream
+---@param root string
+---@param remote string
+---@param cb fun(ok:boolean, output?:string)
+function M.publish(root, remote, cb)
+  vim.system(
+    { 'git', '-C', root, 'push', '-u', remote, 'HEAD' },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      local out = (r.stdout or '') .. (r.stderr or '')
+      cb(r.code == 0, out ~= '' and out or nil)
     end)
   )
 end
@@ -425,27 +514,6 @@ function M.worktree_list(root, cb)
       flush()
 
       cb(list)
-    end)
-  )
-end
-
--- 当前分支名；detached HEAD 时退回短 hash（`branch --show-current` 此时为空）；失败为 ''
----@param root string
----@param cb fun(branch: string)
-function M.current_branch(root, cb)
-  vim.system(
-    { 'git', '-C', root, 'branch', '--show-current' },
-    { text = true },
-    vim.schedule_wrap(function(r)
-      local b = (r.code == 0) and vim.trim(r.stdout or '') or ''
-      if b ~= '' then cb(b); return end
-      vim.system(
-        { 'git', '-C', root, 'rev-parse', '--short', 'HEAD' },
-        { text = true },
-        vim.schedule_wrap(function(r2)
-          cb((r2.code == 0) and vim.trim(r2.stdout or '') or '')
-        end)
-      )
     end)
   )
 end

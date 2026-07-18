@@ -22,6 +22,17 @@ local BRANCH_ICON_HL = (git_icons.git_branches or {}).hl or 'VVGitPanelBranch' -
 -- 已知局限：>2 col 的 icon 不会被截断，可能与邻行错位（实际很罕见）
 local ICON_COLS = 2
 
+local function count_label(count, singular, plural)
+  return string.format('%d %s', count, count == 1 and singular or plural)
+end
+
+---@param info VVGitRepoInfo?
+local function needs_remote_action(info)
+  if not info then return false end
+  if info.upstream then return info.ahead > 0 or info.behind > 0 end
+  return not info.detached and not info.unborn and info.head ~= nil and info.branch_name ~= nil
+end
+
 local function pad_to_cols(s, cols)
   local w = vim.fn.strdisplaywidth(s)
   if w >= cols then return s end
@@ -122,10 +133,11 @@ function M.build(state)
   ---@param key string
   ---@param text string
   ---@param text_hl? string
-  local function push_key_hint(key, text, text_hl)
-    local prefix = '  '
-    local display_key = #key == 1 and key:upper() or key
-    local line = prefix .. text .. '  ' .. display_key
+  ---@param root? string  hint 所属仓库；让 c/p/P/u 在子仓库 hint 行正确路由
+  ---@param indent? integer
+  local function push_key_hint(key, text, text_hl, root, indent)
+    local prefix = string.rep(INDENT_STEP, indent or 1)
+    local line = prefix .. key .. '  ' .. text
     push_text(line, text_hl or 'VVGitCommitHint')
     extmarks[#extmarks + 1] = {
       row = #lines - 1,
@@ -138,6 +150,7 @@ function M.build(state)
         priority = 5000,
       },
     }
+    if root then id_by_line[#lines] = { root = root, action_hint = true } end
   end
 
   local function push_blank() lines[#lines + 1] = '' end
@@ -175,7 +188,7 @@ function M.build(state)
     for _, e in ipairs(ems) do
       extmarks[#extmarks + 1] = { row = row, col = e.col, opts = { end_col = e.col + e.len, hl_group = e.hl } }
     end
-    id_by_line[#lines] = { block_header = root }
+    id_by_line[#lines] = { block_header = root, root = root }
     return collapsed
   end
 
@@ -187,6 +200,38 @@ function M.build(state)
   local tree = state.tree
   local folds = state.folds or {}
   local section_folds = state.section_folds or {}
+
+  ---@param root string
+  ---@param repo_tree table
+  ---@param info VVGitRepoInfo?
+  ---@param indent? integer
+  local function render_repo_summary(root, repo_tree, info, indent)
+    indent = indent or 1
+    local staged_count = Tree.count_files(repo_tree.staged)
+    local unstaged_count = Tree.count_files(repo_tree.unstaged)
+
+    if staged_count > 0 then
+      push_key_hint('c', 'Commit ' .. count_label(staged_count, 'staged file', 'staged files'), nil, root, indent)
+    elseif unstaged_count > 0 then
+      push_key_hint('c', 'Commit all ' .. count_label(unstaged_count, 'file', 'files'), nil, root, indent)
+    else
+      push_text(string.rep(INDENT_STEP, indent) .. 'working tree clean', 'VVGitCommitHint')
+    end
+
+    if info then
+      if info.upstream then
+        if info.ahead > 0 then
+          push_key_hint('p', 'Push ' .. count_label(info.ahead, 'commit', 'commits'), nil, root, indent)
+        end
+        if info.behind > 0 then
+          push_key_hint('P', 'Pull ' .. count_label(info.behind, 'commit', 'commits'), nil, root, indent)
+        end
+      elseif not info.detached and not info.unborn and info.head and info.branch_name then
+        push_key_hint('u', 'Publish ' .. info.branch_name, nil, root, indent)
+      end
+    end
+    push_blank()
+  end
 
   ---@param root string  该 section 所属仓库根（父仓库 = state.git_root）
   ---@param base 'staged'|'unstaged'|'conflicts'
@@ -279,7 +324,8 @@ function M.build(state)
   ---@param sr table  { root, label, tree, branch }
   local function render_subrepo(sr)
     local t = sr.tree
-    if Tree.empty(t.staged) and Tree.empty(t.unstaged) and Tree.empty(t.conflicts) then
+    local has_changes = not Tree.empty(t.staged) or not Tree.empty(t.unstaged) or not Tree.empty(t.conflicts)
+    if not has_changes and not needs_remote_action(sr.repo_info) then
       return -- 该子仓库无改动，不渲染空块
     end
 
@@ -290,6 +336,8 @@ function M.build(state)
       return
     end
 
+    push_blank()
+    render_repo_summary(sr.root, t, sr.repo_info, 2)
     render_section(sr.root, 'conflicts', 'Merge Conflicts', t.conflicts, 1)
     render_section(sr.root, 'staged', 'Staged Changes', t.staged, 1)
     render_section(sr.root, 'unstaged', 'Changes', t.unstaged, 1)
@@ -355,7 +403,7 @@ function M.build(state)
     end
 
     push_blank()
-    push_key_hint('Esc', 'Exit compare mode', 'Comment')
+    push_key_hint('<Esc>', 'Exit compare mode', 'Comment')
 
     return lines, extmarks, id_by_line
   end
@@ -366,22 +414,9 @@ function M.build(state)
     return lines, extmarks, id_by_line
   end
 
-  -- 根仓库折叠：隐藏 commit 提示与三个父 section，只保留已渲染的标题行；子仓库块照常
+  -- 根仓库折叠：隐藏 action 提示与三个父 section，只保留已渲染的标题行；子仓库块照常
   if not root_collapsed then
-    local staged_count = Tree.count_files(tree.staged)
-    local unstaged_count = Tree.count_files(tree.unstaged)
-    if staged_count > 0 then
-      push_key_hint('c', string.format('Commit %d staged', staged_count))
-    elseif unstaged_count > 0 then
-      push_key_hint('c', string.format('Commit ALL %d (no staged)', unstaged_count))
-    else
-      push_text('  working tree clean', 'VVGitCommitHint')
-    end
-
-    if state.ahead_count and state.ahead_count > 0 then
-      push_key_hint('p', string.format('Push %d commit(s)', state.ahead_count))
-    end
-    push_blank()
+    render_repo_summary(state.git_root, tree, state.repo_info)
 
     -- 父仓库（冲突优先显示，VSCode 风）
     render_section(state.git_root, 'conflicts', 'Merge Conflicts', tree.conflicts)
@@ -440,7 +475,7 @@ function M.render(state, passive)
   -- 文件」、渲染后放回该文件（content 变了就跟它到新行），令本次刷新对光标成为 no-op
   -- 带 hint（stage/unstage/fold，非 passive）的渲染不进此分支，afc82c2 等落点逻辑不受影响
   local keep
-  if passive and not state._action_hint and not state._section_hint then
+  if passive and not state._action_hint and not state._section_hint and not state._block_hint then
     local pw = state.panel.win
     if pw and vim.api.nvim_win_is_valid(pw) then
       local ok, pos = pcall(vim.api.nvim_win_get_cursor, pw)

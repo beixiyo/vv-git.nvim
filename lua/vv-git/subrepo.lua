@@ -137,7 +137,7 @@ end
 ---@return table?  { root, tree, index, label? }
 function M.repo_of(state, root)
   if not root or root == state.git_root then
-    return { root = state.git_root, tree = state.tree, index = state.index }
+    return { root = state.git_root, tree = state.tree, index = state.index, repo_info = state.repo_info }
   end
   for _, sr in ipairs(state.subrepos or {}) do
     if sr.root == root then return sr end
