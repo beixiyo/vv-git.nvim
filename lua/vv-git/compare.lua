@@ -5,6 +5,7 @@
 local M = {}
 
 local Git = require('vv-git.git')
+local State = require('vv-git.state')
 
 ---@param c {hash:string, short:string, subject:string}
 ---@return string
@@ -62,10 +63,14 @@ end
 ---@param short string
 ---@param label string
 ---@param on_done fun()
-function M.start_refs(state, from_rev, to_rev, short, label, on_done)
+---@param on_error? fun(message:string)
+function M.start_refs(state, from_rev, to_rev, short, label, on_done, on_error)
   Git.diff_names(state.git_root, from_rev, to_rev, function(files, err)
+    if not State.is_current(state) then return end
     if not files then
-      vim.notify('[vv-git] Compare failed: ' .. (err or 'git diff error'), vim.log.levels.ERROR)
+      local message = 'Compare failed: ' .. (err or 'git diff error')
+      vim.notify('[vv-git] ' .. message, vim.log.levels.ERROR)
+      if on_error then on_error(message) end
       return
     end
     state.compare = {
@@ -98,8 +103,10 @@ local EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 ---@param short string
 ---@param label string
 ---@param on_done fun()
-function M.start_commit(state, hash, short, label, on_done)
+---@param on_error? fun(message:string)
+function M.start_commit(state, hash, short, label, on_done, on_error)
   local function apply(from_rev, files)
+    if not State.is_current(state) then return end
     state.compare = {
       from_rev = from_rev,
       to_rev   = hash,
@@ -111,14 +118,18 @@ function M.start_commit(state, hash, short, label, on_done)
   end
 
   Git.diff_names(state.git_root, hash .. '^', hash, function(files, err)
+    if not State.is_current(state) then return end
     if files then
       apply(hash .. '^', files)
       return
     end
     -- 初始 commit 没有父节点，改用 empty-tree
     Git.diff_names(state.git_root, EMPTY_TREE, hash, function(files2, err2)
+      if not State.is_current(state) then return end
       if not files2 then
-        vim.notify('[vv-git] Show commit failed: ' .. (err2 or err or 'git diff error'), vim.log.levels.ERROR)
+        local message = 'Show commit failed: ' .. (err2 or err or 'git diff error')
+        vim.notify('[vv-git] ' .. message, vim.log.levels.ERROR)
+        if on_error then on_error(message) end
         return
       end
       apply(EMPTY_TREE, files2)

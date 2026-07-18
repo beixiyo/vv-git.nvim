@@ -20,33 +20,30 @@ end
 
 ---@param ref string
 ---@param opts VVGitCompareFileOpts
----@return {root:string, relpath:string, path:string, bufnr:integer, filetype:string}?
+---@return {root:string, relpath:string, path:string, bufnr:integer, filetype:string}?, string? err
 local function resolve_source(ref, opts)
   local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
   local path = opts.path
 
   if not path then
-    if not vim.api.nvim_buf_is_valid(bufnr) then return nil end
+    if not vim.api.nvim_buf_is_valid(bufnr) then return nil, 'Invalid source buffer: ' .. tostring(bufnr) end
     path = vim.api.nvim_buf_get_name(bufnr)
   end
   if not path or path == '' then
-    vim.notify('[vv-git] Cannot compare an unnamed buffer with ' .. ref, vim.log.levels.WARN)
-    return nil
+    return nil, 'Cannot compare an unnamed buffer with ' .. ref
   end
 
   path = vim.fs.normalize(vim.fn.fnamemodify(path, ':p'))
-  local root = opts.root and vim.fs.normalize(opts.root) or UGit.root(vim.fs.dirname(path))
+  local root = opts.root and UGit.root(opts.root) or UGit.root(vim.fs.dirname(path))
   if not root or path:sub(1, #root + 1) ~= root .. '/' then
-    vim.notify('[vv-git] File is not inside a Git repository: ' .. path, vim.log.levels.WARN)
-    return nil
+    return nil, 'File is not inside a Git repository: ' .. path
   end
 
   if not vim.api.nvim_buf_is_valid(bufnr) or vim.fs.normalize(vim.api.nvim_buf_get_name(bufnr)) ~= path then
     bufnr = vim.fn.bufadd(path)
     local ok = pcall(vim.fn.bufload, bufnr)
     if not ok or not vim.api.nvim_buf_is_loaded(bufnr) then
-      vim.notify('[vv-git] Cannot load file: ' .. path, vim.log.levels.ERROR)
-      return nil
+      return nil, 'Cannot load file: ' .. path
     end
   end
 
@@ -57,6 +54,19 @@ local function resolve_source(ref, opts)
     bufnr = bufnr,
     filetype = vim.bo[bufnr].filetype,
   }
+end
+
+---@param fn function?
+---@param ... any
+local function invoke(fn, ...)
+  if type(fn) ~= 'function' then return end
+  local args = { ... }
+  vim.schedule(function()
+    local ok, err = pcall(fn, unpack(args))
+    if not ok then
+      vim.notify('[vv-git] callback failed: ' .. tostring(err), vim.log.levels.ERROR)
+    end
+  end)
 end
 
 local DIFF_OPTS = {
@@ -123,24 +133,28 @@ end
 
 ---@param ref string
 ---@param opts? VVGitCompareFileOpts
+---@return boolean started
 function M.open(ref, opts)
   opts = opts or {}
-  if not ref or ref == '' then return end
-
-  local function restore_caller()
-    if type(opts.on_close) == 'function' then vim.schedule(opts.on_close) end
+  if not ref or ref == '' then
+    invoke(opts.on_error, 'ref is required')
+    return false
   end
 
-  local source = resolve_source(ref, opts)
+  local function fail(message)
+    vim.notify('[vv-git] ' .. message, vim.log.levels.ERROR)
+    invoke(opts.on_error, message)
+  end
+
+  local source, source_err = resolve_source(ref, opts)
   if not source then
-    restore_caller()
-    return
+    fail(source_err or 'Cannot resolve comparison source')
+    return false
   end
 
   Git.show(source.root, ref, source.relpath, function(ref_lines, err)
     if not ref_lines then
-      vim.notify('[vv-git] File compare failed: ' .. (err or 'git show failed'), vim.log.levels.ERROR)
-      restore_caller()
+      fail('File compare failed: ' .. (err or 'git show failed'))
       return
     end
 
@@ -180,6 +194,14 @@ function M.open(ref, opts)
     end
 
     local closing = false
+    local context = {
+      root = source.root,
+      path = source.path,
+      ref = ref,
+      bufnr = source.bufnr,
+      source_win = source_win,
+      ref_win = ref_win,
+    }
     local function close()
       if closing then return end
       closing = true
@@ -202,7 +224,9 @@ function M.open(ref, opts)
         vim.api.nvim_win_set_buf(source_win, previous_buf)
       end
 
-      if type(opts.on_close) == 'function' then vim.defer_fn(opts.on_close, 20) end
+      if type(opts.on_close) == 'function' then
+        vim.defer_fn(function() invoke(opts.on_close, context) end, 20)
+      end
     end
 
     for _, buf in ipairs({ ref_buf, source.bufnr }) do
@@ -229,13 +253,25 @@ function M.open(ref, opts)
     })
 
     vim.api.nvim_set_current_win(source_win)
+    invoke(opts.on_ready, context)
   end)
+  return true
 end
+
+---@class VVGitFileCompareContext
+---@field root string
+---@field path string
+---@field ref string
+---@field bufnr integer
+---@field source_win integer
+---@field ref_win integer
 
 ---@class VVGitCompareFileOpts
 ---@field bufnr? integer Buffer used for the current side; unsaved lines are included @default current buffer
 ---@field path? string File used for the current side when bufnr is omitted @default current buffer path
 ---@field root? string Git repository root; detected from the file path when omitted
----@field on_close? fun() Called after the comparison split closes
+---@field on_ready? fun(context:VVGitFileCompareContext) Called after both diff windows are ready
+---@field on_error? fun(message:string) Called when the comparison cannot be opened
+---@field on_close? fun(context:VVGitFileCompareContext) Called after the comparison split closes
 
 return M

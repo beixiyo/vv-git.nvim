@@ -13,11 +13,6 @@ local UGit = require('vv-utils.git')
 
 local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 
----@return string? git_root
-local function detect_git_root()
-  return UGit.root()
-end
-
 ---@param root string
 ---@return string? relpath
 local function get_current_relpath(root)
@@ -30,6 +25,46 @@ local function get_current_relpath(root)
     if rel ~= "" then return rel end
   end
   return nil
+end
+
+---@param root string
+---@param path string?
+---@return string? relpath, string? err
+local function resolve_relpath(root, path)
+  if not path or path == '' then return get_current_relpath(root) end
+
+  if path:sub(1, 1) ~= '/' then
+    local absolute = vim.fs.normalize(root .. '/' .. path)
+    if absolute ~= root and absolute:sub(1, #root + 1) ~= root .. '/' then
+      return nil, 'path is outside the Git repository: ' .. path
+    end
+    return absolute ~= root and absolute:sub(#root + 2) or nil
+  end
+
+  local absolute = vim.fs.normalize(path)
+  if absolute == root then return nil end
+  if absolute:sub(1, #root + 1) ~= root .. '/' then
+    return nil, 'path is outside the Git repository: ' .. absolute
+  end
+  return absolute:sub(#root + 2)
+end
+
+---@param opts VVGitOpenOpts
+---@return string? root, string? relpath, string? err
+local function resolve_open_context(opts)
+  local candidate = opts.root
+  if not candidate and opts.path and opts.path:sub(1, 1) == '/' then
+    candidate = vim.fs.dirname(vim.fs.normalize(opts.path))
+  end
+
+  local root = UGit.root(candidate)
+  if not root then
+    return nil, nil, 'not a Git repository' .. (candidate and (': ' .. candidate) or '')
+  end
+
+  local relpath, err = resolve_relpath(root, opts.path)
+  if err then return nil, nil, err end
+  return root, relpath
 end
 
 local function ensure_unfolded(state, relpath)
@@ -57,32 +92,58 @@ local L = {}
 
 ---@param M table
 function L.attach(M)
-  function M.open()
+  ---@param opts? VVGitOpenOpts
+  ---@return boolean opened, string? err
+  function M.open(opts)
+    opts = opts or {}
+
     if State.has() then
       local s = State.get()
       if s.tabpage and vim.api.nvim_tabpage_is_valid(s.tabpage) then
-        local rel_path = get_current_relpath(s.git_root)
-        vim.api.nvim_set_current_tabpage(s.tabpage)
-        if rel_path then
-          s.cur_path = rel_path
-          ensure_unfolded(s, rel_path)
-          LeftRender.render(s)
+        local root, relpath, err
+        if opts.root or opts.path then
+          root, relpath, err = resolve_open_context(opts)
+        else
+          root, relpath = s.git_root, get_current_relpath(s.git_root)
         end
-        if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
-          vim.api.nvim_set_current_win(s.panel.win)
+        if not root then
+          vim.notify('[vv-git] ' .. err, vim.log.levels.WARN)
+          M._invoke_callback(opts.on_error, err)
+          return false, err
         end
-        return
+
+        if root == s.git_root then
+          M._register_on_close(s, opts.on_close)
+          vim.api.nvim_set_current_tabpage(s.tabpage)
+          if relpath then
+            s.cur_path = relpath
+            ensure_unfolded(s, relpath)
+            LeftRender.render(s)
+          end
+          if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
+            vim.api.nvim_set_current_win(s.panel.win)
+          end
+          M._invoke_callback(opts.on_ready, M._context(s))
+          return true
+        end
+
+        M.close()
+        if State.has() then
+          local message = 'cannot switch vv-git to repository: ' .. root
+          M._invoke_callback(opts.on_error, message)
+          return false, message
+        end
       end
       State.clear()
     end
 
-    local root = detect_git_root()
+    local root, rel_path, err = resolve_open_context(opts)
     if not root then
-      vim.notify('[vv-git] Not a git repository', vim.log.levels.WARN)
-      return
+      vim.notify('[vv-git] ' .. err, vim.log.levels.WARN)
+      M._invoke_callback(opts.on_error, err)
+      return false, err
     end
 
-    local rel_path = get_current_relpath(root)
     local prev_tab = vim.api.nvim_get_current_tabpage()
 
     vim.cmd('tab split')
@@ -126,6 +187,7 @@ function L.attach(M)
       main_win = main_win,
     }
     state._panel_width = M._config.width
+    M._register_on_close(state, opts.on_close)
 
     -- 先注销上一轮残留的注册，保证全局至多一个 WinResized 监听
     if resize_autocmd_id then
@@ -144,8 +206,11 @@ function L.attach(M)
 
     Keymaps.install(state, M)
     Guard.install()
-    Loader.reload_index(state)
+    Loader.reload_index(state, function()
+      M._invoke_callback(opts.on_ready, M._context(state))
+    end)
     M._apply_layout()
+    return true
   end
 
   M.close = State.guarded(function(state)
@@ -172,8 +237,10 @@ function L.attach(M)
       end
     else
       pcall(RightView.close, state)
+      M._emit_closed(state)
       State.clear()
     end
+    return true
   end)
 
   M._ensure_invariant = State.guarded(function(state)
@@ -191,10 +258,10 @@ function L.attach(M)
       local s = State.get()
       if s.tabpage and vim.api.nvim_tabpage_is_valid(s.tabpage) then
         M.close()
-        return
+        return true
       end
     end
-    M.open()
+    return M.open()
   end
 
   M.toggle_panel = State.guarded(function(state)
@@ -231,6 +298,7 @@ function L.attach(M)
   M.refresh = State.guarded(function(state)
     if not state.panel or not state.git_root then return end
     Loader.reload_index(state, nil, true)
+    return true
   end)
 end
 

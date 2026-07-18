@@ -13,7 +13,7 @@ local Guard = require('vv-git.guard')
 
 local M = {}
 
----@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun() }
+---@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun(), on_closed:fun(state:table) }
 ---@param config table?  vv-git 合并后的配置（读取 auto_refresh 等）
 function M.setup(handlers, config)
   config = config or {}
@@ -110,6 +110,7 @@ function M.setup(handlers, config)
         end
         -- 还原全局 nvim_open_win；此后第三方浮窗在任何 tab 都不再经过我们
         pcall(Guard.uninstall)
+        handlers.on_closed(state)
         State.clear()
       end
     end),

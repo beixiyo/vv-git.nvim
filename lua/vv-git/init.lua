@@ -5,13 +5,14 @@
 --   - M.close()  → `tabclose` 整个 tab，回跳 prev_tab
 --   - state 是全局单例（同时只能有一个 vv-git tab）
 --
--- 公开 API：require('vv-git').{ setup | open | close | toggle | refresh }
--- 用户命令：:VVGit / :VVGitClose / :VVGitToggle / :VVGitRefresh
+-- 公开 API 只由文件末尾的 Public facade 返回；`_` 前缀方法仅供内部模块协作
+-- 用户命令统一在 setup() 注册，完整清单见 README「公开接口」
 
 local HL = require('vv-git.hl')
 local RightView = require('vv-git.right.view')
 local Autocmds = require('vv-git.autocmds')
 local Fs = require('vv-utils.fs')
+local State = require('vv-git.state')
 
 local M = {}
 
@@ -48,6 +49,28 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
 ---@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
 ---@field subrepo VVGitSubrepoConfig  嵌套子仓库扫描
+
+---@class VVGitContext
+---@field root string
+---@field path? string
+---@field mode 'workspace'|'compare'
+---@field layout? 'staged'|'diff2'|'single'|'conflict3'
+---@field panel_visible boolean
+---@field from_ref? string
+---@field to_ref? string
+
+---@class VVGitCallbacks
+---@field on_ready? fun(context:VVGitContext)
+---@field on_error? fun(message:string)
+---@field on_close? fun(context:VVGitContext)
+
+---@class VVGitOpenOpts: VVGitCallbacks
+---@field root? string Git 仓库或仓库内目录；省略时从当前 cwd 探测
+---@field path? string 打开后定位的仓库内相对路径或绝对路径
+
+---@class VVGitRevisionOpts: VVGitCallbacks
+---@field root? string Git 仓库或仓库内目录；省略时从当前 cwd 探测
+---@field path? string 打开后定位的仓库内相对路径或绝对路径
 local defaults = {
   width = 30,
   single_col_threshold = 120,
@@ -115,8 +138,13 @@ end
 
 --- 临时设置子仓库扫描深度（不写盘）
 ---@param n integer
+---@return boolean ok, string? err
 function M.set_subrepo_depth(n)
+  if type(n) ~= 'number' or n < 0 or n ~= math.floor(n) then
+    return false, 'subrepo depth must be an integer >= 0'
+  end
   M._subrepo_depth_override = n
+  return true
 end
 
 ---@param opts VVGitConfig?
@@ -142,7 +170,7 @@ function M.setup(opts)
   })
 
   local function ucmd(name, fn, cfg)
-    vim.api.nvim_create_user_command(name, fn, cfg or {})
+    vim.api.nvim_create_user_command(name, fn, vim.tbl_extend('force', { force = true }, cfg or {}))
   end
   ucmd('VVGit',             function() M.open() end)
   ucmd('VVGitClose',        function() M.close() end)
@@ -171,11 +199,11 @@ function M.setup(opts)
       return
     end
     local n = tonumber(o.args)
-    if not n or n < 0 or n ~= math.floor(n) then
-      vim.notify('[vv-git] invalid depth: ' .. tostring(o.args) .. ' (expect integer >= 0)', vim.log.levels.ERROR)
+    local ok, err = M.set_subrepo_depth(n)
+    if not ok then
+      vim.notify('[vv-git] invalid depth: ' .. tostring(o.args) .. ' (' .. err .. ')', vim.log.levels.ERROR)
       return
     end
-    M.set_subrepo_depth(n)
     vim.notify('[vv-git] subrepo scan depth → ' .. n, vim.log.levels.INFO)
     M.refresh()
   end, { nargs = '?', desc = 'vv-git: temporarily set subrepo scan depth (not persisted)' })
@@ -206,9 +234,11 @@ function M.setup(opts)
     on_apply_layout     = function() M._apply_layout() end,
     on_ensure_invariant = function() M._ensure_invariant() end,
     on_reshow_view      = function() M._reshow_view() end,
+    on_closed           = function(state) M._emit_closed(state) end,
   }, M._config)
 
   vim.api.nvim_create_autocmd('VimLeavePre', {
+    group = vim.api.nvim_create_augroup('VVGitPersist', { clear = true }),
     callback = function()
       local State = require('vv-git.state')
       if not State.has() then return end
@@ -220,66 +250,138 @@ function M.setup(opts)
   })
 end
 
----@return table
-function M.config() return M._config end
+---@return VVGitConfig
+function M.config()
+  return vim.deepcopy(M._config)
+end
 
----@param on_close fun()?
-local function attach_on_close(on_close)
-  if not on_close then return end
+---@param fn function?
+---@param ... any
+function M._invoke_callback(fn, ...)
+  if type(fn) ~= 'function' then return end
+  local args = { ... }
+  vim.schedule(function()
+    local ok, err = pcall(fn, unpack(args))
+    if not ok then
+      vim.notify('[vv-git] callback failed: ' .. tostring(err), vim.log.levels.ERROR)
+    end
+  end)
+end
 
-  -- 面板开在独立 tabpage，按 q → M.close → tabclose；挂一次性 WinClosed 在面板窗口上，
-  -- 关闭时回调（schedule 到 tab 关完、已切回原 tab 后再执行）
-  local State = require('vv-git.state')
-  local s = State.has() and State.get() or nil
-  local win = s and s.panel and s.panel.win
-  if win and vim.api.nvim_win_is_valid(win) then
-    vim.api.nvim_create_autocmd('WinClosed', {
-      pattern = tostring(win),
-      once = true,
-      callback = function() vim.schedule(on_close) end,
-    })
+---@param state table
+---@return VVGitContext
+function M._context(state)
+  local compare = state.compare
+  local view = state.view
+  return {
+    root = state.git_root,
+    path = state.cur_path,
+    mode = compare and 'compare' or 'workspace',
+    layout = view and view.mode or nil,
+    panel_visible = state.panel ~= nil
+        and state.panel.win ~= nil
+        and vim.api.nvim_win_is_valid(state.panel.win),
+    from_ref = compare and compare.from_rev or nil,
+    to_ref = compare and compare.to_rev or nil,
+  }
+end
+
+---@param state table
+---@param on_close function?
+function M._register_on_close(state, on_close)
+  if type(on_close) ~= 'function' then return end
+  state._on_close = state._on_close or {}
+  for _, callback in ipairs(state._on_close) do
+    if callback == on_close then return end
   end
+  state._on_close[#state._on_close + 1] = on_close
+end
+
+---@param state table
+function M._emit_closed(state)
+  local callbacks = state._on_close or {}
+  state._on_close = nil
+  local context = M._context(state)
+  for _, callback in ipairs(callbacks) do
+    M._invoke_callback(callback, context)
+  end
+end
+
+---@return boolean
+function M.is_open()
+  if not State.has() then return false end
+  local state = State.get()
+  return state.tabpage ~= nil and vim.api.nvim_tabpage_is_valid(state.tabpage)
+end
+
+---@return VVGitContext?
+function M.get_context()
+  if not M.is_open() then return nil end
+  return M._context(State.get())
 end
 
 --- 打开面板并直接展示指定 commit 的 diff（commit^..commit，初始 commit 用 empty-tree）
 --- 供外部集成调用（如 telescope git_log 选中 commit 后展示），跳过 vv-git 自己的 picker
 ---@param ref string
----@param on_close? fun()  面板关闭（按 q）后回调，用于回到调用方 UI（如 resume telescope）
-function M.show_commit(ref, on_close)
-  if not ref or ref == '' then return end
-  M.open()
-  M._commit_show(ref)
-  attach_on_close(on_close)
+---@param opts? VVGitRevisionOpts
+---@return boolean started
+function M.show_commit(ref, opts)
+  opts = opts or {}
+  if not ref or ref == '' then
+    M._invoke_callback(opts.on_error, 'ref is required')
+    return false
+  end
+  local opened = M.open({
+    root = opts.root,
+    path = opts.path,
+    on_close = opts.on_close,
+    on_error = opts.on_error,
+  })
+  if not opened then return false end
+  M._commit_show(ref, opts.on_ready, opts.on_error)
+  return true
 end
 
 --- 打开面板并比较任意 Git ref 与 HEAD（ref..HEAD）
 ---@param ref string
----@param on_close? fun()  面板关闭后回调，用于恢复外部 picker
-function M.compare_with_head(ref, on_close)
-  M.compare_refs(ref, 'HEAD', on_close)
+---@param opts? VVGitRevisionOpts
+---@return boolean started
+function M.compare_with_head(ref, opts)
+  return M.compare_refs(ref, 'HEAD', opts)
 end
 
 --- 打开面板并比较任意两个 Git ref（from_ref..to_ref）
 ---@param from_ref string
 ---@param to_ref string
----@param on_close? fun()  面板关闭后回调，用于恢复外部 picker
-function M.compare_refs(from_ref, to_ref, on_close)
-  if not from_ref or from_ref == '' or not to_ref or to_ref == '' then return end
-  M.open()
-  M._compare_refs(from_ref, to_ref)
-  attach_on_close(on_close)
+---@param opts? VVGitRevisionOpts
+---@return boolean started
+function M.compare_refs(from_ref, to_ref, opts)
+  opts = opts or {}
+  if not from_ref or from_ref == '' or not to_ref or to_ref == '' then
+    M._invoke_callback(opts.on_error, 'from_ref and to_ref are required')
+    return false
+  end
+  local opened = M.open({
+    root = opts.root,
+    path = opts.path,
+    on_close = opts.on_close,
+    on_error = opts.on_error,
+  })
+  if not opened then return false end
+  M._compare_refs(from_ref, to_ref, opts.on_ready, opts.on_error)
+  return true
 end
 
 --- 在当前 tab 的原生分屏中比较指定 ref 与当前 buffer / worktree 文件
 ---@param ref string
 ---@param opts? VVGitCompareFileOpts
 function M.compare_file(ref, opts)
-  require('vv-git.file_compare').open(ref, opts)
+  return require('vv-git.file_compare').open(ref, opts)
 end
 
 --- 退出当前面板的 ref 比较模式，返回普通工作区变更视图
 function M.stop_compare()
-  M._compare_stop()
+  return M._compare_stop()
 end
 
 -- 子模块往 M 上挂方法（open/close/toggle/_preview/_activate/_commit 等）
@@ -308,4 +410,16 @@ function M.get_node_dir()
   return id.node.is_dir and path or vim.fs.dirname(path)
 end
 
-return M
+local Public = {}
+for _, name in ipairs({
+  'setup', 'config',
+  'get_subrepo_depth', 'set_subrepo_depth',
+  'open', 'close', 'toggle', 'toggle_panel', 'refresh',
+  'is_open', 'get_context',
+  'show_commit', 'compare_with_head', 'compare_refs', 'compare_file', 'stop_compare',
+  'get_node_path', 'get_node_dir',
+}) do
+  Public[name] = M[name]
+end
+
+return Public

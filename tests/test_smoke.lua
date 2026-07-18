@@ -472,6 +472,7 @@ end
 
 local function test_compare_tag_with_head()
   local Compare = require('vv-git.compare')
+  local State = require('vv-git.state')
   local tmpdir = vim.fn.tempname()
   vim.fn.mkdir(tmpdir, 'p')
   vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
@@ -485,7 +486,9 @@ local function test_compare_tag_with_head()
   vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qam', 'v2' })
 
   local done = false
-  local state = { git_root = tmpdir }
+  State.clear()
+  local state = State.get()
+  state.git_root = tmpdir
   Compare.start(state, 'v1.0.0', 'v1.0.0', 'v1.0.0..HEAD', function() done = true end)
   assert_true(vim.wait(3000, function() return done end), 'tag..HEAD compare completed')
   assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', 'tag ref preserved as compare source')
@@ -499,6 +502,7 @@ local function test_compare_tag_with_head()
   assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', 'arbitrary refs preserve source ref')
   assert_eq(state.compare and state.compare.to_rev, 'HEAD', 'arbitrary refs preserve target ref')
 
+  State.clear()
   vim.fn.delete(tmpdir, 'rf')
 end
 
@@ -531,8 +535,10 @@ local function test_compare_file_uses_live_buffer()
   })
 
   local closed = false
+  local ready_context
   FileCompare.open('HEAD', {
     bufnr = source_buf,
+    on_ready = function(context) ready_context = context end,
     on_close = function() closed = true end,
   })
 
@@ -544,6 +550,10 @@ local function test_compare_file_uses_live_buffer()
     end
     return ref_buf ~= nil
   end), 'file compare opens the requested revision buffer')
+  assert_true(vim.wait(1000, function() return ready_context ~= nil end),
+    'file compare invokes ready callback')
+  assert_eq(ready_context.root, vim.uv.fs_realpath(tmpdir), 'file compare ready context carries root')
+  assert_eq(ready_context.ref, 'HEAD', 'file compare ready context carries ref')
 
   assert_eq(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)[1], 'unsaved',
     'file compare includes unsaved buffer lines')
@@ -581,13 +591,17 @@ local function test_compare_file_uses_live_buffer()
   assert_true(original_q_called, 'restored q mapping remains callable')
   assert_true(original_escape_called, 'restored escape mapping remains callable')
 
-  local restored_after_error = false
+  local compare_error
+  local closed_after_error = false
   FileCompare.open('missing-ref', {
     bufnr = source_buf,
-    on_close = function() restored_after_error = true end,
+    on_error = function(message) compare_error = message end,
+    on_close = function() closed_after_error = true end,
   })
-  assert_true(vim.wait(3000, function() return restored_after_error end),
-    'file compare restores caller when the ref cannot be loaded')
+  assert_true(vim.wait(3000, function() return compare_error ~= nil end),
+    'file compare invokes error callback when the ref cannot be loaded')
+  assert_true(compare_error:find('missing%-ref') ~= nil, 'file compare error identifies the missing ref')
+  assert_true(not closed_after_error, 'file compare does not report close when no view opened')
 
   pcall(vim.api.nvim_buf_delete, source_buf, { force = true })
   vim.fn.delete(tmpdir, 'rf')
@@ -729,6 +743,131 @@ local function test_state_lifecycle_identity()
   State.clear()
 end
 
+local function test_public_api_contract()
+  local Plugin = require('vv-git')
+  local public_methods = {
+    'setup', 'config',
+    'get_subrepo_depth', 'set_subrepo_depth',
+    'open', 'close', 'toggle', 'toggle_panel', 'refresh',
+    'is_open', 'get_context',
+    'show_commit', 'compare_with_head', 'compare_refs', 'compare_file', 'stop_compare',
+    'get_node_path', 'get_node_dir',
+  }
+
+  local expected = {}
+  for _, name in ipairs(public_methods) do
+    expected[name] = true
+    assert_eq(type(Plugin[name]), 'function', 'public API exposes ' .. name)
+  end
+  for name in pairs(Plugin) do
+    assert_true(expected[name] == true, 'public facade does not leak internal field ' .. name)
+  end
+  assert_true(Plugin._config == nil, 'public facade hides internal config')
+  assert_true(Plugin._action == nil, 'public facade hides internal actions')
+
+  local config_copy = Plugin.config()
+  local configured_width = config_copy.width
+  config_copy.width = -1
+  assert_eq(Plugin.config().width, configured_width, 'config returns an isolated copy')
+
+  local depth_ok = Plugin.set_subrepo_depth(2)
+  assert_true(depth_ok, 'public subrepo depth accepts a non-negative integer')
+  assert_eq(Plugin.get_subrepo_depth(), 2, 'public subrepo depth reads the override')
+  local invalid_depth = Plugin.set_subrepo_depth(-1)
+  assert_true(not invalid_depth, 'public subrepo depth rejects negative values')
+  Plugin.set_subrepo_depth(0)
+
+  Plugin.setup({
+    keymap_toggle_panel = false,
+    auto_refresh = false,
+    preview = false,
+    subrepo = { depth = 0 },
+  })
+
+  for _, command in ipairs({
+    'VVGit', 'VVGitClose', 'VVGitToggle', 'VVGitTogglePanel', 'VVGitRefresh',
+    'VVGitCompare', 'VVGitCompareRef', 'VVGitCompareRefs', 'VVGitCompareFile',
+    'VVGitCompareStop', 'VVGitCommitShow', 'VVGitWorktree', 'VVGitPublish',
+    'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
+  }) do
+    assert_eq(vim.fn.exists(':' .. command), 2, 'setup registers :' .. command)
+  end
+
+  local invalid_error
+  local invalid_open = Plugin.open({
+    root = '/vv-git/not-a-repository',
+    on_error = function(message) invalid_error = message end,
+  })
+  assert_true(not invalid_open, 'root-aware open rejects a non-repository')
+  assert_true(vim.wait(1000, function() return invalid_error ~= nil end),
+    'root-aware open invokes error callback')
+
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.name', 'vv-git test' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.email', 'test@example.com' })
+  vim.fn.writefile({ 'committed' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'initial' })
+  vim.fn.writefile({ 'changed' }, tmpdir .. '/sample.txt')
+
+  local ready_context, close_context, open_error
+  local opened = Plugin.open({
+    root = tmpdir,
+    path = 'sample.txt',
+    on_ready = function(context) ready_context = context end,
+    on_error = function(message) open_error = message end,
+    on_close = function(context) close_context = context end,
+  })
+  assert_true(opened, 'root-aware open starts for an explicit repository')
+  assert_true(vim.wait(3000, function() return ready_context ~= nil end),
+    'root-aware open invokes ready callback')
+  assert_true(open_error == nil, 'root-aware open does not report a false error')
+  assert_true(Plugin.is_open(), 'is_open reports the active vv-git tab')
+  assert_eq(ready_context.root, vim.uv.fs_realpath(tmpdir), 'open context carries normalized root')
+  assert_eq(ready_context.path, 'sample.txt', 'open context carries requested path')
+  assert_eq(ready_context.mode, 'workspace', 'open context reports workspace mode')
+
+  Plugin.toggle_panel()
+  assert_true(Plugin.is_open(), 'hiding the panel keeps the vv-git tab open')
+  assert_true(close_context == nil, 'hiding the panel does not invoke close callback')
+  Plugin.toggle_panel()
+
+  local compare_context, compare_error
+  assert_true(Plugin.compare_refs('HEAD', 'HEAD', {
+    root = tmpdir,
+    on_ready = function(context) compare_context = context end,
+    on_error = function(message) compare_error = message end,
+  }), 'public compare_refs starts with an explicit root')
+  assert_true(vim.wait(3000, function() return compare_context ~= nil end),
+    'public compare_refs invokes ready callback')
+  assert_true(compare_error == nil, 'public compare_refs does not report a false error')
+  assert_eq(compare_context.mode, 'compare', 'compare context reports compare mode')
+  assert_eq(compare_context.from_ref, 'HEAD', 'compare context carries source ref')
+  assert_eq(compare_context.to_ref, 'HEAD', 'compare context carries target ref')
+  assert_true(Plugin.stop_compare(), 'stop_compare exits an active comparison')
+  assert_eq(Plugin.get_context().mode, 'workspace', 'stop_compare restores workspace context')
+
+  local revision_error
+  assert_true(Plugin.compare_refs('missing-ref', 'HEAD', {
+    root = tmpdir,
+    on_error = function(message) revision_error = message end,
+  }), 'public compare_refs accepts an asynchronous comparison request')
+  assert_true(vim.wait(3000, function() return revision_error ~= nil end),
+    'public compare_refs invokes error callback for an invalid ref')
+  assert_true(revision_error:find('missing%-ref') ~= nil,
+    'public compare_refs error identifies the invalid ref')
+
+  Plugin.close()
+  assert_true(vim.wait(1000, function() return close_context ~= nil end),
+    'closing the vv-git tab invokes close callback')
+  assert_true(not Plugin.is_open(), 'is_open clears after the vv-git tab closes')
+  assert_eq(close_context.root, vim.uv.fs_realpath(tmpdir), 'close context preserves repository root')
+
+  vim.fn.delete(tmpdir, 'rf')
+end
+
 -- 执行所有测试
 log('========== vv-git.nvim 变更验证 ==========')
 test_discard_untracked_exists()
@@ -751,6 +890,7 @@ test_compare_file_uses_live_buffer()
 test_panel_action_keys_are_highlighted()
 test_repo_info_parser_and_publish()
 test_state_lifecycle_identity()
+test_public_api_contract()
 log('========== 测试完成 ==========')
 print(string.format('总计: %d 通过, %d 失败', _passed, _failed))
 if _failed > 0 then os.exit(1) end

@@ -47,22 +47,26 @@ function L.attach(M)
     M._compare_refs(ref, 'HEAD')
   end)
 
-  M._compare_refs = State.guarded(function(state, from_ref, to_ref)
+  M._compare_refs = State.guarded(function(state, from_ref, to_ref, on_ready, on_error)
     if not state.git_root or not from_ref or from_ref == '' or not to_ref or to_ref == '' then return end
     local Compare = require('vv-git.compare')
     Compare.start_refs(state, from_ref, to_ref, from_ref:sub(1, 7), from_ref .. '..' .. to_ref, function()
       state.selection = {}
       RightView.close(state)
       LeftRender.render(state)
+      M._invoke_callback(on_ready, M._context(state))
+    end, function(message)
+      M._invoke_callback(on_error, message)
     end)
   end)
 
   M._compare_stop = State.guarded(function(state)
-    if not state.compare then return end
+    if not state.compare then return false end
     require('vv-git.compare').stop(state)
     state.selection = {}
     RightView.close(state)
     LeftRender.render(state)
+    return true
   end)
 
   M._commit_show_pick = State.guarded(function(state)
@@ -78,7 +82,7 @@ function L.attach(M)
   end)
 
   -- 展示指定 commit 的 diff（hash 由外部选好，跳过 open_picker）。供公开 M.show_commit / 外部集成（telescope git_log 等）用
-  M._commit_show = State.guarded(function(state, hash)
+  M._commit_show = State.guarded(function(state, hash, on_ready, on_error)
     if not state.git_root or not hash or hash == '' then return end
     local Compare = require('vv-git.compare')
     local short = hash:sub(1, 7)
@@ -89,6 +93,9 @@ function L.attach(M)
       state.selection = {}
       RightView.close(state)
       LeftRender.render(state)
+      M._invoke_callback(on_ready, M._context(state))
+    end, function(message)
+      M._invoke_callback(on_error, message)
     end)
   end)
 

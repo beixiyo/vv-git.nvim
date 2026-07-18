@@ -23,7 +23,12 @@
 {
   'beixiyo/vv-git.nvim',
   dependencies = { 'beixiyo/vv-utils.nvim' },
-  cmd = { 'VVGit', 'VVGitToggle', 'VVGitClose', 'VVGitPublish' },
+  cmd = {
+    'VVGit', 'VVGitClose', 'VVGitToggle', 'VVGitTogglePanel', 'VVGitRefresh',
+    'VVGitCompare', 'VVGitCompareRef', 'VVGitCompareRefs', 'VVGitCompareFile',
+    'VVGitCompareStop', 'VVGitCommitShow', 'VVGitWorktree', 'VVGitPublish',
+    'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
+  },
   keys = { '<leader>b' },
   ---@type VVGitConfig
   opts = {
@@ -187,12 +192,72 @@ opts = {
 
 提交完成或切换到尚未发布的新分支后，面板会显示 `u  Publish <branch>`。当前分支名由 Git 直接读取，因此不额外询问分支；仅当仓库完全没有 remote 时询问 `origin` URL。也可在面板外执行 `:VVGitPublish`
 
-## 外部 revision 集成
+## 公开接口
 
-- `:VVGitShow <ref>` / `require('vv-git').show_commit(ref, on_close?)` 展示任意 commit-ish ref 引入的变更，包括 tag
-- `:VVGitCompareRef <ref>` / `require('vv-git').compare_with_head(ref, on_close?)` 展示累计的 `<ref>..HEAD` 差异
-- `:VVGitCompareRefs <from-ref> <to-ref>` / `require('vv-git').compare_refs(from_ref, to_ref, on_close?)` 对比任意两个 Git ref
-- `:VVGitCompareFile <ref>` / `require('vv-git').compare_file(ref, opts?)` 在当前 tab 的原生垂直分屏中，对比当前 buffer 或 worktree 文件与指定 ref 中的同一文件；包含未保存的 buffer 内容，不依赖外部 diff 工具
-- `:VVGitCompareStop` / `require('vv-git').stop_compare()` 退出当前 ref 比较模式，恢复普通工作区变更视图
+### 用户命令
 
-面板 API 都可传入可选的关闭回调，便于 Telescope 或其他 picker 在 vv-git tab 关闭后恢复。`compare_file` 接受 `{ bufnr?, path?, root?, on_close? }`。
+| 分类 | 命令 |
+|------|------|
+| 面板 | `:VVGit`、`:VVGitClose`、`:VVGitToggle`、`:VVGitTogglePanel`、`:VVGitRefresh` |
+| 选择器 | `:VVGitCompare`、`:VVGitCommitShow`、`:VVGitWorktree` |
+| Revision | `:VVGitShow <ref>`、`:VVGitCompareRef <ref>`、`:VVGitCompareRefs <from> <to>`、`:VVGitCompareFile <ref>`、`:VVGitCompareStop` |
+| Git 操作 | `:VVGitPublish` |
+| 配置 / 加载 | `:VVGitSubrepoDepth [n]`、`:VVGitLoad`（仅作为 lazy-load 入口） |
+
+### Lua API
+
+```lua
+local git = require('vv-git')
+
+git.setup(opts)
+git.config()                         -- 返回配置副本
+git.open({ root?, path?, on_ready?, on_error?, on_close? })
+git.close()
+git.toggle()
+git.toggle_panel()
+git.refresh()
+git.is_open()
+git.get_context()
+
+git.show_commit(ref, opts?)
+git.compare_with_head(ref, opts?)
+git.compare_refs(from_ref, to_ref, opts?)
+git.compare_file(ref, opts?)
+git.stop_compare()
+
+git.get_subrepo_depth()
+git.set_subrepo_depth(n)
+git.get_node_path()
+git.get_node_dir()
+```
+
+`open` 与面板 revision API 的 `opts` 支持：
+
+```lua
+{
+  root = '/path/to/repo',            -- 仓库或仓库内目录；默认从 cwd 探测
+  path = 'src/main.lua',             -- 仓库内相对路径或绝对路径
+  on_ready = function(context) end,  -- 面板 / revision 数据就绪
+  on_error = function(message) end,
+  on_close = function(context) end,  -- 整个 vv-git tab 关闭时触发
+}
+```
+
+`get_context()` 与回调中的 `context` 是稳定快照，包含 `root`、`path`、`mode`、`layout`、`panel_visible`、`from_ref`、`to_ref`。
+
+`compare_file` 在当前 tab 的原生垂直分屏中对比当前 buffer 或 worktree 文件与指定 ref 中的同一文件，并包含未保存内容。它额外接受 `bufnr`，回调 context 提供 `root`、`path`、`ref`、`bufnr`、`source_win`、`ref_win`。
+
+所有 `_` 开头的字段和方法都是内部实现，不属于公开 API，外部调用方不应依赖。
+
+### 外部事件
+
+每次仓库索引刷新完成后触发：
+
+```lua
+vim.api.nvim_create_autocmd('User', {
+  pattern = 'VVGitStatusChanged',
+  callback = function(args)
+    local root = args.data.root
+  end,
+})
+```

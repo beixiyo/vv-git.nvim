@@ -23,7 +23,12 @@
 {
   'beixiyo/vv-git.nvim',
   dependencies = { 'beixiyo/vv-utils.nvim' },
-  cmd = { 'VVGit', 'VVGitToggle', 'VVGitClose', 'VVGitPublish' },
+  cmd = {
+    'VVGit', 'VVGitClose', 'VVGitToggle', 'VVGitTogglePanel', 'VVGitRefresh',
+    'VVGitCompare', 'VVGitCompareRef', 'VVGitCompareRefs', 'VVGitCompareFile',
+    'VVGitCompareStop', 'VVGitCommitShow', 'VVGitWorktree', 'VVGitPublish',
+    'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
+  },
   keys = { '<leader>b' },
   ---@type VVGitConfig
   opts = {
@@ -186,12 +191,72 @@ These mappings are active inside the left panel:
 
 After the first commit or after switching to an unpublished branch, the panel shows `u  Publish <branch>`. The branch name comes directly from Git, so it is never requested separately. Outside the panel, use `:VVGitPublish`
 
-## External Revision Integration
+## Public Interfaces
 
-- `:VVGitShow <ref>` / `require('vv-git').show_commit(ref, on_close?)` displays the change introduced by any commit-ish ref, including tags
-- `:VVGitCompareRef <ref>` / `require('vv-git').compare_with_head(ref, on_close?)` displays the cumulative `<ref>..HEAD` difference
-- `:VVGitCompareRefs <from-ref> <to-ref>` / `require('vv-git').compare_refs(from_ref, to_ref, on_close?)` compares any two Git refs
-- `:VVGitCompareFile <ref>` / `require('vv-git').compare_file(ref, opts?)` compares the current buffer or worktree file with the same file at a Git ref in a native vertical split; unsaved buffer lines are included and no external diff tool is required
-- `:VVGitCompareStop` / `require('vv-git').stop_compare()` leaves the current ref comparison and restores the regular workspace changes view
+### User Commands
 
-The panel APIs accept an optional close callback so Telescope or another picker can resume after the vv-git tab closes. `compare_file` accepts `{ bufnr?, path?, root?, on_close? }`.
+| Category | Commands |
+|----------|----------|
+| Panel | `:VVGit`, `:VVGitClose`, `:VVGitToggle`, `:VVGitTogglePanel`, `:VVGitRefresh` |
+| Pickers | `:VVGitCompare`, `:VVGitCommitShow`, `:VVGitWorktree` |
+| Revisions | `:VVGitShow <ref>`, `:VVGitCompareRef <ref>`, `:VVGitCompareRefs <from> <to>`, `:VVGitCompareFile <ref>`, `:VVGitCompareStop` |
+| Git operation | `:VVGitPublish` |
+| Configuration / loading | `:VVGitSubrepoDepth [n]`, `:VVGitLoad` (lazy-load hook only) |
+
+### Lua API
+
+```lua
+local git = require('vv-git')
+
+git.setup(opts)
+git.config()                         -- returns a configuration copy
+git.open({ root?, path?, on_ready?, on_error?, on_close? })
+git.close()
+git.toggle()
+git.toggle_panel()
+git.refresh()
+git.is_open()
+git.get_context()
+
+git.show_commit(ref, opts?)
+git.compare_with_head(ref, opts?)
+git.compare_refs(from_ref, to_ref, opts?)
+git.compare_file(ref, opts?)
+git.stop_compare()
+
+git.get_subrepo_depth()
+git.set_subrepo_depth(n)
+git.get_node_path()
+git.get_node_dir()
+```
+
+`open` and the panel revision APIs accept:
+
+```lua
+{
+  root = '/path/to/repo',            -- repository or a directory inside it; defaults to cwd
+  path = 'src/main.lua',             -- repository-relative or absolute path
+  on_ready = function(context) end,  -- panel / revision data is ready
+  on_error = function(message) end,
+  on_close = function(context) end,  -- the entire vv-git tab has closed
+}
+```
+
+`get_context()` and callbacks receive a stable snapshot containing `root`, `path`, `mode`, `layout`, `panel_visible`, `from_ref`, and `to_ref`.
+
+`compare_file` opens a native vertical diff for the current buffer or worktree file and includes unsaved lines. It additionally accepts `bufnr`; callback contexts include `root`, `path`, `ref`, `bufnr`, `source_win`, and `ref_win`.
+
+Fields and methods whose names start with `_` are internal implementation details and are not part of the public API.
+
+### External Event
+
+The plugin emits this event after each repository index refresh:
+
+```lua
+vim.api.nvim_create_autocmd('User', {
+  pattern = 'VVGitStatusChanged',
+  callback = function(args)
+    local root = args.data.root
+  end,
+})
+```

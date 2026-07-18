@@ -1,11 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-07-18
 
 ### Added
 
 - 新增 `u` / `:VVGitPublish`，按当前仓库的 upstream 与 remote 状态智能发布新分支；无 remote 时只询问 `origin` URL
 - 左侧面板新增 `zR`，无需移动焦点即可切换右侧 diff 的全部折叠 / 全部展开
+- 新增 root-aware `open` / revision API、`is_open()` / `get_context()` 与 ready / error / close 生命周期回调
+
+### Changed
+
+- `require('vv-git')` 仅返回稳定公开 API，`_` 前缀内部方法不再对外暴露
+- revision API 统一使用 opts table 传递 `root`、`path` 与生命周期回调
+- README 安装示例补齐全部 lazy-load 命令，并记录公开函数与 `User VVGitStatusChanged` 事件
 
 ### Fixed
 
