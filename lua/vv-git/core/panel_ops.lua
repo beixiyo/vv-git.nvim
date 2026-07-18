@@ -178,6 +178,11 @@ function L.attach(M)
     LeftRender.render(state)
   end)
 
+  -- 焦点保持在左侧 panel，折叠动作在右侧当前 diff 窗口上下文执行。
+  M._toggle_diff_folds = State.guarded(function(state)
+    RightView.toggle_all_folds(state)
+  end)
+
   M._collapse = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end

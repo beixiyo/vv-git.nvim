@@ -220,6 +220,7 @@ local function test_panel_edge_file_keymaps()
     selection = {},
   }
   local noop = function() end
+  local toggle_diff_calls = 0
   local mock = {
     _config = { keymap_select = '<Tab>', right_click = false, mappings = {} },
     close = noop,
@@ -231,6 +232,7 @@ local function test_panel_edge_file_keymaps()
     _yank_abs_path = noop,
     _toggle_select = noop,
     _collapse = noop,
+    _toggle_diff_folds = function() toggle_diff_calls = toggle_diff_calls + 1 end,
     _action = noop,
     _commit = noop,
     _push = noop,
@@ -257,6 +259,9 @@ local function test_panel_edge_file_keymaps()
   callbacks.G()
   assert_eq(vim.api.nvim_win_get_cursor(win)[1], 6, 'G jumps to last file row')
   assert_eq(type(callbacks.u), 'function', 'u (publish) mapping is installed')
+  assert_eq(type(callbacks.zR), 'function', 'zR (toggle right diff folds) mapping is installed')
+  callbacks.zR()
+  assert_eq(toggle_diff_calls, 1, 'zR invokes right diff fold toggle')
 
   -- 左侧面板驱动右侧 diff chunk 跳转：]c / [c 已安装，且无 diff 视图时安全早退（不报错）
   assert_eq(type(callbacks[']c']), 'function', ']c (next_chunk) mapping is installed')
@@ -275,6 +280,72 @@ local function test_panel_edge_file_keymaps()
 
   vim.api.nvim_win_set_buf(win, old_buf)
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
+end
+
+local function test_panel_drives_right_diff_folds()
+  local RightView = require('vv-git.right.view')
+  local panel_win = vim.api.nvim_get_current_win()
+  local panel_buf = vim.api.nvim_win_get_buf(panel_win)
+  local diff_buf = vim.api.nvim_create_buf(false, true)
+
+  vim.api.nvim_buf_set_lines(diff_buf, 0, -1, false, {
+    'one', 'two', 'three', 'four', 'five', 'six',
+  })
+  vim.cmd('rightbelow vsplit')
+  local diff_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(diff_win, diff_buf)
+  vim.api.nvim_set_option_value('foldmethod', 'manual', { win = diff_win })
+  vim.api.nvim_set_option_value('foldenable', true, { win = diff_win })
+  vim.api.nvim_win_call(diff_win, function()
+    vim.cmd('2,5fold')
+    vim.cmd('normal! zM')
+  end)
+
+  vim.api.nvim_set_current_win(panel_win)
+  local state = { view = { mode = 'single', b_win = diff_win, b_buf = diff_buf } }
+
+  assert_true(RightView.toggle_all_folds(state), 'panel zR finds single-column right diff')
+  assert_eq(vim.api.nvim_get_current_win(), panel_win, 'opening diff folds keeps focus in panel')
+  local opened = vim.api.nvim_win_call(diff_win, function() return vim.fn.foldclosed(3) end)
+  assert_eq(opened, -1, 'first panel zR opens all right diff folds')
+
+  assert_true(RightView.toggle_all_folds(state), 'panel zR handles an open right diff')
+  assert_eq(vim.api.nvim_get_current_win(), panel_win, 'closing diff folds keeps focus in panel')
+  local closed = vim.api.nvim_win_call(diff_win, function() return vim.fn.foldclosed(3) end)
+  assert_eq(closed, 2, 'second panel zR closes all right diff folds')
+
+  vim.api.nvim_set_current_win(diff_win)
+  vim.cmd('leftabove vsplit')
+  local left_diff_win = vim.api.nvim_get_current_win()
+  local left_diff_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(left_diff_buf, 0, -1, false, {
+    'one', 'two', 'three', 'four', 'five', 'six',
+  })
+  vim.api.nvim_win_set_buf(left_diff_win, left_diff_buf)
+  vim.api.nvim_set_option_value('foldmethod', 'manual', { win = left_diff_win })
+  vim.api.nvim_set_option_value('foldenable', true, { win = left_diff_win })
+  vim.api.nvim_win_call(left_diff_win, function()
+    vim.cmd('2,5fold')
+    vim.cmd('normal! zM')
+  end)
+
+  state.view.a_win = left_diff_win
+  state.view.a_buf = left_diff_buf
+  vim.api.nvim_set_current_win(panel_win)
+
+  assert_true(RightView.toggle_all_folds(state), 'panel zR finds both diff columns')
+  assert_eq(vim.api.nvim_get_current_win(), panel_win, 'toggling two diff columns keeps focus in panel')
+  local left_opened = vim.api.nvim_win_call(left_diff_win, function() return vim.fn.foldclosed(3) end)
+  local right_opened = vim.api.nvim_win_call(diff_win, function() return vim.fn.foldclosed(3) end)
+  assert_eq(left_opened, -1, 'panel zR opens all left diff folds')
+  assert_eq(right_opened, -1, 'panel zR opens all right diff folds in two-column view')
+
+  vim.api.nvim_win_close(left_diff_win, true)
+  vim.api.nvim_win_close(diff_win, true)
+  pcall(vim.api.nvim_buf_delete, left_diff_buf, { force = true })
+  pcall(vim.api.nvim_buf_delete, diff_buf, { force = true })
+  vim.api.nvim_set_current_win(panel_win)
+  vim.api.nvim_win_set_buf(panel_win, panel_buf)
 end
 
 -- 测试 7: block_insert_mode 存在于 view.lua（间接：检查模块加载无报错）
@@ -668,6 +739,7 @@ test_unstage_without_head()
 test_unstage_with_head()
 test_insert_mode_blocked()
 test_panel_edge_file_keymaps()
+test_panel_drives_right_diff_folds()
 test_view_module_loads()
 test_right_diff_chunk_keymaps()
 test_narrow_single_col_design()

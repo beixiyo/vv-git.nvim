@@ -169,6 +169,7 @@ These mappings are active inside the left panel:
 | `o` | Open with a system tool: files use the default application and directories use the file manager |
 | `X` | Execute according to file type: resolve a runner, ask for confirmation, then run it in a bottom split terminal (file nodes only) |
 | `h` / `←` | Collapse the current node; a child file collapses to its parent directory; on a **top-level file or section heading**, collapse the entire section (Staged / Changes / Merge Conflicts) and return to its heading (`←` matches `h`) |
+| `zR` | Keep focus in the left panel while toggling all folds in the current right-side diff |
 | `-` | Single selection: toggle stage/unstage; **multi-selection:** batch stage/unstage |
 | `d` | Single selection—staged: unstage; unstaged: discard after confirmation; **multi-selection:** batch the corresponding single-selection behavior |
 | `c` | Commit |

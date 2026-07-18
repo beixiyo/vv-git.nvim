@@ -112,6 +112,57 @@ local FOLD_CMDS = {
   'za', 'zA', 'ze', 'zE', 'zo', 'zc', 'zO', 'zC',
   'zr', 'zm', 'zR', 'zM', 'zv', 'zx', 'zX', 'zn', 'zN', 'zi',
 }
+
+---@param view table
+---@return integer[]
+local function fold_windows(view)
+  local wins = {}
+  for _, key in ipairs({ 'a_win', 'b_win' }) do
+    local win = view[key]
+    if win and api.nvim_win_is_valid(win)
+        and api.nvim_get_option_value('foldenable', { win = win }) then
+      wins[#wins + 1] = win
+    end
+  end
+  return wins
+end
+
+---@param win integer
+---@return boolean
+local function has_closed_folds(win)
+  return api.nvim_win_call(win, function()
+    local count = api.nvim_buf_line_count(api.nvim_win_get_buf(win))
+    for row = 1, count do
+      if vim.fn.foldclosed(row) > 0 then return true end
+    end
+    return false
+  end)
+end
+
+---@param view table
+---@return boolean handled
+local function toggle_view_folds(view)
+  local wins = fold_windows(view)
+  if #wins == 0 then return false end
+
+  local open_all = false
+  for _, win in ipairs(wins) do
+    if has_closed_folds(win) then
+      open_all = true
+      break
+    end
+  end
+
+  local cmd = open_all and 'zR' or 'zM'
+  for _, win in ipairs(wins) do
+    api.nvim_win_call(win, function()
+      pcall(vim.cmd, 'normal! ' .. cmd)
+    end)
+  end
+  pcall(function() require('vv-statuscol').refresh() end)
+  return true
+end
+
 for _, cmd in ipairs(FOLD_CMDS) do
   RIGHT_KEYS_SPEC[#RIGHT_KEYS_SPEC + 1] = {
     cmd,
@@ -1147,6 +1198,13 @@ function M.show(state, node, section, force_single, root)
       render_dual_rev_worktree(':0')                   -- 正常 unstaged diff
     end
   end
+end
+
+---从 panel 驱动当前右侧 diff 的全部折叠 / 展开，调用前后焦点窗口不变
+---@param state table
+---@return boolean handled
+function M.toggle_all_folds(state)
+  return state.view and toggle_view_folds(state.view) or false
 end
 
 ---@param state table

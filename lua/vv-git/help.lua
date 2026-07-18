@@ -35,6 +35,7 @@ local ACTIONS = {
   next_chunk    = { cat = 'View',     icon = '' },
   prev_chunk    = { cat = 'View',     icon = '' },
   refresh       = { cat = 'View',     icon = '' },
+  toggle_diff_folds = { cat = 'View', icon = '' },
   help          = { cat = 'View',     icon = '' },
   __close       = { cat = 'View',     icon = '' },
 }

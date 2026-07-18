@@ -184,6 +184,7 @@ function L.install(state, M)
   map(M._config.keymap_select, function() M._toggle_select() end,  'toggle_select')
   map('h',             function() M._collapse() end,               'close_node')
   map('<Left>',        function() M._collapse() end,               'close_node')  -- ← 同 h
+  map('zR',            function() M._toggle_diff_folds() end,      'toggle_diff_folds')
   map('-',             function() M._action('toggle_stage') end,   'toggle_stage')
   map('d',             function() M._action('discard') end,        'discard')
   map('<',             function() M._action('accept_ours') end,    'accept_ours')

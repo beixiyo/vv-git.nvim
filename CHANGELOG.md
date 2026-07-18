@@ -5,6 +5,7 @@
 ### Added
 
 - 新增 `u` / `:VVGitPublish`，按当前仓库的 upstream 与 remote 状态智能发布新分支；无 remote 时只询问 `origin` URL
+- 左侧面板新增 `zR`，无需移动焦点即可切换右侧 diff 的全部折叠 / 全部展开
 
 ### Fixed
 
