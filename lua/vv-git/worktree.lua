@@ -131,7 +131,7 @@ function M.open_picker(state, on_select)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     for row, segs in ipairs(all_segs) do
       for _, s in ipairs(segs) do
-        pcall(vim.api.nvim_buf_add_highlight, buf, NS, s.hl, row - 1, s.col, s.col + s.len)
+        pcall(vim.api.nvim_buf_set_extmark, buf, NS, row - 1, s.col, { end_col = s.col + s.len, hl_group = s.hl })
       end
     end
     vim.bo[buf].modifiable = false

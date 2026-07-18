@@ -124,7 +124,8 @@ function M.build(state)
   ---@param text_hl? string
   local function push_key_hint(key, text, text_hl)
     local prefix = '  '
-    local line = prefix .. key .. '  ' .. text
+    local display_key = #key == 1 and key:upper() or key
+    local line = prefix .. text .. '  ' .. display_key
     push_text(line, text_hl or 'VVGitCommitHint')
     extmarks[#extmarks + 1] = {
       row = #lines - 1,
@@ -354,7 +355,7 @@ function M.build(state)
     end
 
     push_blank()
-    push_key_hint('<Esc>', 'Exit compare mode', 'Comment')
+    push_key_hint('Esc', 'Exit compare mode', 'Comment')
 
     return lines, extmarks, id_by_line
   end

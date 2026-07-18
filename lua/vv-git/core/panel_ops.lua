@@ -261,6 +261,12 @@ function L.attach(M)
 
   M._action = State.guarded(function(state, name)
     if state.compare then return end
+    -- yank_abs_path 不在 Actions 分派表内（它是 M 上的独立命令、不改动树、无需 hint）：
+    -- 直接委派到 M._yank_abs_path，right_click='yank_abs_path' 才能真正触发
+    if name == 'yank_abs_path' then
+      M._yank_abs_path()
+      return
+    end
     if next(state.selection) then
       local items = {}
       for key in pairs(state.selection) do
@@ -285,14 +291,17 @@ function L.attach(M)
       state.cur_path = id.node.relpath
       state.cur_section = id.section
     end
+    local fn = Actions[name]
+    -- 未识别的 action：直接返回，绝不写 _action_hint——否则残留 hint 会在下次
+    -- passive render 时被消费而错位光标
+    if not fn then return end
     if id.node and id.section and state.panel and state.panel.win
         and vim.api.nvim_win_is_valid(state.panel.win) then
       local lnum = vim.api.nvim_win_get_cursor(state.panel.win)[1]
       local next_path, prev_path = action_neighbor_leaves(state, id, lnum)
       state._action_hint = { section = id.section, lnum = lnum, next_path = next_path, prev_path = prev_path }
     end
-    local fn = Actions[name]
-    if fn then fn(state, id) end
+    fn(state, id)
   end)
 
   -- layout
