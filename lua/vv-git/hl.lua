@@ -34,7 +34,7 @@ local function build_specs()
     VVGitPanelDir       = { link = 'Directory' },
     VVGitPanelStagedDir = { link = 'Keyword' },
     VVGitPanelSubrepo   = { link = 'Special', bold = true }, -- 子仓库块标题：跟随主题（Special）+ 加粗，与普通目录拉开
-    VVGitPanelBranch    = { link = 'Comment' }, -- 仓库标题行的分支名（ 󰘬 <branch>）：低调跟随主题
+    VVGitPanelBranch    = { link = 'Keyword' }, -- 仓库标题行的分支名：使用主题关键字色，与橙色 icon / 蓝色仓库名分层
     VVGitPanelFile      = { link = 'Normal' },
     VVGitPanelIndent    = { link = 'Comment' },
     VVGitPanelMatch     = { link = 'Search' },

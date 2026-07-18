@@ -158,7 +158,7 @@ function M.build(state)
   -- 渲染一个仓库块标题行（根仓库 / 子仓库通用）：
   --   `<箭头> <分支icon> <分支>  <name>`
   -- 箭头可折叠（block_header=root）；分支 icon 用其自身语义色（MiniIconsOrange），
-  -- 分支名低调（VVGitPanelBranch），name 由调用方指定 hl（根=Title，子仓库=VVGitPanelSubrepo）
+  -- 分支名用主题关键字色（VVGitPanelBranch），name 由调用方指定 hl（根=Title，子仓库=VVGitPanelSubrepo）
   ---@param root string  仓库根（折叠 key / id.block_header）
   ---@param name string  显示名（根=仓库名，子仓库=相对路径）
   ---@param name_hl string
@@ -170,7 +170,7 @@ function M.build(state)
     local header = pad_to_cols(arrow_raw, ARROW_COLS)
     local ems = { { col = 0, len = #arrow_raw, hl = 'VVGitPanelIndent' } }
 
-    -- 分支前缀： 󰘬 <branch>（icon 彩色，branch 低调），放在 name 之前
+    -- 分支前缀： 󰘬 <branch>（icon 与 branch 分别使用语义色），放在 name 之前
     if branch and branch ~= '' then
       if BRANCH_ICON ~= '' then
         ems[#ems + 1] = { col = #header, len = #BRANCH_ICON, hl = BRANCH_ICON_HL }
