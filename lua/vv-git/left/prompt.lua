@@ -102,7 +102,7 @@ function M.open(opts)
     border = 'rounded',
     title = title,
     title_pos = 'center',
-    footer = ' Commit ^S  Cancel Esc/Q ',
+    footer = ' Commit ^s  Cancel Esc/q ',
     footer_pos = 'center',
   })
 
