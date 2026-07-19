@@ -7,7 +7,7 @@ local Fs = require('vv-utils.fs')
 local M = {}
 
 ---@param root string
----@param cb fun(index: UtilsGitIndex?)
+---@param cb fun(index: vv-utils.git.Index?)
 function M.index(root, cb)
   -- untracked = 'all'：展开所有 untracked 目录到单文件，以便精准过滤嵌套 git 仓库
   -- ignored = false：vv-git 不使用 is_ignored，跳过 --ignored 扫描
