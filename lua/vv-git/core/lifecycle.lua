@@ -49,6 +49,22 @@ local function resolve_relpath(root, path)
   return absolute:sub(#root + 2)
 end
 
+-- vv-explorer 最近一次切根（`]`/`[`）广播过来的目录，见 L.attach 里的 M._follow_external_root。
+-- 面板关着时 open() 无从得知用户在 explorer 里已经换了仓库（它只会问 getcwd()），
+-- 故在这里记一份，作为「无显式目标」时的首选候选根
+local external_root = nil
+
+-- 目录还在、且能解析出仓库根时才当候选；否则返回 nil 让调用方回退 getcwd()
+---@return string?
+local function external_candidate()
+  if not external_root then return nil end
+  if vim.fn.isdirectory(external_root) == 0 then
+    external_root = nil
+    return nil
+  end
+  return external_root
+end
+
 ---@param opts VVGitOpenOpts
 ---@return string? root, string? relpath, string? err
 local function resolve_open_context(opts)
@@ -57,7 +73,19 @@ local function resolve_open_context(opts)
     candidate = vim.fs.dirname(vim.fs.normalize(opts.path))
   end
 
+  -- 显式 root/path 优先；都没有才跟随 explorer 切根
+  local from_explorer = nil
+  if not candidate and not opts.path then
+    from_explorer = external_candidate()
+    candidate = from_explorer
+  end
+
   local root = UGit.root(candidate)
+  -- explorer 停在非仓库目录（~/Downloads 之类）时不该报错，回退原来的 getcwd() 语义
+  if not root and from_explorer then
+    candidate = nil
+    root = UGit.root(nil)
+  end
   if not root then
     return nil, nil, 'not a Git repository' .. (candidate and (': ' .. candidate) or '')
   end
@@ -300,6 +328,38 @@ function L.attach(M)
     Loader.reload_index(state, nil, true)
     return true
   end)
+
+  -- vv-explorer 按 `]`/`[` 切根后广播 User VVExplorerRootChanged → 这里跟随：
+  --   * 面板关着：只记住目录，下次 open() 用它当候选根（见 resolve_open_context）
+  --   * 面板开着：解析出仓库根，与当前 git_root 不同才切——同一仓库内部换目录不用动，
+  --     status 本来就是整仓库范围的，重载只会白闪一次
+  -- 切换语义与 _worktree_pick 对齐：清掉随旧 root 失效的瞬态（选中/比较/折叠/右视图）。
+  -- 不 tcd：事件是在 explorer 所在 tab 触发的，tcd 会改错 tab 的目录
+  ---@param dir string
+  function M._follow_external_root(dir)
+    if not dir or dir == '' then return end
+    external_root = vim.fs.normalize(dir)
+
+    if not State.has() then return end
+    local state = State.get()
+    if not state.panel or not state.git_root then return end
+
+    UGit.root_async(external_root, function(root)
+      -- 异步窗口期内面板可能已被关掉 / 重开成另一个 state
+      if not State.is_current(state) then return end
+      if not root or root == state.git_root then return end
+
+      state.git_root = root
+      state.cur_path = nil
+      state.selection = {}
+      state.folds = {}
+      state.section_folds = {}
+      state.block_folds = {}
+      require('vv-git.compare').stop(state)
+      RightView.close(state)
+      Loader.reload_index(state)
+    end)
+  end
 end
 
 return L

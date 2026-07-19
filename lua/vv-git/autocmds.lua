@@ -13,7 +13,7 @@ local Guard = require('vv-git.guard')
 
 local M = {}
 
----@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun(), on_closed:fun(state:table) }
+---@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun(), on_closed:fun(state:table), on_external_root:fun(dir:string) }
 ---@param config table?  vv-git 合并后的配置（读取 auto_refresh 等）
 function M.setup(handlers, config)
   config = config or {}
@@ -62,6 +62,17 @@ function M.setup(handlers, config)
         if need_reshow then handlers.on_reshow_view() end
       end)
     end),
+  })
+
+  -- vv-explorer 按 `]`/`[` 切根 → 面板跟着切仓库；面板没开也要收（记住目录给下次 open 用），
+  -- 故这里**不能**包 State.guarded
+  vim.api.nvim_create_autocmd('User', {
+    group = aug,
+    pattern = 'VVExplorerRootChanged',
+    callback = function(args)
+      local dir = args.data and args.data.root
+      if dir then handlers.on_external_root(dir) end
+    end,
   })
 
   -- BufEnter / FocusGained：捕获 BufWritePost / GitSignsChanged 之外的外部变化——

@@ -260,3 +260,14 @@ vim.api.nvim_create_autocmd('User', {
   end,
 })
 ```
+
+The plugin also *listens* for `User VVExplorerRootChanged` (emitted by [vv-explorer](https://github.com/beixiyo/vv-explorer.nvim) when its root changes). Broadcast it from any file tree to make the panel follow:
+
+```lua
+vim.api.nvim_exec_autocmds('User', {
+  pattern = 'VVExplorerRootChanged',
+  data = { root = '/path/to/dir' },
+})
+```
+
+While the panel is open it switches repositories only when the directory resolves to a different toplevel; when the panel is closed the directory is remembered and used as the default root on the next `open()`.

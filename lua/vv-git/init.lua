@@ -235,6 +235,7 @@ function M.setup(opts)
     on_ensure_invariant = function() M._ensure_invariant() end,
     on_reshow_view      = function() M._reshow_view() end,
     on_closed           = function(state) M._emit_closed(state) end,
+    on_external_root    = function(dir) M._follow_external_root(dir) end,
   }, M._config)
 
   vim.api.nvim_create_autocmd('VimLeavePre', {

@@ -261,3 +261,14 @@ vim.api.nvim_create_autocmd('User', {
   end,
 })
 ```
+
+同时**监听** `User VVExplorerRootChanged`（[vv-explorer](https://github.com/beixiyo/vv-explorer.nvim) 切根时广播）。任意文件树都可以发它来让面板跟随：
+
+```lua
+vim.api.nvim_exec_autocmds('User', {
+  pattern = 'VVExplorerRootChanged',
+  data = { root = '/path/to/dir' },
+})
+```
+
+面板开着时，只有该目录解析出的仓库根与当前不同才切换；面板关着时记住该目录，作为下次 `open()` 的默认根。
