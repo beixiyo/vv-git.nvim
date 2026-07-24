@@ -15,6 +15,28 @@ local function is_narrow(M)
   return vim.o.columns < M._config.single_col_threshold
 end
 
+local function ensure_unique_panel(state)
+  local panel = state.panel
+  if not panel or not panel.buf or not state.tabpage then return end
+
+  local keeper, closed = require('vv-utils.ui_window').ensure_unique_buffer_window(
+    state.tabpage,
+    panel.buf,
+    panel.win
+  )
+  panel.win = keeper
+
+  local view = state.view
+  if not view or #closed == 0 then return end
+
+  for _, win in ipairs(closed) do
+    if panel.main_win == win then panel.main_win = nil end
+    for _, key in ipairs({ 'a_win', 'b_win', 'c_win' }) do
+      if view[key] == win then view[key] = nil end
+    end
+  end
+end
+
 ---@param M table
 ---@param path string
 ---@return boolean
@@ -329,7 +351,8 @@ function L.attach(M)
     if State.has() then do_apply_layout(State.get()) end
   end, 50)
 
-  M._apply_layout = State.guarded(function()
+  M._apply_layout = State.guarded(function(state)
+    ensure_unique_panel(state)
     apply_layout_debounced()
   end)
 end

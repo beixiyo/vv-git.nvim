@@ -777,7 +777,13 @@ local function test_public_api_contract()
   assert_true(not invalid_depth, 'public subrepo depth rejects negative values')
   Plugin.set_subrepo_depth(0)
 
+  local before_open_calls = 0
+  local resume_after_close_calls = 0
   Plugin.setup({
+    before_open = function()
+      before_open_calls = before_open_calls + 1
+      return function() resume_after_close_calls = resume_after_close_calls + 1 end
+    end,
     keymap_toggle_panel = false,
     auto_refresh = false,
     preview = false,
@@ -801,6 +807,7 @@ local function test_public_api_contract()
   assert_true(not invalid_open, 'root-aware open rejects a non-repository')
   assert_true(vim.wait(1000, function() return invalid_error ~= nil end),
     'root-aware open invokes error callback')
+  assert_eq(before_open_calls, 0, 'invalid root does not invoke before_open')
 
   local tmpdir = vim.fn.tempname()
   vim.fn.mkdir(tmpdir, 'p')
@@ -821,6 +828,7 @@ local function test_public_api_contract()
     on_close = function(context) close_context = context end,
   })
   assert_true(opened, 'root-aware open starts for an explicit repository')
+  assert_eq(before_open_calls, 1, 'fresh open invokes before_open exactly once')
   assert_true(vim.wait(3000, function() return ready_context ~= nil end),
     'root-aware open invokes ready callback')
   assert_true(open_error == nil, 'root-aware open does not report a false error')
@@ -864,6 +872,8 @@ local function test_public_api_contract()
     'closing the vv-git tab invokes close callback')
   assert_true(not Plugin.is_open(), 'is_open clears after the vv-git tab closes')
   assert_eq(close_context.root, vim.uv.fs_realpath(tmpdir), 'close context preserves repository root')
+  assert_true(vim.wait(1000, function() return resume_after_close_calls == 1 end),
+    'closing vv-git invokes the matching resume callback exactly once')
 
   vim.fn.delete(tmpdir, 'rf')
 end

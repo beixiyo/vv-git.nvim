@@ -44,6 +44,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field conflict_result_ratio number  -- 三栏冲突视图中底部 result/worktree 窗口的高度比例，范围 0.1~0.9 @default 0.5
 ---@field diff_nowrap boolean  -- 置为 true 时 diff 视图强制关闭 wrap（wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制 neovim/neovim#29518、sindrets/diffview.nvim#198） @default false
 ---@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效 @default nil
+---@field before_open? fun():fun()?  创建 vv-git tab 前执行，可返回退出后的恢复函数；用于由配置层临时挂起互斥 UI，不让 vendor 直接依赖其它插件 @default nil
 ---@field binary VVGitBinaryConfig
 ---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'） @default '<Tab>'
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
@@ -302,10 +303,13 @@ end
 function M._emit_closed(state)
   local callbacks = state._on_close or {}
   state._on_close = nil
+  local resume = state._resume_after_close
+  state._resume_after_close = nil
   local context = M._context(state)
   for _, callback in ipairs(callbacks) do
     M._invoke_callback(callback, context)
   end
+  M._invoke_callback(resume)
 end
 
 ---@return boolean

@@ -172,6 +172,17 @@ function L.attach(M)
       return false, err
     end
 
+    local resume_after_close
+    if M._config.before_open then
+      local ok, result = pcall(M._config.before_open)
+      if not ok then
+        vim.notify('[vv-git] before_open failed: ' .. tostring(result), vim.log.levels.ERROR)
+        M._invoke_callback(opts.on_error, tostring(result))
+        return false, tostring(result)
+      end
+      if type(result) == 'function' then resume_after_close = result end
+    end
+
     local prev_tab = vim.api.nvim_get_current_tabpage()
 
     vim.cmd('tab split')
@@ -191,6 +202,7 @@ function L.attach(M)
     state.prev_tab = prev_tab
     state.git_root = root
     state.cur_path = rel_path
+    state._resume_after_close = resume_after_close
     -- 把子仓库扫描深度/配置以闭包注入 state，避免数据层 loader 反向 require 顶层 init
     -- （闭包读 M 的实时值：:VVGitSubrepoDepth 改 override 后下次 reload 即生效）
     state._subrepo = {
