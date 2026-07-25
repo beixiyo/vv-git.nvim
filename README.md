@@ -1,7 +1,7 @@
 <div align="center">
   <h1>vv-git.nvim</h1>
   <p>English | <a href="./README.zh-CN.md">中文</a></p>
-  <img src="./docs/assets/vv-git.png" alt="vv-git demo" width="900" />
+  <img src="https://github.com/beixiyo/vv-git.nvim/releases/download/assets-2026-07-25/vv-git.png" alt="vv-git demo" width="900" />
   <p>Want my Neovim configuration? See <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>A VS Code-style two-column Git diff view with dedicated tab isolation and automatic folding of unchanged code</em>
   <p>
