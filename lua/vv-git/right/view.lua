@@ -818,17 +818,33 @@ function M.show(state, node, section, force_single, root)
   local render_dual_rev_rev, render_dual_rev_worktree
   local render_conflict_triple
 
-  --- 给 staged scratch buffer 提供真实 Git 来源，供 vv-scrollbar 投影行级 marker
+  --- 给 scratch buffer 提供真实 Git 来源，供 statuscol / scrollbar 投影行级 marker
   ---@param buf integer
   ---@param side 'new'|'old'
-  local function set_staged_scrollbar_source(buf, side)
-    if section ~= 'staged' or not vim.b[buf].vv_git_scratch then return end
-    vim.b[buf].vv_scrollbar_git_source = {
-      root = owner,
-      path = node.relpath,
-      mode = 'staged',
-      side = side,
-    }
+  local function set_git_diff_source(buf, side)
+    if not vim.b[buf].vv_git_scratch then return end
+
+    if section == 'staged' then
+      vim.b[buf].vv_git_diff_source = {
+        root = owner,
+        path = node.relpath,
+        mode = 'staged',
+        side = side,
+      }
+    elseif section == 'compare' and state.compare then
+      vim.b[buf].vv_git_diff_source = {
+        root = owner,
+        path = side == 'old' and (node.old_relpath or node.relpath) or node.relpath,
+        from_rev = state.compare.from_rev,
+        to_rev = state.compare.to_rev or 'HEAD',
+        side = side,
+      }
+    end
+
+    if vim.b[buf].vv_git_diff_source then
+      local ok, statuscol_git = pcall(require, 'vv-statuscol.git')
+      if ok then statuscol_git.refresh(buf) end
+    end
   end
 
   -- 单栏挂载：只 b_win + b_buf；不动 diff opts
@@ -848,7 +864,10 @@ function M.show(state, node, section, force_single, root)
       node = node, intrinsic_single = intrinsic_single,
     }
     keep_scrollbar(b_win)
-    set_staged_scrollbar_source(b_buf, xy:sub(1, 1) == 'D' and 'old' or 'new')
+    local side = (section == 'staged' and xy:sub(1, 1) == 'D')
+        or (section == 'compare' and node.compare_status == 'D')
+    set_git_diff_source(b_buf, side and 'old' or 'new')
+    if section == 'compare' then vim.w[b_win].vv_statuscol_git_disabled = nil end
     local ok, err = pcall(api.nvim_win_set_buf, b_win, b_buf)
     if not ok then
       if not tostring(err):find('E828') then error(err) end
@@ -918,7 +937,12 @@ function M.show(state, node, section, force_single, root)
       node = node, intrinsic_single = intrinsic_single,
     }
     keep_scrollbar(b_win)
-    set_staged_scrollbar_source(b_buf, 'new')
+    if section == 'compare' then set_git_diff_source(a_buf, 'old') end
+    set_git_diff_source(b_buf, 'new')
+    if section == 'compare' then
+      vim.w[a_win].vv_statuscol_git_disabled = nil
+      vim.w[b_win].vv_statuscol_git_disabled = nil
+    end
 
     local ratio = handlers.get_config().diff_ratio
     if ratio and ratio[1] and ratio[2] and (ratio[1] + ratio[2]) > 0 then

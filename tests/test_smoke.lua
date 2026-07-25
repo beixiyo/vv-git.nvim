@@ -466,7 +466,7 @@ local function test_staged_scrollbar_source()
   end)
   assert_true(ready, 'staged diff right buffer rendered')
 
-  local source = ready and vim.b[state.view.b_buf].vv_scrollbar_git_source or nil
+  local source = ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
   assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
     'staged right window keeps scrollbar marker track visible')
   assert_eq(vim.w[state.view.b_win].vv_statuscol_git_disabled, true,
@@ -483,7 +483,7 @@ local function test_staged_scrollbar_source()
   end)
   assert_true(deletion_ready, 'staged deletion right buffer rendered')
 
-  local deletion_source = deletion_ready and vim.b[state.view.b_buf].vv_scrollbar_git_source or nil
+  local deletion_source = deletion_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
   assert_eq(deletion_source and deletion_source.path, 'removed.txt', 'staged deletion carries relative path')
   assert_eq(deletion_source and deletion_source.side, 'old', 'staged deletion projects onto HEAD side')
 
@@ -491,6 +491,33 @@ local function test_staged_scrollbar_source()
   pcall(RightView.close, state)
   assert_eq(vim.w[preview_win].vv_statuscol_git_disabled, nil,
     'closing vv-git restores statuscol git markers for the reused window')
+
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'second' })
+  state.compare = { from_rev = 'HEAD^', to_rev = 'HEAD' }
+  RightView.show(state, {
+    is_dir = false,
+    relpath = 'sample.txt',
+    compare_status = 'M',
+  }, 'compare', false, tmpdir)
+  local compare_ready = vim.wait(3000, function()
+    return state.view and state.view.section == 'compare'
+      and state.view.a_buf and vim.api.nvim_buf_is_valid(state.view.a_buf)
+      and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
+  end)
+  assert_true(compare_ready, 'revision compare buffers rendered')
+
+  local a_source = compare_ready and vim.b[state.view.a_buf].vv_git_diff_source or nil
+  local b_source = compare_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+  assert_eq(a_source and a_source.from_rev, 'HEAD^', 'compare old source carries from_rev')
+  assert_eq(a_source and a_source.side, 'old', 'compare old source projects old side')
+  assert_eq(b_source and b_source.to_rev, 'HEAD', 'compare new source carries to_rev')
+  assert_eq(b_source and b_source.side, 'new', 'compare new source projects new side')
+  assert_eq(vim.w[state.view.a_win].vv_statuscol_git_disabled, nil,
+    'compare old window enables revision statuscol markers')
+  assert_eq(vim.w[state.view.b_win].vv_statuscol_git_disabled, nil,
+    'compare new window enables revision statuscol markers')
+
+  pcall(RightView.close, state)
   vim.fn.delete(tmpdir, 'rf')
 end
 
