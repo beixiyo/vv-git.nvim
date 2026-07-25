@@ -32,7 +32,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@field width integer @default 30
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
 ---@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用 @default '<leader>b'
----@field fold_unchanged boolean  -- diff 视图默认折叠未改动代码 @default true
+---@field fold_unchanged boolean  -- diff 视图是否允许折叠代码；true 时默认折叠未改动代码 @default true
 ---@field fold_staged boolean  -- 打开面板时默认把父仓库的 Staged Changes section 折成标题行（仅此一层，子仓库块不受影响）；只在 open 时一次性写入，之后可手动展开/折叠 @default false
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X @default ' '
 ---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l @default true

@@ -54,7 +54,7 @@
 | `width` | `integer` | `30` | 左栏宽度（字符数） |
 | `single_col_threshold` | `integer` | `120` | 窗口列数低于此值时降级为单栏（仅 b 侧 + inline diff），≥ 此值双栏；resize 自动迁移 |
 | `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 全局切换左栏可见性的映射；`false` 禁用 |
-| `fold_unchanged` | `boolean` | `true` | 未改动代码是否默认折叠（dual: `foldmethod=diff`；single: manual fold） |
+| `fold_unchanged` | `boolean` | `true` | 是否允许代码折叠；启用时默认折叠未改动代码（dual: `foldmethod=diff`；single: manual fold） |
 | `fold_staged` | `boolean` | `false` | 自动把父仓库的 `Staged Changes` section 折成标题行（仅此一层，子仓库块不受影响） |
 | `diff_fill` | `string` | `' '` | diff 空行填充符，映射到 `fillchars` 的 `diff:X` |
 | `preview` | `boolean` | `true` | 光标在左栏移动时自动刷新右侧 diff，无需手动 `<CR>` |

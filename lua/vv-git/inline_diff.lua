@@ -196,6 +196,20 @@ local function apply_folds(b_win, b_buf, folds)
   end)
 end
 
+-- fold_unchanged=false 不只是“不创建默认 fold”，而是禁止 vv-git 单栏视图中的
+-- 代码折叠，与 dual mode 的 foldenable=false 语义保持一致
+---@param b_win integer
+---@param b_buf integer
+local function disable_folds(b_win, b_buf)
+  if not api.nvim_win_is_valid(b_win) then return end
+  ufo_call('detach', b_buf)
+  api.nvim_win_call(b_win, function()
+    pcall(vim.cmd, 'normal! zE')
+    api.nvim_set_option_value('foldenable', false, { win = b_win })
+    api.nvim_set_option_value('foldcolumn', '0', { win = b_win })
+  end)
+end
+
 -- 单个 hunk 在 b 侧的「跳光标目标行」：
 --   ac > 0（有新增/修改）→ as（hunk 起始行）
 --   ac == 0（纯删除）   → max(as, 1)（删除位点紧挨的下一行；as=0 头部删除取 1）
@@ -272,6 +286,11 @@ end
 function M.apply(b_buf, a_lines, b_lines, max_lines, opts)
   if not (b_buf and api.nvim_buf_is_valid(b_buf)) then return nil end
   api.nvim_buf_clear_namespace(b_buf, NS, 0, -1)
+
+  if opts and opts.b_win and opts.fold_unchanged == false then
+    disable_folds(opts.b_win, b_buf)
+  end
+
   if #a_lines > max_lines or #b_lines > max_lines then return nil end
 
   local hunks = compute_hunks(a_lines, b_lines)

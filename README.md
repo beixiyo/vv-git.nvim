@@ -54,7 +54,7 @@
 | `width` | `integer` | `30` | Left panel width in characters |
 | `single_col_threshold` | `integer` | `120` | Fall back to one column (b side only + inline diff) below this window width; use two columns at or above it; resize migrates automatically |
 | `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | Global mapping for toggling the left panel; `false` disables it |
-| `fold_unchanged` | `boolean` | `true` | Whether unchanged code is folded by default (`foldmethod=diff` in dual mode; manual folds in single mode) |
+| `fold_unchanged` | `boolean` | `true` | Whether code folding is enabled; when enabled, unchanged code is folded by default (`foldmethod=diff` in dual mode; manual folds in single mode) |
 | `fold_staged` | `boolean` | `false` | Automatically fold the parent repository's `Staged Changes` section to its heading only; nested repository blocks are unaffected |
 | `diff_fill` | `string` | `' '` | Diff filler character, mapped to `diff:X` in `fillchars` |
 | `preview` | `boolean` | `true` | Refresh the right-side diff as the cursor moves in the left panel, without requiring `<CR>` |

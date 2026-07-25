@@ -348,6 +348,47 @@ local function test_panel_drives_right_diff_folds()
   vim.api.nvim_win_set_buf(panel_win, panel_buf)
 end
 
+local function test_single_col_disables_folds()
+  local InlineDiff = require('vv-git.inline_diff')
+  local buf = vim.api.nvim_create_buf(false, true)
+  local win = vim.api.nvim_get_current_win()
+  local previous_buf = vim.api.nvim_win_get_buf(win)
+  local previous_ufo = package.loaded.ufo
+  local detached = 0
+
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    'one', 'two', 'three', 'four', 'five',
+  })
+  vim.api.nvim_win_set_buf(win, buf)
+  vim.api.nvim_set_option_value('foldmethod', 'manual', { win = win })
+  vim.api.nvim_set_option_value('foldenable', true, { win = win })
+  vim.api.nvim_set_option_value('foldcolumn', '1', { win = win })
+  vim.api.nvim_win_call(win, function() vim.cmd('2,4fold') end)
+
+  package.loaded.ufo = {
+    detach = function(target)
+      if target == buf then detached = detached + 1 end
+    end,
+  }
+
+  InlineDiff.apply(buf, { 'one' }, { 'one', 'two', 'three', 'four', 'five' }, 1, {
+    b_win = win,
+    fold_unchanged = false,
+  })
+
+  assert_eq(detached, 1, 'single-column fold disable detaches ufo')
+  assert_eq(vim.api.nvim_get_option_value('foldenable', { win = win }), false,
+    'single-column fold disable turns foldenable off')
+  assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = win }), '0',
+    'single-column fold disable hides fold column')
+  assert_eq(vim.api.nvim_win_call(win, function() return vim.fn.foldclosed(3) end), -1,
+    'single-column fold disable clears existing folds')
+
+  package.loaded.ufo = previous_ufo
+  vim.api.nvim_win_set_buf(win, previous_buf)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end
+
 -- 测试 7: block_insert_mode 存在于 view.lua（间接：检查模块加载无报错）
 local function test_view_module_loads()
   local ok, _ = pcall(require, 'vv-git.right.view')
@@ -940,6 +981,7 @@ test_unstage_with_head()
 test_insert_mode_blocked()
 test_panel_edge_file_keymaps()
 test_panel_drives_right_diff_folds()
+test_single_col_disables_folds()
 test_view_module_loads()
 test_right_diff_chunk_keymaps()
 test_narrow_single_col_design()

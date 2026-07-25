@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2 - 2026-07-25
+
+### Fixed
+
+- `fold_unchanged=false` 在单栏 inline diff 中现在会 detach nvim-ufo、清除已有折叠并关闭 `foldenable` 与折叠列，与双栏模式一致地完全禁止代码折叠；即使文件超过 `inline_diff_max_lines`、跳过 inline diff 计算也仍会应用该策略
+
 ## 0.3.1 - 2026-07-19
 
 ### Added
