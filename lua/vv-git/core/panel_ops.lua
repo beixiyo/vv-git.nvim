@@ -37,6 +37,23 @@ local function ensure_unique_panel(state)
   end
 end
 
+---@param state table
+---@param ratio number[]?
+function L.apply_diff_ratio(state, ratio)
+  local view = state.view
+  if not view or view.mode ~= 'diff2' then return end
+  if not view.a_win or not vim.api.nvim_win_is_valid(view.a_win) then return end
+  if not view.b_win or not vim.api.nvim_win_is_valid(view.b_win) then return end
+  if not ratio or not ratio[1] or not ratio[2] then return end
+
+  local sum = ratio[1] + ratio[2]
+  if sum <= 0 then return end
+
+  local total = vim.api.nvim_win_get_width(view.a_win)
+      + vim.api.nvim_win_get_width(view.b_win)
+  vim.api.nvim_win_set_width(view.a_win, math.floor(total * ratio[1] / sum))
+end
+
 ---@param M table
 ---@param path string
 ---@return boolean
@@ -341,7 +358,12 @@ function L.attach(M)
 
     local want_single = is_narrow(M)
     local is_now_single = (view.mode == 'single')
-    if want_single == is_now_single then return end
+    if want_single == is_now_single then
+      if not want_single then
+        L.apply_diff_ratio(state, M._config.diff_ratio)
+      end
+      return
+    end
 
     RightView.show(state, view.node, view.section, want_single, view.root)
   end

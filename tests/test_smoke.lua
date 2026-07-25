@@ -400,6 +400,30 @@ local function test_resize_single_col_migration()
     '不再含旧「Terminal shrunk below」窄化关闭提示（已改单栏迁移）')
 end
 
+local function test_resize_restores_diff_ratio()
+  vim.cmd('tabnew')
+  local a_win = vim.api.nvim_get_current_win()
+  vim.cmd('vsplit')
+  local b_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_width(a_win, 20)
+
+  local before_total = vim.api.nvim_win_get_width(a_win) + vim.api.nvim_win_get_width(b_win)
+  require('vv-git.core.panel_ops').apply_diff_ratio({
+    view = {
+      mode = 'diff2',
+      a_win = a_win,
+      b_win = b_win,
+    },
+  }, { 4.5, 5.5 })
+
+  local expected = math.floor(before_total * 4.5 / 10)
+  assert_eq(vim.api.nvim_win_get_width(a_win), expected,
+    'VimResized 后双栏恢复 diff_ratio')
+  assert_eq(vim.api.nvim_win_get_width(a_win) + vim.api.nvim_win_get_width(b_win), before_total,
+    '恢复 diff_ratio 不改变 diff 区域总宽度')
+  vim.cmd('tabclose')
+end
+
 -- 测试 11: 源代码静态验证 — 三栏冲突 result 高度暴露为配置项
 local function test_conflict_result_ratio_config()
   local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
@@ -893,6 +917,7 @@ test_view_module_loads()
 test_right_diff_chunk_keymaps()
 test_narrow_single_col_design()
 test_resize_single_col_migration()
+test_resize_restores_diff_ratio()
 test_conflict_result_ratio_config()
 test_staged_scrollbar_source()
 test_compare_tag_with_head()
