@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.3 - 2026-07-26
+
+### Changed
+
+- 左侧面板改用 `vv-utils.state` 持久化手动调整后的宽度，并新增可注入的 `state` 配置；隐藏、关闭面板或退出 Neovim 时都会保存最新宽度
+- lifecycle、panel operations 与 commands 改为显式组合的运行时服务，面板会话状态由独立 state 模块创建、读取与释放，避免子模块直接改写入口模块或替换活动会话
+
+### Fixed
+
+- 重复 `setup()` 现在从默认配置重新合并，并释放上一轮宽度持久化资源；窗口 guard 卸载时也不会覆盖后来接管 `nvim_open_win` 的其他插件
+- `VVGitSubrepoDepth` 对非数字参数给出明确错误，异步回调参数改为保留中间 `nil` 值
+- 右侧 diff buffer 现在也可用 `-` 暂存或取消暂存当前文件；操作后从新分区重建同一文件的 diff，并保持焦点不跳回左栏
+
 ## 0.3.2 - 2026-07-25
 
 ### Fixed

@@ -6,14 +6,9 @@ local RightView = require('vv-git.right.view')
 local Actions = require('vv-git.left.actions')
 local Keymaps = require('vv-git.core.keymaps')
 local Subrepo = require('vv-git.subrepo')
+local Tree = require('vv-git.tree')
 
 local L = {}
-
----@param M table
----@return boolean
-local function is_narrow(M)
-  return vim.o.columns < M._config.single_col_threshold
-end
 
 local function ensure_unique_panel(state)
   local panel = state.panel
@@ -54,15 +49,19 @@ function L.apply_diff_ratio(state, ratio)
   vim.api.nvim_win_set_width(view.a_win, math.floor(total * ratio[1] / sum))
 end
 
----@param M table
----@param path string
----@return boolean
-local function is_binary(M, path)
-  local cfg = M._config.binary
-  if not cfg or not cfg.intercept then return false end
-  local ext = path:match('%.([%w_]+)$')
-  return ext and cfg.extensions[ext:lower()] or false
-end
+---@param deps { controller:table, config:fun():table }
+---@return table
+function L.new(deps)
+  local M = {}
+  local function config() return deps.config() end
+  local function narrow() return vim.o.columns < config().single_col_threshold end
+  local function binary(path)
+    local cfg = config().binary
+    if not cfg or not cfg.intercept then return false end
+    local ext = path:match('%.([%w_]+)$')
+    return ext and cfg.extensions[ext:lower()] or false
+  end
+  M.apply_diff_ratio = L.apply_diff_ratio
 
 -- 动作（stage/unstage/discard/accept）触发渲染后，把光标落到「下一个文件」
 -- 仅靠旧的绝对行号 hint.lnum 不可靠：stage 会把文件移到上方的 Staged section，
@@ -108,26 +107,24 @@ local function action_neighbor_leaves(state, id, lnum)
   return next_path, prev_path
 end
 
----@param M table
-function L.attach(M)
   M._reshow_view = State.guarded(function(state)
     local view = state.view
     if not view or not view.node then return end
     local node, section = view.node, view.section
     state.view.path = nil
     state._reshow_restore_win = vim.api.nvim_get_current_win()
-    RightView.show(state, node, section, is_narrow(M), view.root)
+    RightView.show(state, node, section, narrow(), view.root)
   end)
 
   M._preview = State.guarded(function(state)
-    if not M._config.preview then return end
+    if not config().preview then return end
     if not state.panel or state.panel.win ~= vim.api.nvim_get_current_win() then return end
     local id = Keymaps.id_under_cursor(state)
     if not id or id.section_header then return end
     local node = id.node
     if not node or node.is_dir then return end
     local root = id.root or state.git_root
-    if is_binary(M, root .. '/' .. node.relpath) then return end
+    if binary(root .. '/' .. node.relpath) then return end
     local view = state.view
     if view and view.path == node.relpath and view.section == id.base and view.root == root
         and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
@@ -135,18 +132,17 @@ function L.attach(M)
     end
     state.cur_path = node.relpath
     state.cur_section = id.section
-    RightView.show(state, node, id.base, is_narrow(M), root)
+    RightView.show(state, node, id.base, narrow(), root)
   end)
 
-  -- 预览防抖：单例常驻 timer（仿下方 _apply_layout）。wait 用函数延迟读 config——
-  -- L.attach 在 M.setup 之前于模块加载期执行，此刻 M._config 尚未就绪
+  -- 预览防抖：单例常驻 timer（仿下方 _apply_layout），wait 每次读取最新 config
   local preview_debounced = require('vv-utils.timer').debounce(function()
     M._preview()
-  end, function() return M._config.preview_debounce_ms or 0 end)
+  end, function() return config().preview_debounce_ms or 0 end)
 
   -- CursorMoved 入口：>0 走防抖（光标停顿后才刷新 diff），0 保持同步直刷
   M._preview_on_move = function()
-    if (M._config.preview_debounce_ms or 0) > 0 then
+    if (config().preview_debounce_ms or 0) > 0 then
       preview_debounced()
     else
       M._preview()
@@ -171,7 +167,7 @@ function L.attach(M)
     end
     local root = id.root or state.git_root
     local abspath = root .. '/' .. node.relpath
-    if is_binary(M, abspath) then
+    if binary(abspath) then
       require('vv-utils.sys').open_default(abspath)
       return
     end
@@ -182,7 +178,7 @@ function L.attach(M)
         and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
       return
     end
-    RightView.show(state, node, id.base, is_narrow(M), root)
+    RightView.show(state, node, id.base, narrow(), root)
   end)
 
   M._toggle_fold = State.guarded(function(state)
@@ -217,7 +213,7 @@ function L.attach(M)
     LeftRender.render(state)
   end)
 
-  -- 焦点保持在左侧 panel，折叠动作在右侧当前 diff 窗口上下文执行。
+  -- 焦点保持在左侧 panel，折叠动作在右侧当前 diff 窗口上下文执行
   M._toggle_diff_folds = State.guarded(function(state)
     RightView.toggle_all_folds(state)
   end)
@@ -296,7 +292,7 @@ function L.attach(M)
 
     if lnum and win and vim.api.nvim_win_is_valid(win) then
       local last = vim.api.nvim_buf_line_count(state.panel.buf)
-      local target = (M._config.select_move_down ~= false and lnum < last)
+      local target = (config().select_move_down ~= false and lnum < last)
           and lnum + 1
           or lnum
       pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
@@ -348,6 +344,42 @@ function L.attach(M)
     fn(state, id)
   end)
 
+  -- 右侧 diff buffer 的 `-`：以当前 view 为事实来源，不依赖左栏残留的光标行
+  -- 完成 stage/unstage 后，同一文件会移动到另一 section，重新查新树节点并刷新 diff；
+  -- reshow 复用既有焦点恢复机制，操作前后都留在用户按键的 diff 窗口
+  M._toggle_view_stage = State.guarded(function(state)
+    if state.compare then return end
+    local view = state.view
+    if not view or not view.node then return end
+    if view.section ~= 'staged' and view.section ~= 'unstaged' then return end
+
+    local root = view.root or state.git_root
+    local relpath = view.node.relpath
+    local target_section = view.section == 'staged' and 'unstaged' or 'staged'
+    local restore_win = vim.api.nvim_get_current_win()
+    local id = {
+      root = root,
+      base = view.section,
+      section = Subrepo.section_id(root, state.git_root, view.section),
+      node = view.node,
+    }
+
+    Actions.toggle_stage(state, id, function()
+      if not State.is_current(state) then return end
+      local repo = Subrepo.repo_of(state, root)
+      local side = repo and repo.tree and repo.tree[target_section]
+      local node = side and Tree.leaf_at(side, relpath)
+      if not node then return end
+
+      state.cur_path = relpath
+      state.cur_section = Subrepo.section_id(root, state.git_root, target_section)
+      if vim.api.nvim_win_is_valid(restore_win) then
+        state._reshow_restore_win = restore_win
+      end
+      RightView.show(state, node, target_section, narrow(), root)
+    end)
+  end)
+
   -- layout
 
   local function do_apply_layout(state)
@@ -356,11 +388,11 @@ function L.attach(M)
     if not view or not view.node then return end
     if view.intrinsic_single then return end
 
-    local want_single = is_narrow(M)
+    local want_single = narrow()
     local is_now_single = (view.mode == 'single')
     if want_single == is_now_single then
       if not want_single then
-        L.apply_diff_ratio(state, M._config.diff_ratio)
+        M.apply_diff_ratio(state, config().diff_ratio)
       end
       return
     end
@@ -377,6 +409,8 @@ function L.attach(M)
     ensure_unique_panel(state)
     apply_layout_debounced()
   end)
+
+  return M
 end
 
 return L

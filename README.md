@@ -51,7 +51,8 @@
 
 | Option | Type | Default | Description |
 |------|------|--------|------|
-| `width` | `integer` | `30` | Left panel width in characters |
+| `width` | `integer` | `30` | Initial left-panel width; manual resize is persisted across sessions through `vv-utils.state` |
+| `state` | `VVStateHandle?` | `nil` | Optional state container for isolation/testing; defaults to `vv-git/panel` |
 | `single_col_threshold` | `integer` | `120` | Fall back to one column (b side only + inline diff) below this window width; use two columns at or above it; resize migrates automatically |
 | `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | Global mapping for toggling the left panel; `false` disables it |
 | `fold_unchanged` | `boolean` | `true` | Whether code folding is enabled; when enabled, unchanged code is folded by default (`foldmethod=diff` in dual mode; manual folds in single mode) |

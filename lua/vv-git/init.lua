@@ -11,12 +11,9 @@
 local HL = require('vv-git.hl')
 local RightView = require('vv-git.right.view')
 local Autocmds = require('vv-git.autocmds')
-local Fs = require('vv-utils.fs')
 local State = require('vv-git.state')
 
 local M = {}
-
-local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 
 ---@class VVGitBinaryConfig
 ---@field intercept boolean  拦截二进制文件：不在 nvim 打开 diff，改用系统默认程序（仅 _activate/_goto_file；_preview 静默跳过） @default true
@@ -30,6 +27,7 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 
 ---@class VVGitConfig
 ---@field width integer @default 30
+---@field state VVStateHandle? 左侧面板持久状态容器；默认注册 `vv-git/panel`
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
 ---@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用 @default '<leader>b'
 ---@field fold_unchanged boolean  -- diff 视图是否允许折叠代码；true 时默认折叠未改动代码 @default true
@@ -72,8 +70,10 @@ local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 ---@class VVGitRevisionOpts: VVGitCallbacks
 ---@field root? string Git 仓库或仓库内目录；省略时从当前 cwd 探测
 ---@field path? string 打开后定位的仓库内相对路径或绝对路径
+---@type VVGitConfig
 local defaults = {
   width = 30,
+  state = nil,
   single_col_threshold = 120,
   keymap_toggle_panel = '<leader>b',
   keymap_select = '<Tab>',
@@ -122,7 +122,17 @@ local defaults = {
   },
 }
 
+---@type VVGitConfig
 M._config = vim.deepcopy(defaults)
+local panel_width = nil
+
+local function track_panel_width(state)
+  if panel_width then panel_width.track(state) end
+end
+
+local function persist_panel_width(state)
+  if panel_width then panel_width.persist(state) end
+end
 
 -- 子仓库扫描深度的运行时临时覆盖（`:VVGitSubrepoDepth` 设置）
 -- 仅存于内存、随会话存活、关面板不清、重启即失效——满足「临时改、不持久化」
@@ -150,7 +160,12 @@ end
 
 ---@param opts VVGitConfig?
 function M.setup(opts)
-  M._config = vim.tbl_deep_extend('force', defaults, opts or {})
+  local configured_state = opts and opts.state
+  ---@type VVGitConfig
+  local configured = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
+  M._config = configured
+  local panel_state = configured_state or require('vv-utils.state').register('vv-git', 'panel')
+  M._config.state = panel_state
 
   -- subrepo.prune 用「覆盖」语义：用户传了就整体替换默认列表
   -- tbl_deep_extend 对数组是按下标混合（传 { 'a' } 会得到 { 'a', 默认[2..] }），故显式覆盖
@@ -158,8 +173,11 @@ function M.setup(opts)
     M._config.subrepo.prune = vim.deepcopy(opts.subrepo.prune)
   end
 
-  local persisted = Fs.load_json(PERSIST_FILE)
-  if persisted.width then M._config.width = persisted.width end
+  if panel_width then panel_width.close() end
+  panel_width = require('vv-git.runtime.panel_width').new(panel_state)
+  M._config.width = panel_width.configure(M._config)
+  M._track_panel_width = track_panel_width
+  M._persist_panel_width = persist_panel_width
 
   HL.setup({ highlights = M._config.highlights })
 
@@ -168,6 +186,7 @@ function M.setup(opts)
     on_close          = function() M.close() end,
     on_goto_file      = function() M._goto_file() end,
     on_yank_abs_path  = function() M._yank_abs_path() end,
+    on_toggle_stage   = function() M._toggle_view_stage() end,
   })
 
   local function ucmd(name, fn, cfg)
@@ -200,6 +219,10 @@ function M.setup(opts)
       return
     end
     local n = tonumber(o.args)
+    if not n then
+      vim.notify('[vv-git] invalid depth: ' .. tostring(o.args), vim.log.levels.ERROR)
+      return
+    end
     local ok, err = M.set_subrepo_depth(n)
     if not ok then
       vim.notify('[vv-git] invalid depth: ' .. tostring(o.args) .. ' (' .. err .. ')', vim.log.levels.ERROR)
@@ -235,19 +258,22 @@ function M.setup(opts)
     on_apply_layout     = function() M._apply_layout() end,
     on_ensure_invariant = function() M._ensure_invariant() end,
     on_reshow_view      = function() M._reshow_view() end,
-    on_closed           = function(state) M._emit_closed(state) end,
+    on_closed           = function(state)
+      panel_width.persist(state)
+      panel_width.close()
+      M._emit_closed(state)
+    end,
     on_external_root    = function(dir) M._follow_external_root(dir) end,
   }, M._config)
 
   vim.api.nvim_create_autocmd('VimLeavePre', {
     group = vim.api.nvim_create_augroup('VVGitPersist', { clear = true }),
     callback = function()
-      local State = require('vv-git.state')
-      if not State.has() then return end
-      local s = State.get()
-      if s._panel_width then
-        Fs.save_json(PERSIST_FILE, { width = s._panel_width })
+      if State.has() then
+        panel_width.track(State.get())
+        panel_width.persist(State.get())
       end
+      if panel_width then panel_width.close() end
     end,
   })
 end
@@ -263,7 +289,7 @@ function M._invoke_callback(fn, ...)
   if type(fn) ~= 'function' then return end
   local args = { ... }
   vim.schedule(function()
-    local ok, err = pcall(fn, unpack(args))
+    local ok, err = pcall(fn, vim.F.unpack_len(args))
     if not ok then
       vim.notify('[vv-git] callback failed: ' .. tostring(err), vim.log.levels.ERROR)
     end
@@ -389,15 +415,28 @@ function M.stop_compare()
   return M._compare_stop()
 end
 
--- 子模块往 M 上挂方法（open/close/toggle/_preview/_activate/_commit 等）
-require('vv-git.core.lifecycle').attach(M)
-require('vv-git.core.panel_ops').attach(M)
-require('vv-git.core.commands').attach(M)
+-- Runtime services are composed explicitly.  Each module owns and returns its
+-- operations; none receives the entry module as a mutable injection target.
+local services = {
+  controller = M,
+  config = function() return M._config end,
+  track_panel_width = track_panel_width,
+  persist_panel_width = persist_panel_width,
+}
+
+for _, operations in ipairs({
+  require('vv-git.core.lifecycle').new(services),
+  require('vv-git.core.panel_ops').new(services),
+  require('vv-git.core.commands').new(services),
+}) do
+  for name, operation in pairs(operations) do
+    M[name] = operation
+  end
+end
 
 --- 返回光标节点的绝对路径（文件或目录），面板未开或光标不在节点上时返回 nil
 ---@return string?
 function M.get_node_path()
-  local State = require('vv-git.state')
   if not State.has() then return nil end
   local id = require('vv-git.core.keymaps').id_under_cursor(State.get())
   if not id or not id.node then return nil end
@@ -407,7 +446,6 @@ end
 --- 返回光标节点对应的目录：目录节点返回自身，文件节点返回父目录
 ---@return string?
 function M.get_node_dir()
-  local State = require('vv-git.state')
   if not State.has() then return nil end
   local id = require('vv-git.core.keymaps').id_under_cursor(State.get())
   if not id or not id.node then return nil end

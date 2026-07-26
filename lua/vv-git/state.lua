@@ -24,16 +24,18 @@
 
 local M = {}
 
----@type table?
-M._state = nil
+-- The panel is intentionally a singleton, but its owner is not the module
+-- table.  Keeping the slot private prevents callers from retaining or
+-- replacing the live session behind the lifecycle's back.
+local current = nil
 
 ---@return boolean
-function M.has() return M._state ~= nil end
+function M.has() return current ~= nil end
 
 ---@return table
-function M.get()
-  if not M._state then
-    M._state = {
+function M.create()
+  if not current then
+    current = {
       tabpage = nil,
       prev_tab = nil,
       panel = nil,
@@ -50,24 +52,31 @@ function M.get()
       cur_path = nil,
     }
   end
-  return M._state
+  return current
 end
 
-function M.clear() M._state = nil end
+---@return table
+function M.get()
+  return assert(current, 'vv-git state is not active')
+end
+
+---@return table?
+function M.current() return current end
+
+function M.clear() current = nil end
 
 ---@param state table
 ---@return boolean
-function M.is_current(state) return M._state == state end
+function M.is_current(state) return current == state end
 
 -- 把「需要 state 存在才执行」的函数包一层：state 为空时直接短路；
 -- 否则把 state 作为第一参数传入，其余参数透传（autocmd 的 args / 普通调用的 ...）
----@generic T
----@param fn fun(state:table, ...):T
----@return fun(...):T?
+---@param fn function
+---@return function
 function M.guarded(fn)
   return function(...)
-    if not M._state then return end
-    return fn(M._state, ...)
+    if not current then return end
+    return fn(current, ...)
   end
 end
 

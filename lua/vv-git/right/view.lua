@@ -22,11 +22,13 @@ local M = {}
 ---@field on_close fun()
 ---@field on_goto_file fun()
 ---@field on_yank_abs_path fun()
+---@field on_toggle_stage fun()
 local handlers = {
   get_config       = function() return { fold_unchanged = true } end,
   on_close         = function() end,
   on_goto_file     = function() end,
   on_yank_abs_path = function() end,
+  on_toggle_stage  = function() end,
 }
 
 ---@param h VVGitViewHandlers
@@ -91,6 +93,7 @@ local RIGHT_KEYS_SPEC = {
   { '<Esc>', function() handlers.on_close() end,          'close' },
   { 'gf',    function() handlers.on_goto_file() end,      'goto_file' },
   { 'Y',     function() handlers.on_yank_abs_path() end,  'yank_abs_path' },
+  { '-',     function() handlers.on_toggle_stage() end,   'toggle_stage' },
   { ']c',    function() jump_diff_chunk(']') end,         'next_chunk' },
   { '[c',    function() jump_diff_chunk('[') end,         'prev_chunk' },
 }

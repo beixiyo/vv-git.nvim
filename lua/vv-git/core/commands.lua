@@ -19,18 +19,18 @@ local function cursor_root(state)
   return (id and id.root) or state.git_root
 end
 
----@param M table
----@param path string
----@return boolean
-local function is_binary(M, path)
-  local cfg = M._config.binary
-  if not cfg or not cfg.intercept then return false end
-  local ext = path:match('%.([%w_]+)$')
-  return ext and cfg.extensions[ext:lower()] or false
-end
-
----@param M table
-function L.attach(M)
+---@param deps { controller:table, config:fun():table }
+---@return table
+function L.new(deps)
+  local M = {}
+  local controller = deps.controller
+  local function config() return deps.config() end
+  local function binary(path)
+    local cfg = config().binary
+    if not cfg or not cfg.intercept then return false end
+    local ext = path:match('%.([%w_]+)$')
+    return ext and cfg.extensions[ext:lower()] or false
+  end
   M._compare_pick = State.guarded(function(state)
     if not state.git_root then return end
     local Compare = require('vv-git.compare')
@@ -54,9 +54,9 @@ function L.attach(M)
       state.selection = {}
       RightView.close(state)
       LeftRender.render(state)
-      M._invoke_callback(on_ready, M._context(state))
+      controller._invoke_callback(on_ready, controller._context(state))
     end, function(message)
-      M._invoke_callback(on_error, message)
+      controller._invoke_callback(on_error, message)
     end)
   end)
 
@@ -93,9 +93,9 @@ function L.attach(M)
       state.selection = {}
       RightView.close(state)
       LeftRender.render(state)
-      M._invoke_callback(on_ready, M._context(state))
+      controller._invoke_callback(on_ready, controller._context(state))
     end, function(message)
-      M._invoke_callback(on_error, message)
+      controller._invoke_callback(on_error, message)
     end)
   end)
 
@@ -139,7 +139,7 @@ function L.attach(M)
           has_staged = has,
           on_success = function()
             state._block_hint = root
-            M.refresh()
+            controller.refresh()
           end,
         })
       end
@@ -164,7 +164,7 @@ function L.attach(M)
       local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
       local prefix = ok and ('[vv-git] ' .. action .. ' succeeded') or ('[vv-git] ' .. action .. ' failed')
       vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
-      if ok then M.refresh() end
+      if ok then controller.refresh() end
     end)
   end)
 
@@ -204,7 +204,7 @@ function L.attach(M)
           vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
           if (ok or remote_added) and State.is_current(state) then
             state._block_hint = root
-            M.refresh()
+            controller.refresh()
           end
         end)
       end
@@ -257,12 +257,12 @@ function L.attach(M)
       abspath = (id.root or state.git_root) .. '/' .. id.node.relpath
     end
 
-    if is_binary(M, abspath) then
+    if binary(abspath) then
       require('vv-utils.sys').open_default(abspath)
       return
     end
 
-    M.close()
+    controller.close()
 
     local win = vim.api.nvim_get_current_win()
     if vim.wo[win].winfixbuf then
@@ -317,7 +317,7 @@ function L.attach(M)
 
     local plan, err = require('vv-utils.exec').resolve(abspath)
     if not plan then
-      vim.notify('vv-git: ' .. (err or 'cannot run ' .. abspath), vim.log.levels.WARN)
+      vim.notify('vv-git: ' .. (err or ('cannot run ' .. abspath)), vim.log.levels.WARN)
       return
     end
 
@@ -325,13 +325,11 @@ function L.attach(M)
     if vim.fn.confirm(prompt, '&Yes\n&No', 2) ~= 1 then return end
 
     vim.cmd('botright 15new')
-    if vim.fn.has('nvim-0.11') == 1 then
-      vim.fn.jobstart(plan.cmd, { term = true, cwd = vim.fs.dirname(abspath) })
-    else
-      vim.fn.termopen(plan.cmd, { cwd = vim.fs.dirname(abspath) })
-    end
+    vim.fn.jobstart(plan.cmd, { term = true, cwd = vim.fs.dirname(abspath) })
     vim.cmd('startinsert')
   end)
+
+  return M
 end
 
 return L

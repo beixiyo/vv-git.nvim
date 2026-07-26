@@ -32,7 +32,7 @@ local buf = Panel.create_buf()
 local win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_buf(win, buf)
 
-local state = State.get()
+local state = State.create()
 state.git_root = ROOT
 state.panel = { buf = buf, win = win, main_win = win }
 state.folds, state.section_folds, state.selection = {}, {}, {}

@@ -51,7 +51,8 @@
 
 | 选项 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `width` | `integer` | `30` | 左栏宽度（字符数） |
+| `width` | `integer` | `30` | 左栏初始宽度；手动 resize 后通过 `vv-utils.state` 跨会话持久化 |
+| `state` | `VVStateHandle?` | `nil` | 可选状态容器，用于隔离/测试；默认注册 `vv-git/panel` |
 | `single_col_threshold` | `integer` | `120` | 窗口列数低于此值时降级为单栏（仅 b 侧 + inline diff），≥ 此值双栏；resize 自动迁移 |
 | `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 全局切换左栏可见性的映射；`false` 禁用 |
 | `fold_unchanged` | `boolean` | `true` | 是否允许代码折叠；启用时默认折叠未改动代码（dual: `foldmethod=diff`；single: manual fold） |

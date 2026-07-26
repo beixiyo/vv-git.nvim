@@ -8,10 +8,7 @@ local Loader = require('vv-git.loader')
 local Guard = require('vv-git.guard')
 local Keymaps = require('vv-git.core.keymaps')
 local Subrepo = require('vv-git.subrepo')
-local Fs = require('vv-utils.fs')
 local UGit = require('vv-utils.git')
-
-local PERSIST_FILE = vim.fs.joinpath(vim.fn.stdpath('data'), 'vv-git.json')
 
 ---@param root string
 ---@return string? relpath
@@ -118,8 +115,18 @@ local resize_autocmd_id = nil
 
 local L = {}
 
----@param M table
-function L.attach(M)
+---@class VVGitLifecycleDeps
+---@field controller table
+---@field config fun():table
+---@field track_panel_width fun(state:table)
+---@field persist_panel_width fun(state:table)
+
+---@param deps VVGitLifecycleDeps
+---@return table
+function L.new(deps)
+  local M = {}
+  local controller = deps.controller
+  local function config() return deps.config() end
   ---@param opts? VVGitOpenOpts
   ---@return boolean opened, string? err
   function M.open(opts)
@@ -136,12 +143,12 @@ function L.attach(M)
         end
         if not root then
           vim.notify('[vv-git] ' .. err, vim.log.levels.WARN)
-          M._invoke_callback(opts.on_error, err)
+          controller._invoke_callback(opts.on_error, err)
           return false, err
         end
 
         if root == s.git_root then
-          M._register_on_close(s, opts.on_close)
+          controller._register_on_close(s, opts.on_close)
           vim.api.nvim_set_current_tabpage(s.tabpage)
           if relpath then
             s.cur_path = relpath
@@ -151,14 +158,14 @@ function L.attach(M)
           if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
             vim.api.nvim_set_current_win(s.panel.win)
           end
-          M._invoke_callback(opts.on_ready, M._context(s))
+          controller._invoke_callback(opts.on_ready, controller._context(s))
           return true
         end
 
-        M.close()
+        controller.close()
         if State.has() then
           local message = 'cannot switch vv-git to repository: ' .. root
-          M._invoke_callback(opts.on_error, message)
+          controller._invoke_callback(opts.on_error, message)
           return false, message
         end
       end
@@ -168,16 +175,16 @@ function L.attach(M)
     local root, rel_path, err = resolve_open_context(opts)
     if not root then
       vim.notify('[vv-git] ' .. err, vim.log.levels.WARN)
-      M._invoke_callback(opts.on_error, err)
+      controller._invoke_callback(opts.on_error, err)
       return false, err
     end
 
     local resume_after_close
-    if M._config.before_open then
-      local ok, result = pcall(M._config.before_open)
+    if config().before_open then
+      local ok, result = pcall(config().before_open)
       if not ok then
         vim.notify('[vv-git] before_open failed: ' .. tostring(result), vim.log.levels.ERROR)
-        M._invoke_callback(opts.on_error, tostring(result))
+        controller._invoke_callback(opts.on_error, tostring(result))
         return false, tostring(result)
       end
       if type(result) == 'function' then resume_after_close = result end
@@ -194,10 +201,10 @@ function L.attach(M)
     require('vv-utils.ui_window').show_chrome(main_win)
 
     local panel_buf = Panel.create_buf()
-    Panel.open_split(panel_buf, { width = M._config.width })
+    Panel.open_split(panel_buf, { width = config().width })
     local panel_win = vim.api.nvim_get_current_win()
 
-    local state = State.get()
+    local state = State.create()
     state.tabpage = tabpage
     state.prev_tab = prev_tab
     state.git_root = root
@@ -206,8 +213,8 @@ function L.attach(M)
     -- 把子仓库扫描深度/配置以闭包注入 state，避免数据层 loader 反向 require 顶层 init
     -- （闭包读 M 的实时值：:VVGitSubrepoDepth 改 override 后下次 reload 即生效）
     state._subrepo = {
-      depth = M.get_subrepo_depth,
-      config = function() return M._config.subrepo or {} end,
+      depth = controller.get_subrepo_depth,
+      config = function() return config().subrepo or {} end,
     }
     ensure_unfolded(state, rel_path)
 
@@ -215,7 +222,7 @@ function L.attach(M)
     -- （仅此一层，section_id 用裸 'staged'；子仓库块的 staged 不受影响）。只在这条
     -- fresh-open 路径一次性写入 section_folds，用户之后可正常展开/折叠；重开面板（state
     -- 被 clear 后重建）才再次套用默认。toggle_panel / 复用已开面板都不会重置
-    if M._config.fold_staged then
+    if config().fold_staged then
       state.section_folds = state.section_folds or {}
       state.section_folds[Subrepo.section_id(state.git_root, state.git_root, 'staged')] = true
       state._fold_staged_pending = true
@@ -226,8 +233,8 @@ function L.attach(M)
       win = panel_win,
       main_win = main_win,
     }
-    state._panel_width = M._config.width
-    M._register_on_close(state, opts.on_close)
+    state._panel_width = config().width
+    controller._register_on_close(state, opts.on_close)
 
     -- 先注销上一轮残留的注册，保证全局至多一个 WinResized 监听
     if resize_autocmd_id then
@@ -239,26 +246,21 @@ function L.attach(M)
         if not State.has() then return true end
         local s = State.get()
         if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
-          s._panel_width = vim.api.nvim_win_get_width(s.panel.win)
+          deps.track_panel_width(s)
         end
       end,
     })
 
-    Keymaps.install(state, M)
+    Keymaps.install(state, controller)
     Guard.install()
     Loader.reload_index(state, function()
-      M._invoke_callback(opts.on_ready, M._context(state))
+      controller._invoke_callback(opts.on_ready, controller._context(state))
     end)
-    M._apply_layout()
+    controller._apply_layout()
     return true
   end
 
   M.close = State.guarded(function(state)
-    if state._panel_width then
-      M._config.width = state._panel_width
-      Fs.save_json(PERSIST_FILE, { width = state._panel_width })
-    end
-
     local tp = state.tabpage
     local prev_tab = state.prev_tab
 
@@ -266,6 +268,9 @@ function L.attach(M)
       vim.notify('[vv-git] This is the only tab. Closing it will exit nvim. Please open a new tab first.', vim.log.levels.WARN)
       return
     end
+
+    deps.track_panel_width(state)
+    deps.persist_panel_width(state)
 
     if tp and vim.api.nvim_tabpage_is_valid(tp) then
       pcall(function()
@@ -277,7 +282,7 @@ function L.attach(M)
       end
     else
       pcall(RightView.close, state)
-      M._emit_closed(state)
+      controller._emit_closed(state)
       State.clear()
     end
     return true
@@ -289,7 +294,7 @@ function L.attach(M)
       and vim.api.nvim_win_is_valid(state.panel.win)
     local view_active = state.view ~= nil
     if not (panel_visible or view_active) then
-      vim.schedule(function() M.close() end)
+      vim.schedule(function() controller.close() end)
     end
   end)
 
@@ -297,7 +302,7 @@ function L.attach(M)
     if State.has() then
       local s = State.get()
       if s.tabpage and vim.api.nvim_tabpage_is_valid(s.tabpage) then
-        M.close()
+        controller.close()
         return true
       end
     end
@@ -312,6 +317,8 @@ function L.attach(M)
     local visible = win and vim.api.nvim_win_is_valid(win)
 
     if visible then
+      deps.track_panel_width(state)
+      deps.persist_panel_width(state)
       local main = state.panel.main_win
       if main and vim.api.nvim_win_is_valid(main) then
         pcall(vim.api.nvim_set_current_win, main)
@@ -324,7 +331,7 @@ function L.attach(M)
       state._panel_hidden = true
       Panel.close_win(win)
     else
-      Panel.open_split(state.panel.buf, { width = state._panel_width or M._config.width })
+      Panel.open_split(state.panel.buf, { width = state._panel_width or config().width })
       state.panel.win = vim.api.nvim_get_current_win()
       state._panel_hidden = false
       LeftRender.render(state)
@@ -372,6 +379,7 @@ function L.attach(M)
       Loader.reload_index(state)
     end)
   end
+  return M
 end
 
 return L

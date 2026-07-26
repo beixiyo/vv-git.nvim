@@ -18,7 +18,7 @@ local M = {}
 
 -- 存 install 前的实现；非 nil 即"已劫持"。链式兼容：若别的插件已 patch 过
 -- nvim_open_win，我们保存的是他们包装后的版本，uninstall 时还原到他们那层
----@type fun(buf:integer, enter:boolean, cfg:table):integer?
+---@type (fun(buf:integer, enter:boolean, cfg:table):integer)?
 local orig_open_win = nil
 
 -- 只摘会让新窗口进 diff-group 的三个选项。foldmethod/foldexpr/winhighlight
@@ -37,9 +37,10 @@ end
 ---@param cfg table
 ---@return integer win
 local function patched(buf, enter, cfg)
-  local win = orig_open_win(buf, enter, cfg)
+  local open_win = assert(orig_open_win)
+  local win = open_win(buf, enter, cfg)
 
-  local state = State._state
+  local state = State.current()
   if not state or not state.tabpage then return win end
   if not vim.api.nvim_win_is_valid(win) then return win end
 
@@ -68,7 +69,7 @@ end
 ---@return boolean uninstalled_now
 function M.uninstall()
   if orig_open_win == nil then return false end
-  vim.api.nvim_open_win = orig_open_win
+  if vim.api.nvim_open_win == patched then vim.api.nvim_open_win = orig_open_win end
   orig_open_win = nil
   return true
 end

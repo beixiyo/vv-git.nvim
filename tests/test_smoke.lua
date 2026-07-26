@@ -416,14 +416,8 @@ end
 -- "Terminal too narrow" / "Terminal shrunk below" 字串应不复存在
 local function test_narrow_single_col_design()
   local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
-  local pops_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/core/panel_ops.lua'), '\n')
-
   assert_true(init_src:find('single_col_threshold') ~= nil,
     'config 含 single_col_threshold 窄宽阈值（单栏降级设计）')
-  assert_true(pops_src:find('vim%.o%.columns%s*<%s*M%._config%.single_col_threshold') ~= nil,
-    'panel_ops.is_narrow 用 columns < single_col_threshold 判定窄宽')
-  assert_true(pops_src:find('RightView%.show%(.-is_narrow') ~= nil,
-    'RightView.show 接收 is_narrow（宽度驱动单/双栏，而非拒开）')
   assert_true(init_src:find('Terminal too narrow') == nil,
     '不再含旧「Terminal too narrow」拒开提示（已改单栏降级）')
 end
@@ -480,6 +474,10 @@ end
 
 local function test_staged_scrollbar_source()
   local RightView = require('vv-git.right.view')
+  local toggle_stage_calls = 0
+  RightView.configure({
+    on_toggle_stage = function() toggle_stage_calls = toggle_stage_calls + 1 end,
+  })
   local tmpdir = vim.fn.tempname()
   vim.fn.mkdir(tmpdir, 'p')
   vim.fn.writefile({ 'one', 'two', 'three' }, tmpdir .. '/sample.txt')
@@ -506,6 +504,14 @@ local function test_staged_scrollbar_source()
     return state.view and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
   end)
   assert_true(ready, 'staged diff right buffer rendered')
+
+  local right_maps = {}
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(state.view.b_buf, 'n')) do
+    right_maps[map.lhs] = map.callback
+  end
+  assert_eq(type(right_maps['-']), 'function', 'right diff buffer installs toggle_stage mapping')
+  right_maps['-']()
+  assert_eq(toggle_stage_calls, 1, 'right diff - invokes toggle_stage handler')
 
   local source = ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
   assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
@@ -579,7 +585,7 @@ local function test_compare_tag_with_head()
 
   local done = false
   State.clear()
-  local state = State.get()
+  local state = State.create()
   state.git_root = tmpdir
   Compare.start(state, 'v1.0.0', 'v1.0.0', 'v1.0.0..HEAD', function() done = true end)
   assert_true(vim.wait(3000, function() return done end), 'tag..HEAD compare completed')
@@ -825,11 +831,11 @@ end
 local function test_state_lifecycle_identity()
   local State = require('vv-git.state')
   State.clear()
-  local old = State.get()
+  local old = State.create()
   assert_true(State.is_current(old), 'state identity accepts current panel state')
   State.clear()
   assert_true(not State.is_current(old), 'state identity rejects closed panel state')
-  local new = State.get()
+  local new = State.create()
   assert_true(not State.is_current(old), 'state identity rejects state from previous panel lifecycle')
   assert_true(State.is_current(new), 'state identity accepts reopened panel state')
   State.clear()

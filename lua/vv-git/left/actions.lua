@@ -118,14 +118,15 @@ end
 -- 根据 id.base 自动 stage 或 unstage（单键 toggle）
 ---@param state table
 ---@param id table
-function M.toggle_stage(state, id)
+---@param after fun()?
+function M.toggle_stage(state, id, after)
   local side, paths, root = collect(state, id)
   if not paths or #paths == 0 then return end
   local fn = side == 'staged' and Git.unstage or Git.stage
   local label = side == 'staged' and 'unstage' or 'stage'
   fn(root, paths, function(ok, err)
     if not ok then notify_err(label, err); return end
-    refresh(state)
+    refresh(state, after)
   end)
 end
 
