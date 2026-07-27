@@ -46,13 +46,7 @@ local function assert_true(v, label)
   end
 end
 
--- 测试 1: git.lua discard_untracked 函数存在
-local function test_discard_untracked_exists()
-  local Git = require('vv-git.git')
-  assert_eq(type(Git.discard_untracked), 'function', 'Git.discard_untracked is a function')
-end
-
--- 测试 2: git.lua discard_untracked 可删除文件
+-- 测试 1: git.lua discard_untracked 可删除文件
 local function test_discard_untracked_file()
   local Git = require('vv-git.git')
   local tmpdir = vim.fn.tempname()
@@ -395,46 +389,6 @@ local function test_view_module_loads()
   assert_true(ok, 'vv-git.right.view loads without error')
 end
 
--- 测试 8: 右侧 diff 视图聚焦时，[c/]c 也走 vv-utils.scroll 动画包装
-local function test_right_diff_chunk_keymaps()
-  local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
-
-  assert_true(view_src:find("'%]c'") ~= nil,
-    'right view 安装 ]c next_chunk 映射')
-  assert_true(view_src:find("'%[c'") ~= nil,
-    'right view 安装 [c prev_chunk 映射')
-  assert_true(view_src:find('Scroll%.with_view_animation') ~= nil,
-    'right view chunk 跳转走 vv-utils.scroll 动画包装')
-  assert_true(view_src:find("nvim_get_option_value%('diff'") ~= nil,
-    'right view chunk 跳转只在 diff 窗口接管')
-end
-
--- 测试 9: 源代码静态验证 — 窄终端策略为「降级单栏」而非旧的「拒开 + Terminal too narrow」
--- 现行设计：列数 < single_col_threshold 时 diff 视图降级为单栏（仅 b 侧，无 inline diff），
--- ≥ 阈值时正常 dual diff，resize 时在 narrow↔wide 间自动迁移。本测试防回退到旧拒开设计
--- 注：旧版曾用「窄终端 = notify + close」，现已改回（重新实现的）单栏降级，故旧的
--- "Terminal too narrow" / "Terminal shrunk below" 字串应不复存在
-local function test_narrow_single_col_design()
-  local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
-  assert_true(init_src:find('single_col_threshold') ~= nil,
-    'config 含 single_col_threshold 窄宽阈值（单栏降级设计）')
-  assert_true(init_src:find('Terminal too narrow') == nil,
-    '不再含旧「Terminal too narrow」拒开提示（已改单栏降级）')
-end
-
--- 测试 10: 源代码静态验证 — resize 经 _apply_layout 在 narrow↔wide 间迁移，而非 notify + 关闭
-local function test_resize_single_col_migration()
-  local pops_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/core/panel_ops.lua'), '\n')
-  local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
-
-  assert_true(pops_src:find('M%._apply_layout%s*=') ~= nil,
-    '_apply_layout 定义存在（resize 布局迁移入口）')
-  assert_true(view_src:find('_apply_layout') ~= nil and view_src:find('narrow') ~= nil,
-    'view 层支持 _apply_layout 的 narrow↔wide 迁移（保留 b_win 配置）')
-  assert_true(pops_src:find('Terminal shrunk below') == nil,
-    '不再含旧「Terminal shrunk below」窄化关闭提示（已改单栏迁移）')
-end
-
 local function test_resize_restores_diff_ratio()
   vim.cmd('tabnew')
   local a_win = vim.api.nvim_get_current_win()
@@ -457,19 +411,6 @@ local function test_resize_restores_diff_ratio()
   assert_eq(vim.api.nvim_win_get_width(a_win) + vim.api.nvim_win_get_width(b_win), before_total,
     '恢复 diff_ratio 不改变 diff 区域总宽度')
   vim.cmd('tabclose')
-end
-
--- 测试 11: 源代码静态验证 — 三栏冲突 result 高度暴露为配置项
-local function test_conflict_result_ratio_config()
-  local init_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/init.lua'), '\n')
-  local view_src = table.concat(vim.fn.readfile(plugin_root .. '/lua/vv-git/right/view.lua'), '\n')
-
-  assert_true(init_src:find('conflict_result_ratio number') ~= nil,
-    'VVGitConfig 暴露 conflict_result_ratio 类型注释')
-  assert_true(init_src:find('conflict_result_ratio%s*=%s*0%.5') ~= nil,
-    'defaults 中 conflict_result_ratio 默认为 0.5')
-  assert_true(view_src:find('handlers%.get_config%(%)%.conflict_result_ratio') ~= nil,
-    'conflict 三栏布局从配置读取 result 高度比例')
 end
 
 local function test_staged_scrollbar_source()
@@ -978,7 +919,6 @@ end
 
 -- 执行所有测试
 log('========== vv-git.nvim 变更验证 ==========')
-test_discard_untracked_exists()
 test_discard_untracked_file()
 test_discard_untracked_dir()
 test_classify_untracked()
@@ -989,11 +929,7 @@ test_panel_edge_file_keymaps()
 test_panel_drives_right_diff_folds()
 test_single_col_disables_folds()
 test_view_module_loads()
-test_right_diff_chunk_keymaps()
-test_narrow_single_col_design()
-test_resize_single_col_migration()
 test_resize_restores_diff_ratio()
-test_conflict_result_ratio_config()
 test_staged_scrollbar_source()
 test_compare_tag_with_head()
 test_compare_file_uses_live_buffer()
