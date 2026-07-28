@@ -241,10 +241,14 @@ function L.new(deps)
       pcall(vim.api.nvim_del_autocmd, resize_autocmd_id)
       resize_autocmd_id = nil
     end
+
     resize_autocmd_id = vim.api.nvim_create_autocmd('WinResized', {
       callback = function()
         if not State.has() then return true end
         local s = State.get()
+        -- close() 已同步采集并持久化用户最后宽度；tabclose 过程中 Neovim 会先重排
+        -- 待关闭窗口并再次触发 WinResized，不能让这个临时布局覆盖刚保存的宽度
+        if s._closing then return end
         if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
           deps.track_panel_width(s)
         end
@@ -269,14 +273,19 @@ function L.new(deps)
       return
     end
 
+    -- 必须在 tabclose 触发布局收缩之前采样。_closing 同时阻止 WinResized 把关闭过程中的
+    -- 临时宽度重新写回 state；若 tabclose 失败则恢复监听
+    state._closing = true
     deps.track_panel_width(state)
     deps.persist_panel_width(state)
 
     if tp and vim.api.nvim_tabpage_is_valid(tp) then
-      pcall(function()
+      local ok = pcall(function()
         local pagenr = vim.api.nvim_tabpage_get_number(tp)
         vim.cmd('tabclose ' .. pagenr)
       end)
+
+      if not ok or vim.api.nvim_tabpage_is_valid(tp) then state._closing = nil end
       if prev_tab and vim.api.nvim_tabpage_is_valid(prev_tab) then
         pcall(vim.api.nvim_set_current_tabpage, prev_tab)
       end
@@ -292,6 +301,7 @@ function L.new(deps)
     local panel_visible = state.panel
       and state.panel.win
       and vim.api.nvim_win_is_valid(state.panel.win)
+
     local view_active = state.view ~= nil
     if not (panel_visible or view_active) then
       vim.schedule(function() controller.close() end)
@@ -319,6 +329,7 @@ function L.new(deps)
     if visible then
       deps.track_panel_width(state)
       deps.persist_panel_width(state)
+
       local main = state.panel.main_win
       if main and vim.api.nvim_win_is_valid(main) then
         pcall(vim.api.nvim_set_current_win, main)
@@ -374,6 +385,7 @@ function L.new(deps)
       state.folds = {}
       state.section_folds = {}
       state.block_folds = {}
+
       require('vv-git.compare').stop(state)
       RightView.close(state)
       Loader.reload_index(state)

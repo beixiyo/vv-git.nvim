@@ -131,7 +131,9 @@ local function track_panel_width(state)
 end
 
 local function persist_panel_width(state)
-  if panel_width then panel_width.persist(state) end
+  if not panel_width or not state or type(state._panel_width) ~= 'number' then return end
+  panel_width.persist(state)
+  M._config.width = state._panel_width
 end
 
 -- 子仓库扫描深度的运行时临时覆盖（`:VVGitSubrepoDepth` 设置）
