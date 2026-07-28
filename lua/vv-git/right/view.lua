@@ -441,6 +441,7 @@ local function create_rev_buffer(root, rev, relpath, cb)
     -- 打标：后续 wipe_scratch 靠这个判断"这是 vv-git 自建的 scratch，可以删"，
     -- 不再用 bufhidden == 'wipe' 去旁敲侧击（工作区 buf 若被第三方设成 wipe 会误杀）
     vim.b[buf].vv_git_scratch = true
+    vim.b[buf].vv_git_source_path = vim.fs.normalize(root .. '/' .. relpath)
     cb(buf)
   end)
 end

@@ -463,6 +463,11 @@ local function test_staged_scrollbar_source()
   assert_eq(source and source.path, 'sample.txt', 'staged scrollbar source carries relative path')
   assert_eq(source and source.mode, 'staged', 'staged scrollbar source selects cached diff')
   assert_eq(source and source.side, 'new', 'staged modified file projects onto index side')
+  assert_eq(
+    vim.b[state.view.b_buf].vv_git_source_path,
+    vim.fs.normalize(tmpdir .. '/sample.txt'),
+    'staged scratch buffer exposes its workspace file path'
+  )
 
   RightView.show(state, { is_dir = false, relpath = 'removed.txt', xy = 'D ' }, 'staged', false, tmpdir)
   local deletion_ready = vim.wait(3000, function()
@@ -790,7 +795,7 @@ local function test_public_api_contract()
     'open', 'close', 'toggle', 'toggle_panel', 'refresh',
     'is_open', 'get_context',
     'show_commit', 'compare_with_head', 'compare_refs', 'compare_file', 'stop_compare',
-    'get_node_path', 'get_node_dir',
+    'get_node_path', 'get_target_paths', 'get_node_dir',
   }
 
   local expected = {}
@@ -803,6 +808,22 @@ local function test_public_api_contract()
   end
   assert_true(Plugin._config == nil, 'public facade hides internal config')
   assert_true(Plugin._action == nil, 'public facade hides internal actions')
+
+  local State = require('vv-git.state')
+  local Subrepo = require('vv-git.subrepo')
+  local state = State.create()
+  state.git_root = '/repo'
+  state.selection = {
+    [Subrepo.sel_key('staged', 'same.lua')] = true,
+    [Subrepo.sel_key('unstaged', 'same.lua')] = true,
+    [Subrepo.sel_key(Subrepo.section_id('/repo/sub', '/repo', 'unstaged'), 'nested.lua')] = true,
+  }
+  assert_eq(
+    table.concat(Plugin.get_target_paths(), '\n'),
+    '/repo/same.lua\n/repo/sub/nested.lua',
+    'target paths resolve subrepos, deduplicate files, and sort absolute paths'
+  )
+  State.clear()
 
   local config_copy = Plugin.config()
   local configured_width = config_copy.width

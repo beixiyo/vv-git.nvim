@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.4 - 2026-07-28
+
+### Added
+
+- 新增 `get_target_paths()` 获取多选路径 API
+
+### Fixed
+
+- 修复右侧 diff buffer 中按 `-` 暂存/取消后，不会自动跳转到下一个文件
+- 修复匿名 diff buffer 中无法通过外部功能复制对应文件路径
+
 ## 0.3.3 - 2026-07-26
 
 ### Changed

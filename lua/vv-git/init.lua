@@ -438,18 +438,48 @@ end
 ---@return string?
 function M.get_node_path()
   if not State.has() then return nil end
-  local id = require('vv-git.core.keymaps').id_under_cursor(State.get())
+  local state = State.get()
+  local id = require('vv-git.core.keymaps').id_under_cursor(state)
   if not id or not id.node then return nil end
-  return vim.fs.normalize(State.get().git_root .. '/' .. id.node.relpath)
+  local root = select(1, require('vv-git.subrepo').parse_section_id(id.section or ''))
+  return vim.fs.normalize((root or state.git_root) .. '/' .. id.node.relpath)
+end
+
+--- 返回当前操作目标的绝对路径；存在多选时返回全部选中文件，否则返回光标节点
+---@return string[]
+function M.get_target_paths()
+  if not State.has() then return {} end
+
+  local state = State.get()
+  local Subrepo = require('vv-git.subrepo')
+  local unique = {}
+
+  for key in pairs(state.selection or {}) do
+    local root, _, relpath = Subrepo.parse_sel_key(key)
+    if relpath then
+      unique[vim.fs.normalize((root or state.git_root) .. '/' .. relpath)] = true
+    end
+  end
+
+  local paths = vim.tbl_keys(unique)
+  table.sort(paths)
+  if #paths > 0 then return paths end
+
+  local path = M.get_node_path()
+  return path and { path } or {}
 end
 
 --- 返回光标节点对应的目录：目录节点返回自身，文件节点返回父目录
 ---@return string?
 function M.get_node_dir()
   if not State.has() then return nil end
-  local id = require('vv-git.core.keymaps').id_under_cursor(State.get())
+  local state = State.get()
+  local id = require('vv-git.core.keymaps').id_under_cursor(state)
+
   if not id or not id.node then return nil end
-  local path = vim.fs.normalize(State.get().git_root .. '/' .. id.node.relpath)
+  local root = select(1, require('vv-git.subrepo').parse_section_id(id.section or ''))
+  local path = vim.fs.normalize((root or state.git_root) .. '/' .. id.node.relpath)
+
   return id.node.is_dir and path or vim.fs.dirname(path)
 end
 
@@ -460,7 +490,7 @@ for _, name in ipairs({
   'open', 'close', 'toggle', 'toggle_panel', 'refresh',
   'is_open', 'get_context',
   'show_commit', 'compare_with_head', 'compare_refs', 'compare_file', 'stop_compare',
-  'get_node_path', 'get_node_dir',
+  'get_node_path', 'get_target_paths', 'get_node_dir',
 }) do
   Public[name] = M[name]
 end

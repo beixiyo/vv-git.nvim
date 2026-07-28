@@ -364,19 +364,54 @@ end
       node = view.node,
     }
 
+    local acted_lnum
+    for lnum, panel_id in pairs((state.panel and state.panel.id_by_line) or {}) do
+      if panel_id.section == id.section and panel_id.node
+          and panel_id.node.relpath == relpath then
+        acted_lnum = lnum
+        break
+      end
+    end
+
+    local next_path, prev_path
+    if acted_lnum then
+      next_path, prev_path = action_neighbor_leaves(state, id, acted_lnum)
+      state._action_hint = {
+        section = id.section,
+        lnum = acted_lnum,
+        next_path = next_path,
+        prev_path = prev_path,
+      }
+    end
+
     Actions.toggle_stage(state, id, function()
       if not State.is_current(state) then return end
       local repo = Subrepo.repo_of(state, root)
-      local side = repo and repo.tree and repo.tree[target_section]
-      local node = side and Tree.leaf_at(side, relpath)
+      local section, path, node
+
+      for _, candidate in ipairs({ next_path, prev_path }) do
+        local side = candidate and repo and repo.tree and repo.tree[view.section]
+        local found = side and Tree.leaf_at(side, candidate)
+        if found then
+          section, path, node = view.section, candidate, found
+          break
+        end
+      end
+
+      if not node then
+        local side = repo and repo.tree and repo.tree[target_section]
+        section, path = target_section, relpath
+        node = side and Tree.leaf_at(side, path)
+      end
+
       if not node then return end
 
-      state.cur_path = relpath
-      state.cur_section = Subrepo.section_id(root, state.git_root, target_section)
+      state.cur_path = path
+      state.cur_section = Subrepo.section_id(root, state.git_root, section)
       if vim.api.nvim_win_is_valid(restore_win) then
         state._reshow_restore_win = restore_win
       end
-      RightView.show(state, node, target_section, narrow(), root)
+      RightView.show(state, node, section, narrow(), root)
     end)
   end)
 

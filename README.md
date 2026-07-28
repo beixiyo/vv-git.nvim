@@ -228,6 +228,7 @@ git.stop_compare()
 git.get_subrepo_depth()
 git.set_subrepo_depth(n)
 git.get_node_path()
+git.get_target_paths()
 git.get_node_dir()
 ```
 
