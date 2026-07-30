@@ -71,8 +71,8 @@
 | `keymap_next_file` | `string \| false` | `'<C-j>'` | diff buffer 内切换到左栏的下一个文件；`false` 禁用 |
 | `keymap_prev_file` | `string \| false` | `'<C-k>'` | diff buffer 内切换到左栏的上一个文件；`false` 禁用 |
 | `select_move_down` | `boolean` | `true` | `<Tab>` 切换选中后自动将光标下移一行 |
-| `binary.intercept` | `boolean` | `true` | 拦截二进制文件：预览时静默跳过，`<CR>`/`gf` 改用系统默认程序打开；`false` 禁用拦截 |
-| `binary.extensions` | `table<string, boolean>` | 见下方 | 视为二进制的扩展名集合（小写 key）；`vim.tbl_deep_extend` 合并，只需写要覆盖的 key |
+| `binary.intercept` | `boolean` | `true` | 按内容与扩展名检测二进制文件：右栏显示文件属性，`<CR>`/`gf` 改用系统默认程序打开；`false` 禁用拦截 |
+| `binary.extensions` | `table<string, boolean>` | 见下方 | 二进制检测的扩展名覆盖（小写 key）；`vim.tbl_deep_extend` 合并，只需写要覆盖的 key |
 | `subrepo.depth` | `integer` | `0` | 扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；`0` = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） |
 | `subrepo.respect_gitignore` | `boolean` | `false` | 发现时是否跳过被父仓库 `.gitignore` 的目录 |
 | `subrepo.prune` | `string[]` | 见下方 | 发现子仓库时**不进入扫描**的目录名列表。**覆盖**语义：传了就整体替换默认列表（不合并）；默认含 `node_modules` / `.cache` / `.local` / `.cargo` / `.rustup` / `.bun` 等缓存目录，`.git` 始终跳过 |
@@ -121,10 +121,6 @@ opts = {
 > worktree 与子仓库是两回事：worktree 是同一份历史的多个 checkout（共享 `.git`），故做成「切过去」而非并排成块；子仓库是独立仓库，并排渲染成块
 
 ## 二进制文件拦截
-
-默认开启。预览（光标移动）时静默跳过二进制文件；`<CR>`/`gf` 遇到二进制文件时改用系统默认程序打开，不在 nvim 内尝试渲染乱码 diff
-
-内置扩展名覆盖：图片（png/jpg/gif/webp/heic/…）、视频（mp4/mkv/mov/…）、音频（mp3/wav/flac/…）、压缩包（zip/tar/gz/tgz/jar/deb/dmg/iso/…）、编译产物（exe/dll/so/wasm/bin/…）、字体（ttf/otf/woff/…）、二进制文档（pdf/docx/xlsx/…）、数据库（sqlite/db）
 
 ```lua
 -- 放行某类扩展名（未来 nvim 支持图片预览时）

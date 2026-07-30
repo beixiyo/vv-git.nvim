@@ -71,8 +71,8 @@
 | `keymap_next_file` | `string \| false` | `'<C-j>'` | Open the next file from a diff buffer; `false` disables it |
 | `keymap_prev_file` | `string \| false` | `'<C-k>'` | Open the previous file from a diff buffer; `false` disables it |
 | `select_move_down` | `boolean` | `true` | Move the cursor down one row after `<Tab>` toggles selection |
-| `binary.intercept` | `boolean` | `true` | Intercept binary files: silently skip previews and open them with the system default application on `<CR>`/`gf`; `false` disables interception |
-| `binary.extensions` | `table<string, boolean>` | See below | Extensions treated as binary, using lowercase keys; merged with `vim.tbl_deep_extend`, so only overridden keys are required |
+| `binary.intercept` | `boolean` | `true` | Detect binary files by content and extension: show file metadata in the right buffer and open them with the system default application on `<CR>`/`gf`; `false` disables interception |
+| `binary.extensions` | `table<string, boolean>` | See below | Extension overrides for binary detection, using lowercase keys; merged with `vim.tbl_deep_extend`, so only overridden keys are required |
 | `subrepo.depth` | `integer` | `0` | Maximum directory depth for scanning nested repositories (independent Git repositories or submodules); `0` disables scanning. Temporarily change it with `:VVGitSubrepoDepth <n>` without persisting the value |
 | `subrepo.respect_gitignore` | `boolean` | `false` | Whether discovery skips directories ignored by the parent repository's `.gitignore` |
 | `subrepo.prune` | `string[]` | See below | Directory names not entered while discovering nested repositories. This uses replacement semantics: providing it replaces the entire default list instead of merging. Defaults include caches such as `node_modules`, `.cache`, `.local`, `.cargo`, `.rustup`, and `.bun`; `.git` is always skipped |
@@ -120,10 +120,6 @@ Switching performs a clean context change: it points `state.git_root` at the sel
 > Worktrees and nested repositories are different concepts. Worktrees are multiple checkouts sharing the same `.git` history, so vv-git switches into one instead of rendering them side by side. Nested repositories are independent repositories and are rendered as separate blocks.
 
 ## Binary File Interception
-
-Interception is enabled by default. Binary files are silently skipped during cursor-movement previews. When `<CR>`/`gf` encounters a binary file, vv-git opens it with the system default application instead of attempting to render a garbled diff inside Neovim.
-
-Built-in extensions cover images (png/jpg/gif/webp/heic/…), video (mp4/mkv/mov/…), audio (mp3/wav/flac/…), archives (zip/tar/gz/tgz/jar/deb/dmg/iso/…), compiled artifacts (exe/dll/so/wasm/bin/…), fonts (ttf/otf/woff/…), binary documents (pdf/docx/xlsx/…), and databases (sqlite/db).
 
 ```lua
 -- Allow specific extensions (for example, when Neovim supports image previews)

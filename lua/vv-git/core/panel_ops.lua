@@ -107,6 +107,10 @@ end
   M._reshow_view = State.guarded(function(state)
     local view = state.view
     if not view or not view.node then return end
+    -- 新文件的异步 show 尚未 attach 时，state.view 仍指向旧 buffer。此时任何
+    -- 被动 reshow 都不能拿旧 view 再发请求，否则会以更大的 req_id 覆盖新目标
+    if not RightView.is_attached_current(state) then return end
+
     local node, section = view.node, view.section
     state.view.path = nil
     state._reshow_restore_win = vim.api.nvim_get_current_win()
@@ -121,7 +125,6 @@ end
     local node = id.node
     if not node or node.is_dir then return end
     local root = id.root or state.git_root
-    if binary(root .. '/' .. node.relpath) then return end
     local view = state.view
     if view and view.path == node.relpath and view.section == id.base and view.root == root
         and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
@@ -146,7 +149,7 @@ end
     end
   end
 
-  -- 从 diff buffer 切换左栏中的上/下一个可预览文件。只移动 panel 光标，不把焦点
+  -- 从右侧 buffer 切换左栏中的上/下一个文件。只移动 panel 光标，不把焦点
   -- 切到 panel；RightView 的 restore 机制会在异步 show 完成后回到触发窗口。
   M._navigate_view_file = State.guarded(function(state, direction)
     local panel = state.panel
@@ -157,7 +160,6 @@ end
       local node = id and id.node
       local root = id and (id.root or state.git_root)
       return node and not node.is_dir and root
-          and not binary(root .. '/' .. node.relpath)
     end)
     if not target then return end
 
@@ -442,6 +444,9 @@ end
     if not state.git_root then return end
     local view = state.view
     if not view or not view.node then return end
+    -- VimResized 是防抖执行的，可能晚于文件导航到达。旧 view 不拥有最新 show
+    -- request 时只等待新请求 attach，不能用旧节点重新 show 覆盖它
+    if not RightView.is_attached_current(state) then return end
     if view.intrinsic_single then return end
 
     local want_single = narrow()

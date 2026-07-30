@@ -103,12 +103,17 @@ vim.api.nvim_win_set_cursor(state.panel.win, { 2, 0 })
 last_show = nil
 operations._navigate_view_file(1)
 assert(
-  vim.api.nvim_win_get_cursor(state.panel.win)[1] == 4,
-  'right-buffer next file skips non-previewable binary nodes'
+  vim.api.nvim_win_get_cursor(state.panel.win)[1] == 3,
+  'right-buffer next file includes binary info nodes'
 )
 assert(
-  last_show and last_show.node == next_node and last_show.section == 'unstaged',
+  last_show and last_show.node == binary_node and last_show.section == 'staged',
   'right-buffer next file previews the next leaf'
+)
+operations._navigate_view_file(1)
+assert(
+  vim.api.nvim_win_get_cursor(state.panel.win)[1] == 4,
+  'right-buffer next file advances past the binary info node'
 )
 operations._navigate_view_file(1)
 assert(

@@ -6,6 +6,7 @@ local Git = require('vv-git.git')
 local M = {}
 
 local SCRATCH_FILETYPE = 'vv-git-a'
+local INFO_FILETYPE = 'vv-git-info'
 
 -- 创建某个 revision 的只读 scratch buffer
 ---@param root string
@@ -35,6 +36,25 @@ function M.create_revision(root, rev, relpath, callback)
     vim.b[buf].vv_git_source_path = vim.fs.normalize(root .. '/' .. relpath)
     callback(buf)
   end)
+end
+
+-- 创建只读信息 buffer；调用方负责提供展示内容，buffer 模块只管理资源所有权
+---@param lines string[]
+---@param source_path string
+---@return integer
+function M.create_info(lines, source_path)
+  local buf = api.nvim_create_buf(false, true)
+  api.nvim_set_option_value('buftype', 'nofile', { buf = buf })
+  api.nvim_set_option_value('swapfile', false, { buf = buf })
+  api.nvim_set_option_value('bufhidden', 'wipe', { buf = buf })
+  api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  api.nvim_set_option_value('modifiable', false, { buf = buf })
+  api.nvim_set_option_value('readonly', true, { buf = buf })
+  api.nvim_set_option_value('filetype', INFO_FILETYPE, { buf = buf })
+  vim.b[buf].vv_git_scratch = true
+  vim.b[buf].vv_git_binary_info = true
+  vim.b[buf].vv_git_source_path = vim.fs.normalize(source_path)
+  return buf
 end
 
 -- 获取或加载工作区文件的真实 buffer；bufadd 提供 exact-match 且幂等的复用语义

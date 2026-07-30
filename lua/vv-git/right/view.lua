@@ -13,6 +13,7 @@ local api = vim.api
 local Git = require('vv-git.git')
 local InlineDiff = require('vv-git.inline_diff')
 local FilePolicy = require('vv-git.file_policy')
+local Fs = require('vv-utils.fs')
 local RightKeymaps = require('vv-git.right.keymaps')
 local RightOptions = require('vv-git.right.options')
 local Buffers = require('vv-git.right.buffers')
@@ -87,10 +88,10 @@ function M.configure(overrides)
   configure_runtime()
 end
 
----@param path string  absolute path
----@return boolean
-local function is_binary(path)
-  return FilePolicy.is_binary(path, handlers.get_config().binary)
+---@param path string absolute path
+---@return VVFsFileInfo?
+local function binary_info(path)
+  return FilePolicy.binary_info(path, handlers.get_config().binary)
 end
 
 configure_runtime()
@@ -156,24 +157,34 @@ function M.show(state, node, section, force_single, root)
   local function drop_unbound_reshow()
     if state._reshow_restore_req == nil then state._reshow_restore_win = nil end
   end
+
   if node.is_dir then drop_unbound_reshow(); return end
+
   local owner = root or state.git_root
   local abspath = owner .. '/' .. node.relpath
-  if is_binary(abspath) then drop_unbound_reshow(); return end
+  local info = binary_info(abspath)
+
   local xy = node.xy or ''
   local compare = state.compare
-  local plan = Plan.resolve({
-    section = section,
-    xy = xy,
-    compare_status = node.compare_status,
-    force_single = force_single == true,
-    from_rev = compare and compare.from_rev or nil,
-    to_rev = compare and (compare.to_rev or 'HEAD') or nil,
-    relpath = node.relpath,
-    old_relpath = node.old_relpath,
-  })
-  if not plan then drop_unbound_reshow(); return end
-  local intrinsic_single = plan.intrinsic_single
+  local plan
+  local intrinsic_single
+
+  if info then
+    intrinsic_single = true
+  else
+    plan = Plan.resolve({
+      section = section,
+      xy = xy,
+      compare_status = node.compare_status,
+      force_single = force_single == true,
+      from_rev = compare and compare.from_rev or nil,
+      to_rev = compare and (compare.to_rev or 'HEAD') or nil,
+      relpath = node.relpath,
+      old_relpath = node.old_relpath,
+    })
+    if not plan then drop_unbound_reshow(); return end
+    intrinsic_single = plan.intrinsic_single
+  end
 
   -- 异步竞态守卫：每次 show 分配单调递增 req_id。快速切换文件时，嵌套 git show
   -- 回调可能乱序到达，用 req_id 确认当前请求仍是最新才继续。否则 scratch buf
@@ -283,29 +294,36 @@ function M.show(state, node, section, force_single, root)
   -- 仅 force_single 的常规改动文件会传；intrinsic_single（A/D/?? 等）不传，保持空白
   ---@param b_buf integer
   ---@param a_lines string[]?
-  ---@param side 'new'|'old'
+  ---@param side? 'new'|'old'
   local function attach_single(b_buf, a_lines, side)
     local b_win = right_layout.ensure(state, false)
     if not b_win then
       Buffers.wipe_scratch({ b_buf })
       vim.notify('[vv-git] No main window available', vim.log.levels.ERROR); return
     end
+
     state.view = {
       mode = 'single', section = section, path = node.relpath, root = owner,
       b_win = b_win, b_buf = b_buf,
-      node = node, intrinsic_single = intrinsic_single,
+      node = node, intrinsic_single = intrinsic_single, _show_req_id = req_id,
     }
     right_layout.keep_scrollbar(b_win)
-    set_git_diff_source(b_buf, side)
+
+    if side then set_git_diff_source(b_buf, side) end
     if section == 'compare' then vim.w[b_win].vv_statuscol_git_disabled = nil end
+
     local ok, err = pcall(api.nvim_win_set_buf, b_win, b_buf)
+
     if not ok then
       if not tostring(err):find('E828') then error(err) end
     end
+
     right_options.restore(b_win)
     Buffers.ensure_highlighting(b_buf, node.relpath)
+
     if prev_b_buf and prev_b_buf ~= b_buf then right_keymaps.remove(prev_b_buf) end
     right_keymaps.install(b_buf)
+
     -- scratch buffer（只读 rev 视图）也阻止 Insert mode
     if vim.b[b_buf].vv_git_scratch then right_keymaps.block_insert(b_buf) end
 
@@ -317,11 +335,13 @@ function M.show(state, node, section, force_single, root)
       -- InlineDiff 会改 foldmethod/foldlevel/foldcolumn 等 win-local 选项；先 save 一下
       -- b_win 的原值，让后续 close / 切回 dual 时能精确还原用户初值
       right_options.save(b_win)
+
       local cfg = handlers.get_config()
       local opts = {
         b_win = b_win,
         fold_unchanged = cfg.fold_unchanged ~= false,
       }
+
       local max = cfg.inline_diff_max_lines or 10000
       -- M.apply / attach_live 都返回首个 hunk 的 b 侧目标行，省得再跑一遍 vim.diff
       -- 无 hunk（罕见，理论不会进 force_single 路径）→ first 为 nil，保持光标在 1
@@ -331,6 +351,7 @@ function M.show(state, node, section, force_single, root)
       else
         state.view._inline_cleanup, first = InlineDiff.attach_live(b_buf, a_lines, max, opts)
       end
+
       if first and api.nvim_win_is_valid(b_win) then
         pcall(api.nvim_win_set_cursor, b_win, { first, 0 })
         api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
@@ -358,16 +379,19 @@ function M.show(state, node, section, force_single, root)
       Buffers.wipe_scratch({ a_buf, b_buf })
       vim.notify('[vv-git] Failed to create diff window', vim.log.levels.ERROR); return
     end
+
     -- 先更新 state.view（在应用 diff options 触发 BufWinEnter 之前），
     -- 否则自检 autocmd 会把"正在切换的新 buf"误认为 stale 而把视图拆掉
     state.view = {
       mode = 'diff2', section = section, path = node.relpath, root = owner,
       a_win = a_win, a_buf = a_buf,
       b_win = b_win, b_buf = b_buf,
-      node = node, intrinsic_single = intrinsic_single,
+      node = node, intrinsic_single = intrinsic_single, _show_req_id = req_id,
     }
     right_layout.keep_scrollbar(b_win)
+
     if section == 'compare' then set_git_diff_source(a_buf, 'old') end
+
     set_git_diff_source(b_buf, 'new')
     if section == 'compare' then
       vim.w[a_win].vv_statuscol_git_disabled = nil
@@ -410,7 +434,7 @@ function M.show(state, node, section, force_single, root)
       a_win = a_win, a_buf = a_buf,
       b_win = b_win, b_buf = b_buf,
       c_win = c_win, c_buf = c_buf,
-      node = node, intrinsic_single = intrinsic_single,
+      node = node, intrinsic_single = intrinsic_single, _show_req_id = req_id,
     }
     right_layout.keep_scrollbar(b_win)
 
@@ -568,7 +592,12 @@ function M.show(state, node, section, force_single, root)
   end
 
   -- Plan 只决定目标形态；异步请求、fallback、资源清理和 attach 生命周期仍由 view 执行。
-  if plan.kind == 'single_rev' then
+  if info then
+    local lines = Fs.file_info_lines(info, { display_path = node.relpath })
+    local buf = Buffers.create_info(lines, abspath)
+    Fs.highlight_file_info(buf)
+    attach_single(buf, nil, nil)
+  elseif plan.kind == 'single_rev' then
     render_single_rev(assert(plan.rev), assert(plan.path), assert(plan.side))
   elseif plan.kind == 'single_worktree' then
     render_single_worktree()
@@ -602,6 +631,17 @@ function M.show(state, node, section, force_single, root)
       assert(plan.b_path)
     )
   end
+end
+
+---当前已挂载 view 是否属于最新 show request
+---异步切换期间 state.view 仍是旧 buffer，调用方不得据此再次发起 show
+---@param state table
+---@return boolean
+function M.is_attached_current(state)
+  local view = state.view
+  if not view then return false end
+  -- 兼容外部测试或旧调用方构造的 view；生产 attach 始终写入 _show_req_id
+  return view._show_req_id == nil or view._show_req_id == state._show_req_id
 end
 
 ---从 panel 驱动当前右侧 diff 的全部折叠 / 展开，调用前后焦点窗口不变

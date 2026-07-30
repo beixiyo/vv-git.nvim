@@ -16,8 +16,8 @@ local State = require('vv-git.state')
 local M = {}
 
 ---@class VVGitBinaryConfig
----@field intercept boolean  拦截二进制文件：不在 nvim 打开 diff，改用系统默认程序（仅 _activate/_goto_file；_preview 静默跳过） @default true
----@field extensions table<string, boolean>  视为二进制的扩展名集合（小写 key） @default { png = true, jpg = true, jpeg = true, ... }
+---@field intercept boolean  拦截二进制文件：右栏显示文件属性，显式打开时改用系统默认程序 @default true
+---@field extensions table<string, boolean>  内容探测的扩展名覆盖（小写 key，显式 false 可按文本处理） @default { png = true, jpg = true, jpeg = true, ... }
 
 ---@class VVGitSubrepoConfig
 ---@field depth integer  扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；0 = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） @default 0

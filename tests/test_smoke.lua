@@ -404,6 +404,78 @@ local function test_scratch_buffer_ownership()
   vim.api.nvim_buf_delete(foreign, { force = true })
 end
 
+-- 无扩展名的可执行文件必须走共享内容探测，并在右栏显示属性而不是原始字节
+local function test_binary_info_preview()
+  local RightView = require('vv-git.right.view')
+  RightView.configure({
+    get_config = function()
+      return {
+        fold_unchanged = true,
+        diff_nowrap = false,
+        keymap_next_file = false,
+        keymap_prev_file = false,
+        conflict_result_ratio = 0.5,
+        binary = { intercept = true, extensions = {} },
+      }
+    end,
+  })
+
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  local path = tmpdir .. '/artifact'
+  local file = assert(io.open(path, 'wb'))
+  file:write(string.char(
+    0xcf, 0xfa, 0xed, 0xfe,
+    0x0c, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00,
+    0x02, 0x00, 0x00, 0x00
+  ))
+  file:close()
+  vim.uv.fs_chmod(path, 493)
+
+  vim.cmd('tabnew')
+  local state = {
+    tabpage = vim.api.nvim_get_current_tabpage(),
+    git_root = tmpdir,
+    panel = { main_win = vim.api.nvim_get_current_win() },
+  }
+  RightView.show(state, {
+    is_dir = false,
+    relpath = 'artifact',
+    xy = '??',
+  }, 'unstaged', false, tmpdir)
+
+  assert_true(state.view and state.view.mode == 'single',
+    'extensionless binary renders as a single right-side info buffer')
+  local buf = state.view and state.view.b_buf
+  local lines = buf and vim.api.nvim_buf_get_lines(buf, 0, -1, false) or {}
+  local text = table.concat(lines, '\n')
+  assert_true(text:find('Binary file', 1, true) ~= nil,
+    'binary preview displays an English title')
+  assert_true(text:find('Type: Mach-O 64-bit executable', 1, true) ~= nil,
+    'binary preview displays the detected executable type')
+  assert_true(text:find('Architecture: arm64', 1, true) ~= nil,
+    'binary preview displays the detected architecture')
+  assert_true(text:find('Executable: Yes', 1, true) ~= nil,
+    'binary preview displays executable permissions')
+  assert_true(buf and vim.b[buf].vv_git_binary_info == true,
+    'binary preview buffer exposes its ownership marker')
+  assert_true(buf and vim.b[buf].vv_git_diff_source == nil,
+    'binary info buffer is not exposed as a textual diff source')
+  assert_true(buf and vim.bo[buf].readonly and not vim.bo[buf].modifiable,
+    'binary info buffer is explicitly read-only')
+  local highlighted = {}
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
+    highlighted[mark[4].hl_group] = true
+  end
+  assert_true(highlighted.VVUtilsFileInfoTitle and highlighted.VVUtilsFileInfoLabel,
+    'binary info buffer applies shared title and label highlights')
+
+  pcall(RightView.close, state)
+  vim.cmd('tabclose')
+  vim.fn.delete(tmpdir, 'rf')
+end
+
 local function test_conflict_winbar_rejects_stale_callback()
   local Conflict = require('vv-git.right.conflict')
   local Git = require('vv-git.git')
@@ -1150,6 +1222,7 @@ test_panel_drives_right_diff_folds()
 test_single_col_disables_folds()
 test_view_module_loads()
 test_scratch_buffer_ownership()
+test_binary_info_preview()
 test_conflict_winbar_rejects_stale_callback()
 test_conflict_hunks_stage_after_last_resolution()
 test_right_layout_lifecycle()
