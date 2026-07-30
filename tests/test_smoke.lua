@@ -383,10 +383,184 @@ local function test_single_col_disables_folds()
   vim.api.nvim_buf_delete(buf, { force = true })
 end
 
--- 测试 7: block_insert_mode 存在于 view.lua（间接：检查模块加载无报错）
+-- 测试 7: right/keymaps.lua 可由 view.lua 正常装配
 local function test_view_module_loads()
   local ok, _ = pcall(require, 'vv-git.right.view')
   assert_true(ok, 'vv-git.right.view loads without error')
+end
+
+local function test_scratch_buffer_ownership()
+  local Buffers = require('vv-git.right.buffers')
+  local owned = vim.api.nvim_create_buf(false, true)
+  local foreign = vim.api.nvim_create_buf(false, true)
+  vim.b[owned].vv_git_scratch = true
+  vim.api.nvim_set_option_value('bufhidden', 'wipe', { buf = foreign })
+
+  Buffers.wipe_scratch({ owned, foreign })
+
+  assert_true(not vim.api.nvim_buf_is_valid(owned), 'scratch cleanup deletes owned buffers')
+  assert_true(vim.api.nvim_buf_is_valid(foreign),
+    'scratch cleanup preserves unmarked third-party wipe buffers')
+  vim.api.nvim_buf_delete(foreign, { force = true })
+end
+
+local function test_conflict_winbar_rejects_stale_callback()
+  local Conflict = require('vv-git.right.conflict')
+  local Git = require('vv-git.git')
+  local original_conflict_info = Git.conflict_info
+  local pending
+  Git.conflict_info = function(_, _, callback) pending = callback end
+
+  local win = vim.api.nvim_get_current_win()
+  local original_winbar = vim.api.nvim_get_option_value('winbar', { win = win })
+  Conflict.set_winbar(win, {}, 'HEAD', '/tmp/project')
+  Conflict.clear_winbar(win)
+  pending({ branch = 'main', hash = 'abc123', subject = 'stale title' })
+
+  assert_eq(vim.api.nvim_get_option_value('winbar', { win = win }), '',
+    'cleared conflict winbar rejects stale async callback')
+
+  Git.conflict_info = original_conflict_info
+  vim.api.nvim_set_option_value('winbar', original_winbar, { win = win, scope = 'local' })
+end
+
+local function test_conflict_hunks_stage_after_last_resolution()
+  local Conflict = require('vv-git.right.conflict')
+  local Git = require('vv-git.git')
+  local Loader = require('vv-git.loader')
+  local original_stage = Git.stage
+  local original_reload = Loader.reload_index
+  local stage_calls, reload_calls = {}, 0
+  Git.stage = function(root, paths, callback)
+    stage_calls[#stage_calls + 1] = { root = root, path = paths[1] }
+    callback(true)
+  end
+  Loader.reload_index = function() reload_calls = reload_calls + 1 end
+
+  local path = vim.fn.tempname()
+  vim.fn.writefile({ 'seed' }, path)
+  local buf = vim.fn.bufadd(path)
+  vim.fn.bufload(buf)
+  vim.api.nvim_set_option_value('modifiable', true, { buf = buf })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    'start',
+    '<<<<<<< ours',
+    'ordinary ours',
+    '=======',
+    'ordinary theirs',
+    '>>>>>>> theirs',
+    'middle',
+    '<<<<<<< ours',
+    'diff3 ours',
+    '||||||| base',
+    'base content',
+    '=======',
+    'diff3 theirs',
+    '>>>>>>> theirs',
+    'end',
+  })
+
+  local win = vim.api.nvim_get_current_win()
+  local previous_buf = vim.api.nvim_win_get_buf(win)
+  vim.api.nvim_win_set_buf(win, buf)
+  local state = {
+    git_root = '/fallback',
+    view = {
+      section = 'conflicts',
+      root = '/subrepo',
+      node = { relpath = 'conflicted.txt' },
+      c_buf = buf,
+      c_win = win,
+    },
+  }
+  Conflict.install_keymaps(buf, state)
+
+  local accept_ours
+  for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
+    if mapping.desc == 'vv-git: accept_ours' then accept_ours = mapping.callback end
+  end
+
+  vim.api.nvim_win_set_cursor(win, { 3, 0 })
+  accept_ours()
+  assert_eq(#stage_calls, 0, 'accepting a non-final conflict hunk does not stage')
+
+  vim.api.nvim_win_set_cursor(win, { 5, 0 })
+  accept_ours()
+  assert_eq(stage_calls[1] and stage_calls[1].root, '/subrepo',
+    'final conflict hunk stages through view root')
+  assert_eq(stage_calls[1] and stage_calls[1].path, 'conflicted.txt',
+    'final conflict hunk stages the current path')
+  assert_eq(reload_calls, 1, 'successful final conflict resolution reloads once')
+  assert_eq(
+    table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n'),
+    table.concat({ 'start', 'ordinary ours', 'middle', 'diff3 ours', 'end' }, '\n'),
+    'ordinary and diff3 ours resolution excludes markers and base content'
+  )
+
+  Git.stage = original_stage
+  Loader.reload_index = original_reload
+  vim.api.nvim_win_set_buf(win, previous_buf)
+  vim.api.nvim_buf_delete(buf, { force = true })
+  vim.fn.delete(path)
+end
+
+local function test_right_layout_lifecycle()
+  local Layout = require('vv-git.right.layout')
+  local removed = {}
+  local layout = Layout.new({
+    conflict_result_ratio = 0.5,
+    on_remove_result_buffer = function(buf) removed[#removed + 1] = buf end,
+  })
+
+  vim.cmd('tabnew')
+  local main_win = vim.api.nvim_get_current_win()
+  local state = {
+    tabpage = vim.api.nvim_get_current_tabpage(),
+    panel = { main_win = main_win },
+    view = {},
+  }
+
+  local b_win, a_win = layout.ensure(state, true)
+  assert_true(vim.api.nvim_win_is_valid(a_win) and vim.api.nvim_win_is_valid(b_win),
+    'right layout creates a real dual-window view')
+  state.view.a_win, state.view.b_win = a_win, b_win
+
+  local conflict_b, conflict_a, c_win = layout.ensure_conflict(state)
+  assert_eq(conflict_b, b_win, 'conflict layout preserves the main b window')
+  assert_true(vim.api.nvim_win_is_valid(conflict_a) and vim.api.nvim_win_is_valid(c_win),
+    'conflict layout creates real ours and result windows')
+  assert_true(vim.api.nvim_win_get_position(c_win)[1] > vim.api.nvim_win_get_position(conflict_b)[1],
+    'conflict result window is below the dual diff')
+
+  local old_c_buf = vim.api.nvim_create_buf(false, true)
+  state.view.a_win, state.view.b_win = conflict_a, conflict_b
+  state.view.c_win, state.view.c_buf = c_win, old_c_buf
+  vim.api.nvim_win_close(conflict_a, true)
+
+  local rebuilt_b, rebuilt_a, rebuilt_c = layout.ensure_conflict(state)
+  assert_eq(rebuilt_b, b_win, 'incomplete conflict rebuild preserves the main b window')
+  assert_true(vim.api.nvim_win_is_valid(rebuilt_a) and vim.api.nvim_win_is_valid(rebuilt_c),
+    'incomplete conflict layout is rebuilt')
+  assert_true(not vim.api.nvim_win_is_valid(c_win),
+    'conflict rebuild closes the stale result window')
+  assert_eq(#removed, 1, 'conflict rebuild releases the stale result resources exactly once')
+  assert_eq(removed[1], old_c_buf, 'conflict rebuild releases the stale result buffer')
+
+  local c_buf = vim.api.nvim_create_buf(false, true)
+  state.view.a_win, state.view.b_win = rebuilt_a, rebuilt_b
+  state.view.c_win, state.view.c_buf = rebuilt_c, c_buf
+  local single_b, single_a = layout.ensure(state, false)
+  assert_eq(single_b, b_win, 'single layout reuses the main b window')
+  assert_true(single_a == nil and not vim.api.nvim_win_is_valid(rebuilt_a),
+    'leaving conflict closes the ours window')
+  assert_true(not vim.api.nvim_win_is_valid(rebuilt_c),
+    'leaving conflict closes extra layout windows')
+  assert_eq(#removed, 2, 'each conflict result lifecycle is released exactly once')
+  assert_eq(removed[2], c_buf, 'leaving conflict releases the current result buffer')
+
+  vim.api.nvim_buf_delete(old_c_buf, { force = true })
+  vim.api.nvim_buf_delete(c_buf, { force = true })
+  vim.cmd('tabclose')
 end
 
 local function test_resize_restores_diff_ratio()
@@ -454,6 +628,14 @@ local function test_staged_scrollbar_source()
   right_maps['-']()
   assert_eq(toggle_stage_calls, 1, 'right diff - invokes toggle_stage handler')
 
+  local reconfigured_calls = 0
+  RightView.configure({
+    on_toggle_stage = function() reconfigured_calls = reconfigured_calls + 1 end,
+  })
+  right_maps['-']()
+  assert_eq(toggle_stage_calls, 1, 'installed mapping stops calling the replaced handler')
+  assert_eq(reconfigured_calls, 1, 'installed mapping calls the latest configured handler')
+
   local source = ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
   assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
     'staged right window keeps scrollbar marker track visible')
@@ -509,6 +691,23 @@ local function test_staged_scrollbar_source()
     'compare old window enables revision statuscol markers')
   assert_eq(vim.w[state.view.b_win].vv_statuscol_git_disabled, nil,
     'compare new window enables revision statuscol markers')
+
+  local previous_compare_buf = state.view.b_buf
+  state.compare = { from_rev = 'HEAD^', to_rev = 'missing-ref' }
+  RightView.show(state, {
+    is_dir = false,
+    relpath = 'sample.txt',
+    compare_status = 'M',
+  }, 'compare', false, tmpdir)
+  local fallback_ready = vim.wait(3000, function()
+    return state.view and state.view.mode == 'single'
+      and state.view.b_buf ~= previous_compare_buf
+      and vim.api.nvim_buf_is_valid(state.view.b_buf)
+  end)
+  assert_true(fallback_ready, 'compare falls back to the source revision when target loading fails')
+  local fallback_source = fallback_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+  assert_eq(fallback_source and fallback_source.side, 'old',
+    'compare source fallback projects the displayed old revision')
 
   pcall(RightView.close, state)
   vim.fn.delete(tmpdir, 'rf')
@@ -950,6 +1149,10 @@ test_panel_edge_file_keymaps()
 test_panel_drives_right_diff_folds()
 test_single_col_disables_folds()
 test_view_module_loads()
+test_scratch_buffer_ownership()
+test_conflict_winbar_rejects_stale_callback()
+test_conflict_hunks_stage_after_last_resolution()
+test_right_layout_lifecycle()
 test_resize_restores_diff_ratio()
 test_staged_scrollbar_source()
 test_compare_tag_with_head()

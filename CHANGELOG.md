@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6 - 2026-07-30
+
+### Added
+
+- 右侧 diff buffer 新增 `<C-j>` / `<C-k>` 切换文件
+
+### Refactored
+
+- 右侧 diff 视图按职责拆分
+
 ## 0.3.5 - 2026-07-28
 
 ### Fixed

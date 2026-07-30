@@ -5,6 +5,7 @@ local RightView = require('vv-git.right.view')
 local LeftRender = require('vv-git.left.render')
 local Help = require('vv-git.help')
 local Scroll = require('vv-utils.scroll')
+local Navigation = require('vv-git.core.navigation')
 
 local L = {}
 
@@ -55,35 +56,13 @@ end
 local function navigate(state, direction)
   if not state.panel or not state.panel.win then return end
   if not vim.api.nvim_win_is_valid(state.panel.win) then return end
-  local id_by_line = state.panel.id_by_line
-  if not id_by_line then return end
-
-  local lnums = {}
-  for lnum, _ in pairs(id_by_line) do
-    lnums[#lnums + 1] = lnum
-  end
-  if #lnums == 0 then return end
-  table.sort(lnums)
-
-  local cur = vim.api.nvim_win_get_cursor(state.panel.win)[1]
-
-  if direction == 'j' then
-    for _, lnum in ipairs(lnums) do
-      if lnum > cur then
-        vim.api.nvim_win_set_cursor(state.panel.win, { lnum, 0 })
-        return
-      end
-    end
-    vim.api.nvim_win_set_cursor(state.panel.win, { lnums[1], 0 })
-  else
-    for i = #lnums, 1, -1 do
-      if lnums[i] < cur then
-        vim.api.nvim_win_set_cursor(state.panel.win, { lnums[i], 0 })
-        return
-      end
-    end
-    vim.api.nvim_win_set_cursor(state.panel.win, { lnums[#lnums], 0 })
-  end
+  local current = vim.api.nvim_win_get_cursor(state.panel.win)[1]
+  local target = Navigation.move(
+    state.panel.id_by_line,
+    current,
+    direction == 'j' and 1 or -1
+  )
+  if target then vim.api.nvim_win_set_cursor(state.panel.win, { target.lnum, 0 }) end
 end
 
 ---@param state table
@@ -91,20 +70,10 @@ end
 local function goto_file_edge(state, edge)
   if not state.panel or not state.panel.win then return end
   if not vim.api.nvim_win_is_valid(state.panel.win) then return end
-  local id_by_line = state.panel.id_by_line
-  if not id_by_line then return end
-
-  local lnums = {}
-  for lnum, id in pairs(id_by_line) do
-    if id and id.node and not id.node.is_dir then
-      lnums[#lnums + 1] = lnum
-    end
-  end
-  if #lnums == 0 then return end
-  table.sort(lnums)
-
-  local target = edge == 'first' and lnums[1] or lnums[#lnums]
-  vim.api.nvim_win_set_cursor(state.panel.win, { target, 0 })
+  local target = Navigation.edge(state.panel.id_by_line, edge, function(id)
+    return id and id.node and not id.node.is_dir
+  end)
+  if target then vim.api.nvim_win_set_cursor(state.panel.win, { target.lnum, 0 }) end
 end
 
 ---@param state table

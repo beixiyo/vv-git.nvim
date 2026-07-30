@@ -7,6 +7,7 @@ local RightView = require('vv-git.right.view')
 local Prompt = require('vv-git.left.prompt')
 local Editor = require('vv-utils.editor')
 local Keymaps = require('vv-git.core.keymaps')
+local FilePolicy = require('vv-git.file_policy')
 
 local L = {}
 
@@ -25,12 +26,7 @@ function L.new(deps)
   local M = {}
   local controller = deps.controller
   local function config() return deps.config() end
-  local function binary(path)
-    local cfg = config().binary
-    if not cfg or not cfg.intercept then return false end
-    local ext = path:match('%.([%w_]+)$')
-    return ext and cfg.extensions[ext:lower()] or false
-  end
+  local function binary(path) return FilePolicy.is_binary(path, config().binary) end
   M._compare_pick = State.guarded(function(state)
     if not state.git_root then return end
     local Compare = require('vv-git.compare')

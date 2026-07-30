@@ -36,6 +36,8 @@
     single_col_threshold = 120,        -- Fall back to one column + inline diff below this width
     keymap_toggle_panel = '<leader>b', -- Global mapping for toggling the left panel (false to disable)
     keymap_select = '<Tab>',           -- Toggle selection for the current file (multi-select)
+    keymap_next_file = '<C-j>',        -- Open the next file from a diff buffer (false disables)
+    keymap_prev_file = '<C-k>',        -- Open the previous file from a diff buffer (false disables)
     fold_unchanged = true,             -- Fold unchanged code
     fold_staged = false,               -- Fold only the Staged Changes section when opening the panel
     diff_fill = ' ',                   -- Fill character for diff filler lines (Vim defaults to '-')
@@ -66,6 +68,8 @@
 | `diff_nowrap` | `boolean` | `false` | Keep wrapping by default; when `true`, force wrapping off in diff views. Wrapping can visually misalign two-column views because the sides may have different row heights, a known upstream limitation ([neovim/neovim#29518](https://github.com/neovim/neovim/issues/29518), [diffview.nvim#198](https://github.com/sindrets/diffview.nvim/issues/198)) |
 | `highlights` | `table` | None | Override any `VVGit*` highlight group on top of automatically computed values; overrides survive colorscheme changes (see “Custom Colors” below) |
 | `keymap_select` | `string` | `'<Tab>'` | Toggle selection for the current row (multi-select); directory nodes are ignored |
+| `keymap_next_file` | `string \| false` | `'<C-j>'` | Open the next file from a diff buffer; `false` disables it |
+| `keymap_prev_file` | `string \| false` | `'<C-k>'` | Open the previous file from a diff buffer; `false` disables it |
 | `select_move_down` | `boolean` | `true` | Move the cursor down one row after `<Tab>` toggles selection |
 | `binary.intercept` | `boolean` | `true` | Intercept binary files: silently skip previews and open them with the system default application on `<CR>`/`gf`; `false` disables interception |
 | `binary.extensions` | `table<string, boolean>` | See below | Extensions treated as binary, using lowercase keys; merged with `vim.tbl_deep_extend`, so only overridden keys are required |
@@ -189,8 +193,6 @@ These mappings are active inside the left panel:
 | `gw` | Switch worktrees: list every worktree for this repository in a floating window and switch to the selected worktree to inspect its diff (equivalent to `:VVGitWorktree`) |
 | `H` | Compare with HEAD: select a branch, then a commit, and show the `commit..HEAD` difference |
 | `g?` | Show help |
-
-After the first commit or after switching to an unpublished branch, the panel shows `u  Publish <branch>`. The branch name comes directly from Git, so it is never requested separately. Outside the panel, use `:VVGitPublish`
 
 ## Public Interfaces
 

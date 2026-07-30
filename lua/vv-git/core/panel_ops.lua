@@ -7,6 +7,8 @@ local Actions = require('vv-git.left.actions')
 local Keymaps = require('vv-git.core.keymaps')
 local Subrepo = require('vv-git.subrepo')
 local Tree = require('vv-git.tree')
+local FilePolicy = require('vv-git.file_policy')
+local Navigation = require('vv-git.core.navigation')
 
 local L = {}
 
@@ -55,12 +57,7 @@ function L.new(deps)
   local M = {}
   local function config() return deps.config() end
   local function narrow() return vim.o.columns < config().single_col_threshold end
-  local function binary(path)
-    local cfg = config().binary
-    if not cfg or not cfg.intercept then return false end
-    local ext = path:match('%.([%w_]+)$')
-    return ext and cfg.extensions[ext:lower()] or false
-  end
+  local function binary(path) return FilePolicy.is_binary(path, config().binary) end
   M.apply_diff_ratio = L.apply_diff_ratio
 
 -- 动作（stage/unstage/discard/accept）触发渲染后，把光标落到「下一个文件」
@@ -155,37 +152,22 @@ end
     local panel = state.panel
     if not panel or not panel.win or not vim.api.nvim_win_is_valid(panel.win) then return end
 
-    local entries = {}
-    for lnum, id in pairs(panel.id_by_line or {}) do
+    local current = vim.api.nvim_win_get_cursor(panel.win)[1]
+    local target = Navigation.move(panel.id_by_line, current, direction, function(id)
       local node = id and id.node
       local root = id and (id.root or state.git_root)
-      if node and not node.is_dir and root and not binary(root .. '/' .. node.relpath) then
-        entries[#entries + 1] = { lnum = lnum, id = id, root = root }
-      end
-    end
-    if #entries == 0 then return end
-    table.sort(entries, function(a, b) return a.lnum < b.lnum end)
-
-    local current = vim.api.nvim_win_get_cursor(panel.win)[1]
-    local target
-    if direction > 0 then
-      for _, entry in ipairs(entries) do
-        if entry.lnum > current then target = entry; break end
-      end
-      target = target or entries[1]
-    else
-      for i = #entries, 1, -1 do
-        if entries[i].lnum < current then target = entries[i]; break end
-      end
-      target = target or entries[#entries]
-    end
+      return node and not node.is_dir and root
+          and not binary(root .. '/' .. node.relpath)
+    end)
+    if not target then return end
 
     local restore_win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_cursor(panel.win, { target.lnum, 0 })
     state.cur_path = target.id.node.relpath
     state.cur_section = target.id.section
     state._reshow_restore_win = restore_win
-    RightView.show(state, target.id.node, target.id.base, narrow(), target.root)
+    local root = target.id.root or state.git_root
+    RightView.show(state, target.id.node, target.id.base, narrow(), root)
   end)
 
   M._activate = State.guarded(function(state, expand_only)

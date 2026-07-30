@@ -36,6 +36,8 @@
     single_col_threshold = 120,        -- 窗口列数 < 此值时降级为单栏 + inline diff
     keymap_toggle_panel = '<leader>b', -- 全局切换左栏的映射（false 禁用）
     keymap_select = '<Tab>',           -- 切换当前文件选中状态（多选）
+    keymap_next_file = '<C-j>',        -- diff buffer 内切换到下一个文件（false 禁用）
+    keymap_prev_file = '<C-k>',        -- diff buffer 内切换到上一个文件（false 禁用）
     fold_unchanged = true,             -- 折叠未改动代码
     fold_staged = false,               -- 打开面板时默认折叠 Staged Changes section（仅此一层）
     diff_fill = ' ',                   -- diff 空行填充符（Vim 默认 '-'）
@@ -66,6 +68,8 @@
 | `diff_nowrap` | `boolean` | `false` | 默认保持折行；置为 `true` 则 diff 视图强制关闭折行——`wrap` 在双栏模式下因两侧行高不一致会造成视觉错位，属于上游已知限制（[neovim/neovim#29518](https://github.com/neovim/neovim/issues/29518)、[diffview.nvim#198](https://github.com/sindrets/diffview.nvim/issues/198)） |
 | `highlights` | `table` | 无 | 覆盖任意 `VVGit*` 高亮组，叠加在自动计算值之上，切换主题后仍生效（见下方「自定义配色」）|
 | `keymap_select` | `string` | `'<Tab>'` | 切换当前行选中状态（多选）；目录节点忽略 |
+| `keymap_next_file` | `string \| false` | `'<C-j>'` | diff buffer 内切换到左栏的下一个文件；`false` 禁用 |
+| `keymap_prev_file` | `string \| false` | `'<C-k>'` | diff buffer 内切换到左栏的上一个文件；`false` 禁用 |
 | `select_move_down` | `boolean` | `true` | `<Tab>` 切换选中后自动将光标下移一行 |
 | `binary.intercept` | `boolean` | `true` | 拦截二进制文件：预览时静默跳过，`<CR>`/`gf` 改用系统默认程序打开；`false` 禁用拦截 |
 | `binary.extensions` | `table<string, boolean>` | 见下方 | 视为二进制的扩展名集合（小写 key）；`vim.tbl_deep_extend` 合并，只需写要覆盖的 key |
@@ -190,8 +194,6 @@ opts = {
 | `gw` | Worktree 切换：浮窗列出本仓库所有 worktree，选中即切到该 worktree 看其 diff（`:VVGitWorktree` 等价） |
 | `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |
 | `g?` | 显示帮助 |
-
-提交完成或切换到尚未发布的新分支后，面板会显示 `u  Publish <branch>`。当前分支名由 Git 直接读取，因此不额外询问分支；仅当仓库完全没有 remote 时询问 `origin` URL。也可在面板外执行 `:VVGitPublish`
 
 ## 公开接口
 
