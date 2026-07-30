@@ -45,6 +45,8 @@ local M = {}
 ---@field before_open? fun():fun()?  创建 vv-git tab 前执行，可返回退出后的恢复函数；用于由配置层临时挂起互斥 UI，不让 vendor 直接依赖其它插件 @default nil
 ---@field binary VVGitBinaryConfig
 ---@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'） @default '<Tab>'
+---@field keymap_next_file string|false  -- diff buffer 内切换到下一个文件；false 禁用 @default '<C-j>'
+---@field keymap_prev_file string|false  -- diff buffer 内切换到上一个文件；false 禁用 @default '<C-k>'
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
 ---@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
 ---@field subrepo VVGitSubrepoConfig  嵌套子仓库扫描
@@ -77,6 +79,8 @@ local defaults = {
   single_col_threshold = 120,
   keymap_toggle_panel = '<leader>b',
   keymap_select = '<Tab>',
+  keymap_next_file = '<C-j>',
+  keymap_prev_file = '<C-k>',
   select_move_down = true,
   fold_unchanged = true,
   fold_staged = false,
@@ -189,6 +193,8 @@ function M.setup(opts)
     on_goto_file      = function() M._goto_file() end,
     on_yank_abs_path  = function() M._yank_abs_path() end,
     on_toggle_stage   = function() M._toggle_view_stage() end,
+    on_next_file      = function() M._navigate_view_file(1) end,
+    on_prev_file      = function() M._navigate_view_file(-1) end,
   })
 
   local function ucmd(name, fn, cfg)

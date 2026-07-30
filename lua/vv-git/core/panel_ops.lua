@@ -149,6 +149,45 @@ end
     end
   end
 
+  -- 从 diff buffer 切换左栏中的上/下一个可预览文件。只移动 panel 光标，不把焦点
+  -- 切到 panel；RightView 的 restore 机制会在异步 show 完成后回到触发窗口。
+  M._navigate_view_file = State.guarded(function(state, direction)
+    local panel = state.panel
+    if not panel or not panel.win or not vim.api.nvim_win_is_valid(panel.win) then return end
+
+    local entries = {}
+    for lnum, id in pairs(panel.id_by_line or {}) do
+      local node = id and id.node
+      local root = id and (id.root or state.git_root)
+      if node and not node.is_dir and root and not binary(root .. '/' .. node.relpath) then
+        entries[#entries + 1] = { lnum = lnum, id = id, root = root }
+      end
+    end
+    if #entries == 0 then return end
+    table.sort(entries, function(a, b) return a.lnum < b.lnum end)
+
+    local current = vim.api.nvim_win_get_cursor(panel.win)[1]
+    local target
+    if direction > 0 then
+      for _, entry in ipairs(entries) do
+        if entry.lnum > current then target = entry; break end
+      end
+      target = target or entries[1]
+    else
+      for i = #entries, 1, -1 do
+        if entries[i].lnum < current then target = entries[i]; break end
+      end
+      target = target or entries[#entries]
+    end
+
+    local restore_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_cursor(panel.win, { target.lnum, 0 })
+    state.cur_path = target.id.node.relpath
+    state.cur_section = target.id.section
+    state._reshow_restore_win = restore_win
+    RightView.show(state, target.id.node, target.id.base, narrow(), target.root)
+  end)
+
   M._activate = State.guarded(function(state, expand_only)
     local id = Keymaps.id_under_cursor(state)
     if not id then return end

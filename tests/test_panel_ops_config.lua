@@ -11,6 +11,7 @@ local last_show
 local toggled_id
 local staged_node = { relpath = 'src/main.lua', is_dir = false, xy = 'M ' }
 local next_node = { relpath = 'src/next.lua', is_dir = false, xy = ' M' }
+local binary_node = { relpath = 'assets/image.png', is_dir = false, xy = ' M' }
 local node = { relpath = 'src/main.lua', is_dir = false }
 local id = {
   node = node,
@@ -52,12 +53,23 @@ state.panel = {
   id_by_line = {
     [2] = id,
     [3] = {
+      node = binary_node,
+      section = 'staged',
+      base = 'staged',
+    },
+    [4] = {
       node = next_node,
       section = 'unstaged',
       base = 'unstaged',
     },
   },
 }
+vim.api.nvim_buf_set_lines(state.panel.buf, 0, -1, false, {
+  'Changes',
+  'src/main.lua',
+  'assets/image.png',
+  'src/next.lua',
+})
 state.folds = {}
 state.tree = {
   staged = { kind = 'staged' },
@@ -69,7 +81,7 @@ local config = {
   preview = true,
   preview_debounce_ms = 10,
   single_col_threshold = vim.o.columns + 1,
-  binary = { intercept = false, extensions = {} },
+  binary = { intercept = true, extensions = { png = true } },
 }
 local operations = require('vv-git.core.panel_ops').new({
   controller = {},
@@ -86,6 +98,29 @@ assert(shown[1] == true, 'preview reads single_col_threshold from injected confi
 config.single_col_threshold = 0
 operations._activate()
 assert(shown[2] == false, 'activate reads the latest injected config')
+
+vim.api.nvim_win_set_cursor(state.panel.win, { 2, 0 })
+last_show = nil
+operations._navigate_view_file(1)
+assert(
+  vim.api.nvim_win_get_cursor(state.panel.win)[1] == 4,
+  'right-buffer next file skips non-previewable binary nodes'
+)
+assert(
+  last_show and last_show.node == next_node and last_show.section == 'unstaged',
+  'right-buffer next file previews the next leaf'
+)
+operations._navigate_view_file(1)
+assert(
+  vim.api.nvim_win_get_cursor(state.panel.win)[1] == 2,
+  'right-buffer next file wraps to the first leaf'
+)
+operations._navigate_view_file(-1)
+assert(
+  vim.api.nvim_win_get_cursor(state.panel.win)[1] == 4,
+  'right-buffer previous file wraps to the last leaf'
+)
+vim.api.nvim_win_set_cursor(state.panel.win, { 2, 0 })
 
 state.view = {
   node = node,

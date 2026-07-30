@@ -23,12 +23,16 @@ local M = {}
 ---@field on_goto_file fun()
 ---@field on_yank_abs_path fun()
 ---@field on_toggle_stage fun()
+---@field on_next_file fun()
+---@field on_prev_file fun()
 local handlers = {
   get_config       = function() return { fold_unchanged = true } end,
   on_close         = function() end,
   on_goto_file     = function() end,
   on_yank_abs_path = function() end,
   on_toggle_stage  = function() end,
+  on_next_file     = function() end,
+  on_prev_file     = function() end,
 }
 
 ---@param h VVGitViewHandlers
@@ -97,6 +101,19 @@ local RIGHT_KEYS_SPEC = {
   { ']c',    function() jump_diff_chunk(']') end,         'next_chunk' },
   { '[c',    function() jump_diff_chunk('[') end,         'prev_chunk' },
 }
+
+local function right_keys_spec()
+  local cfg = handlers.get_config()
+  local specs = {}
+  for _, spec in ipairs(RIGHT_KEYS_SPEC) do specs[#specs + 1] = spec end
+  if cfg.keymap_next_file then
+    specs[#specs + 1] = { cfg.keymap_next_file, function() handlers.on_next_file() end, 'next_file' }
+  end
+  if cfg.keymap_prev_file then
+    specs[#specs + 1] = { cfg.keymap_prev_file, function() handlers.on_prev_file() end, 'prev_file' }
+  end
+  return specs
+end
 
 -- fold 键全部包到 buffer-local，用 `:normal!`（带 !）跑 vanilla 实现，绕过用户的
 -- 全局 ufo 映射（zR / zM / zr / zm）。仿 diffview.nvim：sindrets/diffview.nvim
@@ -177,12 +194,18 @@ end
 ---@param buf integer?
 local function install_right_keymaps(buf)
   if not buf or not api.nvim_buf_is_valid(buf) then return end
-  for _, spec in ipairs(RIGHT_KEYS_SPEC) do
+  for _, lhs in ipairs(vim.b[buf].vv_git_right_keys or {}) do
+    pcall(vim.keymap.del, 'n', lhs, { buffer = buf })
+  end
+  local installed = {}
+  for _, spec in ipairs(right_keys_spec()) do
     vim.keymap.set('n', spec[1], spec[2], {
       buffer = buf, silent = true, nowait = true,
       desc = 'vv-git: ' .. spec[3],
     })
+    installed[#installed + 1] = spec[1]
   end
+  vim.b[buf].vv_git_right_keys = installed
 end
 
 -- 阻止 scratch buffer 进入 Insert mode（只读 + nofile，进入无意义）
@@ -197,9 +220,10 @@ end
 ---@param buf integer?
 local function remove_right_keymaps(buf)
   if not buf or not api.nvim_buf_is_valid(buf) then return end
-  for _, spec in ipairs(RIGHT_KEYS_SPEC) do
-    pcall(vim.keymap.del, 'n', spec[1], { buffer = buf })
+  for _, lhs in ipairs(vim.b[buf].vv_git_right_keys or {}) do
+    pcall(vim.keymap.del, 'n', lhs, { buffer = buf })
   end
+  vim.b[buf].vv_git_right_keys = nil
 end
 
 ---@param buf integer?
