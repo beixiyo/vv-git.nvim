@@ -99,7 +99,8 @@ function L.new(deps)
   M._worktree_pick = State.guarded(function(state)
     if not state.git_root then return end
     local Worktree = require('vv-git.worktree')
-    Worktree.open_picker(state, function(wt)
+
+    Worktree.open_manager(state, function(wt)
       local target = vim.fs.normalize(wt.path)
       if target == state.git_root then
         vim.notify('[vv-git] Already on this worktree', vim.log.levels.INFO)
@@ -110,19 +111,35 @@ function L.new(deps)
         return
       end
 
-      -- 一次干净的上下文切换：切 root，清掉随旧 root 失效的瞬态（选中/比较/折叠/右视图），
-      -- tcd 到该 worktree（tab-local，只影响 vv-git 专属 tab，不污染来时 tab），reload 后即展示其 diff
+      -- 先在 vv-git 专属 tab 完成 tcd；失败时不提交任何 state 变更，保持切换原子
+      local target_win
+      if state.tabpage and vim.api.nvim_tabpage_is_valid(state.tabpage) then
+        target_win = vim.api.nvim_tabpage_list_wins(state.tabpage)[1]
+      end
+
+      local changed, change_err = false, 'vv-git tab is no longer valid'
+      if target_win and vim.api.nvim_win_is_valid(target_win) then
+        changed, change_err = pcall(vim.api.nvim_win_call, target_win, function()
+          vim.cmd.tcd(vim.fn.fnameescape(target))
+        end)
+      end
+
+      if not changed then
+        vim.notify('[vv-git] Could not enter worktree: ' .. tostring(change_err), vim.log.levels.ERROR)
+        return
+      end
+
+      -- tcd 成功后再废弃旧 root 的在途请求并提交上下文切换
+      RightView.close(state)
+      require('vv-git.compare').stop(state)
       state.git_root = target
       state.cur_path = nil
       state.selection = {}
       state.folds = {}
       state.section_folds = {}
       state.block_folds = {}
-      require('vv-git.compare').stop(state)
-      pcall(vim.cmd.tcd, vim.fn.fnameescape(target))
-      RightView.close(state)
       require('vv-git.loader').reload_index(state)
-    end)
+    end, config().worktree)
   end)
 
   M._commit = State.guarded(function(state)

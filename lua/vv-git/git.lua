@@ -214,9 +214,13 @@ end
 -- 列出所有本地 + 远程分支
 ---@param root string
 ---@param cb fun(branches: string[]?, err?: string)
-function M.branches(root, cb)
+---@param opts? { local_only?:boolean }
+function M.branches(root, cb, opts)
+  local args = { 'git', '-C', root, 'branch' }
+  if not (opts and opts.local_only) then args[#args + 1] = '-a' end
+  args[#args + 1] = '--format=%(refname:short)'
   vim.system(
-    { 'git', '-C', root, 'branch', '-a', '--format=%(refname:short)' },
+    args,
     { text = true },
     vim.schedule_wrap(function(r)
       if r.code ~= 0 then cb(nil, r.stderr or 'git branch failed'); return end
@@ -514,6 +518,48 @@ function M.worktree_list(root, cb)
       flush()
 
       cb(list)
+    end)
+  )
+end
+
+---创建 linked worktree
+---@param root string
+---@param opts { path:string, base:string, branch?:string }
+---@param cb fun(ok:boolean, stderr?:string)
+function M.worktree_add(root, opts, cb)
+  local args = { 'worktree', 'add' }
+  if opts.branch and opts.branch ~= '' then
+    vim.list_extend(args, { '-b', opts.branch })
+  end
+  vim.list_extend(args, { opts.path, opts.base })
+  run(root, args, cb)
+end
+
+---删除 linked worktree；默认保留 Git 的 dirty/locked 安全检查
+---@param root string
+---@param path string
+---@param opts? { force?:boolean }
+---@param cb fun(ok:boolean, stderr?:string)
+function M.worktree_remove(root, path, opts, cb)
+  local args = { 'worktree', 'remove' }
+  if opts and opts.force then args[#args + 1] = '--force' end
+  args[#args + 1] = path
+  run(root, args, cb)
+end
+
+---检查 worktree 是否有 tracked/untracked 改动
+---@param path string
+---@param cb fun(dirty:boolean?, stderr?:string)
+function M.worktree_dirty(path, cb)
+  vim.system(
+    { 'git', '-C', path, 'status', '--porcelain', '--untracked-files=normal' },
+    { text = true },
+    vim.schedule_wrap(function(r)
+      if r.code ~= 0 then
+        cb(nil, r.stderr or 'git status failed')
+      else
+        cb((r.stdout or '') ~= '')
+      end
     end)
   )
 end

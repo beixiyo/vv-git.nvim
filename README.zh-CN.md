@@ -77,6 +77,7 @@
 | `subrepo.respect_gitignore` | `boolean` | `false` | 发现时是否跳过被父仓库 `.gitignore` 的目录 |
 | `subrepo.prune` | `string[]` | 见下方 | 发现子仓库时**不进入扫描**的目录名列表。**覆盖**语义：传了就整体替换默认列表（不合并）；默认含 `node_modules` / `.cache` / `.local` / `.cargo` / `.rustup` / `.bun` 等缓存目录，`.git` 始终跳过 |
 | `subrepo.scan_worktrees` | `boolean` | `false` | 是否把 linked worktree 也当子仓库扫描。默认 `false` |
+| `worktree.path` | `fun(root, branch): string` | `<root>/.worktrees/<branch-short>` | 创建 worktree 时的默认目录；`root` 始终为 main worktree 路径，`feature/new-ui` 的简写为 `new-ui` |
 
 ## vv-scrollbar 集成
 
@@ -108,15 +109,18 @@ opts = {
 - **gitignore 目录默认照扫**：`respect_gitignore=false`（默认）下，被 `.gitignore` 的**目录**仍会被扫描，可手动配置 `respect_gitignore`
 - **worktree 默认不当子仓库**：可配置 `scan_worktrees=true`
 
-## Worktree 切换
+## Worktree 管理
 
-面板内按 `gw`（或 `:VVGitWorktree`）打开浮窗，列出当前仓库的所有 git worktree：
+面板内按 `gw`（或 `:VVGitWorktree`）打开管理浮窗。即使当前只有 main worktree，窗口也会正常打开，以便创建第一个 linked worktree：
 
 - **当前所在**的 worktree 以 `●` 标记并高亮，光标默认停在它上面
-- 每行显示：分支名（detached 时为 `(detached <短 hash>)`、bare 为 `(bare)`）+ 工作目录路径，失效 / 锁定的 worktree 末尾标 `(prunable)` / `(locked)`
-- `<CR>` / `l` 选中 → 面板**切到该 worktree** 看它的 diff，`q` / `<Esc>` 关闭
+- 每行显示：分支名（detached 时为 `(detached <短 hash>)`）+ 工作目录路径，失效 / 锁定的 worktree 末尾标 `(prunable)` / `(locked)`；纯 bare 仓库不在支持范围内
+- `<CR>` / `l`：切到选中 worktree 看它的 diff
+- `a`：使用现有本地分支，或从指定 base ref 创建新分支和 worktree
+- `d`：删除选中 worktree；main、当前和 locked worktree 禁止删除，dirty worktree 只在 Git 拒绝后显式询问是否 force
+- `r`：刷新列表，`?`：显示窗口内帮助，`q` / `<Esc>`：关闭
 
-切换是一次干净的上下文切换：把 `state.git_root` 指向选中的 worktree 并 `tcd` 过去（仅作用于 vv-git 专属 tab，不污染你来时的 tab），随后 reload——之后的 diff / stage / unstage / commit / push 全部落到该 worktree。这是**只读切换器**，不做 `worktree add` / `remove`（按需用 git 命令自行管理）
+切换是一次干净的上下文切换：把 `state.git_root` 指向选中的 worktree 并 `tcd` 过去（仅作用于 vv-git 专属 tab，不污染你来时的 tab），随后 reload——之后的 diff / stage / unstage / commit / push 全部落到该 worktree
 
 > worktree 与子仓库是两回事：worktree 是同一份历史的多个 checkout（共享 `.git`），故做成「切过去」而非并排成块；子仓库是独立仓库，并排渲染成块
 
@@ -141,7 +145,7 @@ opts = { binary = { extensions = { sketch = true, fig = true } } }
 
 ## 自定义配色
 
-`highlights` 字段接受任意 `VVGit*` 高亮组的覆盖，叠加在按 Normal 背景自动计算的默认色之上，切换 colorscheme 后依然生效：
+`highlights` 字段接受任意 `VVGit*` 高亮组的覆盖，叠加在按 Normal 背景自动计算的默认色之上，切换 colorscheme 后依然生效，包括左栏、diff、commit 浮窗和 worktree manager：
 
 ```lua
 opts = {
@@ -158,8 +162,6 @@ opts = {
   },
 }
 ```
-
-可覆盖的完整高亮组列表见 `lua/vv-git/hl.lua`
 
 ## 快捷键
 
@@ -187,7 +189,7 @@ opts = {
 | `<C-y>` | 向上滚动 diff |
 | `]c` / `[c` | 跳到右侧 diff 的下/上一个 chunk 并居中（在左侧面板即可驱动，无需进入 diff 窗口） |
 | `gc` | 查看 commit 本身的 diff：选分支 → 选 commit，展示该 commit 引入的变更（`commit^..commit`） |
-| `gw` | Worktree 切换：浮窗列出本仓库所有 worktree，选中即切到该 worktree 看其 diff（`:VVGitWorktree` 等价） |
+| `gw` | Worktree 管理：浮窗内创建、切换、删除和刷新 worktree（`:VVGitWorktree` 等价） |
 | `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |
 | `g?` | 显示帮助 |
 

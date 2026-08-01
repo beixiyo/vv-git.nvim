@@ -1,6 +1,7 @@
 -- 高亮组注册；ColorScheme 时重新应用（VVGitDiff* 强制覆盖，其余 default=true）
 
 local M = {}
+local SharedGit = require('vv-utils.git')
 
 
 ---@return table specs  { name = vim.api.keyset.highlight }
@@ -41,6 +42,8 @@ local function build_specs()
     VVGitPanelDim       = { link = 'Comment' },
     VVGitPanelSelected  = { link = 'Visual' },
     VVGitPanelKey       = { link = 'Special' },
+    VVGitWorktreeFooterKey = { link = 'Keyword' },
+    VVGitWorktreeFooterText = { link = 'Normal' },
 
     -- diff 折叠行：走 Comment 色，切主题自动适配
     VVGitFold           = { link = 'Comment' },
@@ -66,13 +69,26 @@ end
 -- 走 default。比维护一张白名单更稳——新增 diff 色组不会忘记同步
 local user_overrides = {}
 
-local function apply()
-  local specs = build_specs()
+---@param restore? table<string, boolean> 本轮移除 override、需要强制恢复基准的组
+local function apply(restore)
+  local specs = vim.tbl_extend('keep', build_specs(), SharedGit.highlight_specs())
+
   for name, override in pairs(user_overrides) do
-    specs[name] = vim.tbl_extend('force', specs[name] or {}, override)
+    local base = specs[name] or {}
+    if override.link then
+      specs[name] = vim.deepcopy(override)
+    else
+      if base.link then
+        base = vim.api.nvim_get_hl(0, { name = base.link, link = false })
+      end
+      specs[name] = vim.tbl_extend('force', base, override)
+    end
   end
+
   for name, spec in pairs(specs) do
-    if spec.default == nil and not name:match('^VVGitDiff') then
+    if user_overrides[name] or (restore and restore[name]) then
+      spec.default = false
+    elseif spec.default == nil and not name:match('^VVGitDiff') then
       spec.default = true
     end
     vim.api.nvim_set_hl(0, name, spec)
@@ -81,10 +97,18 @@ end
 
 ---@param opts? { highlights?: table<string, vim.api.keyset.highlight> }
 function M.setup(opts)
-  user_overrides = (opts and opts.highlights) or {}
+  local next_overrides = (opts and opts.highlights) or {}
+  local restore = {}
+
+  for name in pairs(user_overrides) do
+    if next_overrides[name] == nil then restore[name] = true end
+  end
+
+  user_overrides = next_overrides
   -- 共享 git 状态色（VVGitAdded/Modified/...）统一由 vv-utils.git 注册
-  require('vv-utils.git').register_hl()
-  apply()
+  SharedGit.register_hl()
+  apply(restore)
+
   vim.api.nvim_create_autocmd('ColorScheme', {
     group = vim.api.nvim_create_augroup('VVGitHL', { clear = true }),
     callback = apply,

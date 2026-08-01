@@ -25,6 +25,9 @@ local M = {}
 ---@field prune string[]  发现子仓库时**不进入扫描**的目录名列表（匹配目录 basename）。**覆盖语义**：传了就完全替换默认列表（不合并）；`.git` 始终额外跳过 @default 见下方（node_modules / .cache / .local / .cargo / .rustup 等缓存与工具链目录）
 ---@field scan_worktrees boolean  是否把 linked worktree 也当子仓库扫描。默认 `false`
 
+---@class VVGitWorktreeConfig
+---@field path fun(root:string, branch:string):string  创建 worktree 的默认目录。root 是 main worktree 路径；branch 是非空有效本地分支名 @default `<root>/.worktrees/<branch-short>`，其中 `type/short-desc` 取 `short-desc`
+
 ---@class VVGitConfig
 ---@field width integer @default 30
 ---@field state VVStateHandle? 左侧面板持久状态容器；默认注册 `vv-git/panel`
@@ -50,6 +53,7 @@ local M = {}
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
 ---@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
 ---@field subrepo VVGitSubrepoConfig  嵌套子仓库扫描
+---@field worktree VVGitWorktreeConfig  worktree 管理器策略 @default 见 VVGitWorktreeConfig
 
 ---@class VVGitContext
 ---@field root string
@@ -104,6 +108,12 @@ local defaults = {
       '.cache', '.local', '.cargo', '.rustup', '.bun', '.npm', '.nvm',
       '.gradle', '.m2', '.deno', '.pnpm-store',
     },
+  },
+  worktree = {
+    path = function(root, branch)
+      local short = branch:match('/([^/]+)$') or branch
+      return vim.fs.joinpath(root, '.worktrees', short)
+    end,
   },
   binary = {
     intercept = true,

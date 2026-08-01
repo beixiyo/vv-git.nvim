@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.7 - 2026-08-01
+
+### Added
+
+- 扩展 `gw` / `:VVGitWorktree` worktree 管理器，新增创建、刷新与确认删除
+- 新增 `highlights` 配置，可覆盖任意内建或共享 `VVGit*` 高亮
+
+### Fixed
+
+- 切换 worktree 时使旧 root 的 diff、compare 与 loader 异步请求失效，并仅在专属 tab 的 cwd 切换成功后提交新 root
+- 创建 worktree 时始终以 main worktree 作为默认布局根，避免从 linked worktree 创建时嵌套目录
+- 删除 worktree 前重新确认 locked 与 dirty 状态，只为确实 dirty 的目标提供 force 删除
+- 修复 manager 快速刷新可能被旧结果覆盖，以及创建完成后浮窗重新定位报错
+
 ## 0.3.6 - 2026-07-30
 
 ### Added

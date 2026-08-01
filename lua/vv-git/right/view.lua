@@ -414,7 +414,7 @@ function M.show(state, node, section, force_single, root)
     right_keymaps.install(b_buf)
     right_keymaps.block_insert(a_buf)
 
-    -- attach_dual 只服务 staged / unstaged / compare；冲突始终走 conflict3 或 single。
+    -- attach_dual 只服务 staged / unstaged / compare；冲突始终走 conflict3 或 single
     Conflict.clear_winbar(a_win)
     Conflict.clear_winbar(b_win)
 
@@ -572,7 +572,7 @@ function M.show(state, node, section, force_single, root)
     end)
   end
 
-  -- compare 窄屏保持原有串行时序：先读取旧 revision，再创建目标 revision buffer。
+  -- compare 窄屏保持原有串行时序：先读取旧 revision，再创建目标 revision buffer
   render_serial_rev_with_inline = function(a_rev, b_rev, a_path, b_path)
     Git.show(owner, a_rev, a_path, function(a_lines)
       if not alive({}) then return end
@@ -591,7 +591,7 @@ function M.show(state, node, section, force_single, root)
     end)
   end
 
-  -- Plan 只决定目标形态；异步请求、fallback、资源清理和 attach 生命周期仍由 view 执行。
+  -- Plan 只决定目标形态；异步请求、fallback、资源清理和 attach 生命周期仍由 view 执行
   if info then
     local lines = Fs.file_info_lines(info, { display_path = node.relpath })
     local buf = Buffers.create_info(lines, abspath)
@@ -653,26 +653,34 @@ end
 
 ---@param state table
 function M.close(state)
+  -- close 也是上下文失效边界：即使当前尚未 attach view，也必须废弃所有在途 show
+  state._show_req_id = (state._show_req_id or 0) + 1
   local view = state.view
+
   if not view then return end
   Conflict.reset(state)
+
   -- inline diff 的 TextChanged autocmd + extmark 在自家 namespace，关 view 必须显式拆
   if view._inline_cleanup then pcall(view._inline_cleanup) end
   if view.a_win and api.nvim_win_is_valid(view.a_win) then
     pcall(api.nvim_win_close, view.a_win, true)
   end
+
   if view.c_win and api.nvim_win_is_valid(view.c_win) then
     pcall(api.nvim_win_close, view.c_win, true)
   end
+
   if view.c_buf then
     right_keymaps.remove(view.c_buf)
     Conflict.remove_keymaps(view.c_buf)
   end
+
   -- b_win 是工作区文件，不主动关，只清 diff opts
   if view.b_win and api.nvim_win_is_valid(view.b_win) then
     right_options.restore(view.b_win)
     vim.w[view.b_win].vv_statuscol_git_disabled = nil
   end
+
   -- 拆 buf-local 快捷键；a_buf 是 bufhidden=wipe 自动清，b_buf 需显式处理
   if view.b_buf then right_keymaps.remove(view.b_buf) end
   state.view = nil

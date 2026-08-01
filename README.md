@@ -77,6 +77,7 @@
 | `subrepo.respect_gitignore` | `boolean` | `false` | Whether discovery skips directories ignored by the parent repository's `.gitignore` |
 | `subrepo.prune` | `string[]` | See below | Directory names not entered while discovering nested repositories. This uses replacement semantics: providing it replaces the entire default list instead of merging. Defaults include caches such as `node_modules`, `.cache`, `.local`, `.cargo`, `.rustup`, and `.bun`; `.git` is always skipped |
 | `subrepo.scan_worktrees` | `boolean` | `false` | Whether linked worktrees are also scanned as nested repositories; defaults to `false` |
+| `worktree.path` | `fun(root, branch): string` | `<root>/.worktrees/<branch-short>` | Default path used when creating a worktree; `root` is always the main worktree path, and the short name of `feature/new-ui` is `new-ui` |
 
 ## vv-scrollbar Integration
 
@@ -107,15 +108,18 @@ opts = {
 - **Ignored directories are scanned by default:** with the default `respect_gitignore=false`, directories ignored by `.gitignore` are still scanned; configure `respect_gitignore` to change this
 - **Worktrees are not treated as nested repositories by default:** enable `scan_worktrees=true` when needed
 
-## Worktree Switching
+## Worktree Management
 
-Press `gw` in the panel, or run `:VVGitWorktree`, to open a floating window listing every Git worktree for the current repository:
+Press `gw` in the panel, or run `:VVGitWorktree`, to open a floating manager listing every Git worktree for the current repository. It also opens when only the main worktree exists, so the first linked worktree can be created there:
 
 - The **current** worktree is marked and highlighted with `●`, and receives the initial cursor position
-- Each row shows the branch name (`(detached <short hash>)` for detached HEAD or `(bare)` for a bare repository) and working directory path; invalid or locked worktrees end with `(prunable)` or `(locked)`
-- Select with `<CR>` / `l` to **switch the panel to that worktree** and inspect its diff; close with `q` / `<Esc>`
+- Each row shows the branch name (`(detached <short hash>)` for detached HEAD) and working directory path; invalid or locked worktrees end with `(prunable)` or `(locked)`. Pure bare repositories are outside the supported scope
+- `<CR>` / `l` switches the panel to the selected worktree
+- `a` creates one from an existing local branch or from a new branch and selected base ref
+- `d` removes the selected worktree; main, current, and locked worktrees are protected, and force is offered only when Git refuses a normal removal and the target is confirmed dirty
+- `r` refreshes, `?` opens contextual help, and `q` / `<Esc>` closes the manager
 
-Switching performs a clean context change: it points `state.git_root` at the selected worktree and runs `tcd` there, affecting only vv-git's dedicated tab and leaving the tab you came from untouched, then reloads. Subsequent diff, stage, unstage, commit, and push operations all target that worktree. This is a **read-only switcher**; it does not run `worktree add` or `worktree remove`, which should be managed with Git commands as needed.
+Switching performs a clean context change: it points `state.git_root` at the selected worktree and runs `tcd` there, affecting only vv-git's dedicated tab and leaving the tab you came from untouched, then reloads. Subsequent diff, stage, unstage, commit, and push operations all target that worktree.
 
 > Worktrees and nested repositories are different concepts. Worktrees are multiple checkouts sharing the same `.git` history, so vv-git switches into one instead of rendering them side by side. Nested repositories are independent repositories and are rendered as separate blocks.
 
@@ -140,7 +144,7 @@ opts = { binary = { extensions = { sketch = true, fig = true } } }
 
 ## Custom Colors
 
-The `highlights` field accepts overrides for any `VVGit*` highlight group. Overrides are applied on top of defaults automatically calculated from the `Normal` background and remain active after colorscheme changes:
+The `highlights` field accepts overrides for any `VVGit*` highlight group. Overrides are applied on top of defaults automatically calculated from the `Normal` background and remain active after colorscheme changes, including panel, diff, commit, and worktree-manager highlights:
 
 ```lua
 opts = {
@@ -157,8 +161,6 @@ opts = {
   },
 }
 ```
-
-See `lua/vv-git/hl.lua` for the complete list of overridable highlight groups.
 
 ## Keymaps
 
@@ -186,7 +188,7 @@ These mappings are active inside the left panel:
 | `<C-y>` | Scroll the diff up |
 | `]c` / `[c` | Jump to and center the next/previous chunk in the right-side diff while remaining in the left panel |
 | `gc` | Inspect a commit's own diff: select a branch, then a commit, and show the changes introduced by that commit (`commit^..commit`) |
-| `gw` | Switch worktrees: list every worktree for this repository in a floating window and switch to the selected worktree to inspect its diff (equivalent to `:VVGitWorktree`) |
+| `gw` | Manage worktrees: create, switch, remove, and refresh them in a floating window (equivalent to `:VVGitWorktree`) |
 | `H` | Compare with HEAD: select a branch, then a commit, and show the `commit..HEAD` difference |
 | `g?` | Show help |
 
