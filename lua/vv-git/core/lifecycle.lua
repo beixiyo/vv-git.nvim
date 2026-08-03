@@ -9,6 +9,7 @@ local Guard = require('vv-git.guard')
 local Keymaps = require('vv-git.core.keymaps')
 local Subrepo = require('vv-git.subrepo')
 local UGit = require('vv-utils.git')
+local Async = require('vv-utils.async')
 
 ---@param root string
 ---@return string? relpath
@@ -126,7 +127,17 @@ local L = {}
 function L.new(deps)
   local M = {}
   local controller = deps.controller
+  local external_root_scope = Async.scope({ cancel_previous = true })
   local function config() return deps.config() end
+
+  function M._cancel_root_requests()
+    external_root_scope:cancel()
+  end
+
+  function M._cancel_reload_requests(state)
+    state = state or (State.has() and State.get())
+    if state then Loader.cancel_reload(state) end
+  end
   ---@param opts? VVGitOpenOpts
   ---@return boolean opened, string? err
   function M.open(opts)
@@ -169,6 +180,7 @@ function L.new(deps)
           return false, message
         end
       end
+      Loader.cancel_reload(State.get())
       State.clear()
     end
 
@@ -276,6 +288,9 @@ function L.new(deps)
     -- 必须在 tabclose 触发布局收缩之前采样。_closing 同时阻止 WinResized 把关闭过程中的
     -- 临时宽度重新写回 state；若 tabclose 失败则恢复监听
     state._closing = true
+    external_root_scope:cancel()
+    Loader.cancel_reload(state)
+    if controller._cancel_command_requests then controller._cancel_command_requests() end
     deps.track_panel_width(state)
     deps.persist_panel_width(state)
 
@@ -373,12 +388,14 @@ function L.new(deps)
     if not State.has() then return end
     local state = State.get()
     if not state.panel or not state.git_root then return end
+    local request = external_root_scope:begin({ key = 'root' })
 
-    UGit.root_async(external_root, function(root)
+    local cancel = UGit.root_async(external_root, function(root)
       -- 异步窗口期内面板可能已被关掉 / 重开成另一个 state
-      if not State.is_current(state) then return end
+      if not request:finish() or not State.is_current(state) then return end
       if not root or root == state.git_root then return end
 
+      if controller._cancel_command_requests then controller._cancel_command_requests() end
       state.git_root = root
       state.cur_path = nil
       state.selection = {}
@@ -390,6 +407,7 @@ function L.new(deps)
       RightView.close(state)
       Loader.reload_index(state)
     end)
+    request:set_cancel(cancel)
   end
   return M
 end

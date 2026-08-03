@@ -276,7 +276,11 @@ function M.setup(opts)
     on_apply_layout     = function() M._apply_layout() end,
     on_ensure_invariant = function() M._ensure_invariant() end,
     on_reshow_view      = function() M._reshow_view() end,
+
     on_closed           = function(state)
+      M._cancel_root_requests()
+      M._cancel_reload_requests(state)
+      M._cancel_command_requests()
       panel_width.persist(state)
       panel_width.close()
       M._emit_closed(state)
@@ -433,8 +437,7 @@ function M.stop_compare()
   return M._compare_stop()
 end
 
--- Runtime services are composed explicitly.  Each module owns and returns its
--- operations; none receives the entry module as a mutable injection target.
+-- 显式组合运行时服务。每个模块自行持有并返回操作，不把入口模块作为可变注入目标
 local services = {
   controller = M,
   config = function() return M._config end,

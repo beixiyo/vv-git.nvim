@@ -6,6 +6,7 @@ local LeftRender = require('vv-git.left.render')
 local RightView = require('vv-git.right.view')
 local Prompt = require('vv-git.left.prompt')
 local Editor = require('vv-utils.editor')
+local Async = require('vv-utils.async')
 local Keymaps = require('vv-git.core.keymaps')
 local FilePolicy = require('vv-git.file_policy')
 
@@ -25,8 +26,48 @@ end
 function L.new(deps)
   local M = {}
   local controller = deps.controller
+  local request_scope = Async.scope({ cancel_previous = true })
   local function config() return deps.config() end
   local function binary(path) return FilePolicy.is_binary(path, config().binary) end
+
+  ---@param request vv-utils.async.Request
+  ---@param state table
+  ---@param owner_root string
+  ---@return boolean
+  local function owns_context(request, state, owner_root)
+    return request:is_current()
+        and State.is_current(state)
+        and state.git_root == owner_root
+  end
+
+  local function new_cancel_bag()
+    local cancelled = false
+    local cancels = {}
+
+    local function add(cancel)
+      if type(cancel) ~= 'function' then return end
+      if cancelled then
+        pcall(cancel)
+      else
+        cancels[#cancels + 1] = cancel
+      end
+    end
+
+    local function cancel_all()
+      if cancelled then return end
+      cancelled = true
+      for _, cancel in ipairs(cancels) do pcall(cancel) end
+      cancels = {}
+    end
+
+    return add, cancel_all
+  end
+
+  function M._cancel_command_requests()
+    request_scope:cancel()
+    Prompt.close()
+  end
+
   M._compare_pick = State.guarded(function(state)
     if not state.git_root then return end
     local Compare = require('vv-git.compare')
@@ -130,39 +171,66 @@ function L.new(deps)
       end
 
       -- tcd 成功后再废弃旧 root 的在途请求并提交上下文切换
+      if controller._cancel_root_requests then controller._cancel_root_requests() end
+      M._cancel_command_requests()
+
       RightView.close(state)
       require('vv-git.compare').stop(state)
+
       state.git_root = target
       state.cur_path = nil
       state.selection = {}
       state.folds = {}
       state.section_folds = {}
       state.block_folds = {}
+
       require('vv-git.loader').reload_index(state)
     end, config().worktree)
   end)
 
   M._commit = State.guarded(function(state)
     if not state.git_root then return end
+    local owner_root = state.git_root
     local root = cursor_root(state)
+    local request = request_scope:begin({ key = 'commit' })
+
     Git.has_staged(root, function(has)
+      if not owns_context(request, state, owner_root) then return end
+
       local function open_prompt()
-        Prompt.open({
+        if not owns_context(request, state, owner_root) then return end
+
+        local dispose_prompt = Prompt.open({
           git_root = root,
           has_staged = has,
+          is_current = function()
+            return owns_context(request, state, owner_root)
+          end,
           on_success = function()
+            if not request:finish() or not State.is_current(state) or state.git_root ~= owner_root then return end
             state._block_hint = root
             controller.refresh()
           end,
+          on_cancel = function()
+            request:dispose()
+          end,
         })
+
+        if type(dispose_prompt) == 'function' then request:set_disposer(dispose_prompt) end
       end
+
       if has then
         open_prompt()
       else
         vim.ui.select({ 'Commit ALL working tree', 'Cancel' }, {
           prompt = 'No staged changes. Commit all working tree changes instead?',
         }, function(choice)
-          if choice == 'Commit ALL working tree' then open_prompt() end
+          if not owns_context(request, state, owner_root) then return end
+          if choice == 'Commit ALL working tree' then
+            open_prompt()
+          else
+            request:dispose()
+          end
         end)
       end
     end)
@@ -170,15 +238,21 @@ function L.new(deps)
 
   local git_net = State.guarded(function(state, action)
     if not state.git_root then return end
+
+    local owner_root = state.git_root
     local root = cursor_root(state)
+    local request = request_scope:begin({ key = 'net:' .. action })
     local fn = Git[action]
+
     vim.notify('[vv-git] ' .. action .. '...', vim.log.levels.INFO)
-    fn(root, function(ok, out)
+    local cancel = fn(root, function(ok, out)
+      if not request:finish() or not State.is_current(state) or state.git_root ~= owner_root then return end
       local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
       local prefix = ok and ('[vv-git] ' .. action .. ' succeeded') or ('[vv-git] ' .. action .. ' failed')
       vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
       if ok then controller.refresh() end
     end)
+    if type(cancel) == 'function' then request:set_cancel(cancel) end
   end)
 
   function M._push() git_net('push') end
@@ -186,40 +260,61 @@ function L.new(deps)
 
   M._publish = State.guarded(function(state)
     if not state.git_root then return end
+    local owner_root = state.git_root
     local root = cursor_root(state)
+    local request = request_scope:begin({ key = 'publish' })
+    local add_cancel, cancel_all = new_cancel_bag()
+    request:set_cancel(cancel_all)
 
-    Git.repo_info(root, function(info, err)
-      if not State.is_current(state) then return end
+    local function current()
+      return owns_context(request, state, owner_root)
+    end
+
+    local function stop()
+      request:dispose()
+    end
+
+    add_cancel(Git.repo_info(root, function(info, err)
+      if not current() then return end
       if not info then
+        stop()
         vim.notify('[vv-git] failed to inspect repository\n' .. (err or 'unknown error'), vim.log.levels.ERROR)
         return
       end
+
       if info.detached then
+        stop()
         vim.notify('[vv-git] Detached HEAD. Create or switch to a branch before publishing.', vim.log.levels.WARN)
         return
       end
+
       if info.unborn or not info.head then
+        stop()
         vim.notify('[vv-git] Commit the branch before publishing.', vim.log.levels.WARN)
         return
       end
+
       if info.upstream then
+        stop()
         vim.notify('[vv-git] Already tracking ' .. info.upstream .. '. Use p to push.', vim.log.levels.INFO)
         return
       end
 
       local function publish_to(remote, remote_added)
+        if not current() then return end
         vim.notify('[vv-git] Publishing ' .. info.branch_name .. ' to ' .. remote .. '...', vim.log.levels.INFO)
-        Git.publish(root, remote, function(ok, out)
+        add_cancel(Git.publish(root, remote, function(ok, out)
+          if not request:finish() or not State.is_current(state) or state.git_root ~= owner_root then return end
           local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
           local prefix = ok
               and ('[vv-git] Published ' .. info.branch_name .. ' to ' .. remote)
               or ('[vv-git] Publish failed' .. (remote_added and ' (origin was added)' or ''))
           vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
-          if (ok or remote_added) and State.is_current(state) then
+          if ok or remote_added then
             state._block_hint = root
             controller.refresh()
           end
-        end)
+        end))
       end
 
       local function choose_existing_remote()
@@ -229,7 +324,12 @@ function L.new(deps)
         if #info.remotes == 1 then publish_to(info.remotes[1], false); return end
 
         vim.ui.select(info.remotes, { prompt = 'Publish ' .. info.branch_name .. ' to remote:' }, function(remote)
-          if remote and State.is_current(state) then publish_to(remote, false) end
+          if not current() then return end
+          if remote then
+            publish_to(remote, false)
+          else
+            stop()
+          end
         end)
       end
 
@@ -239,18 +339,20 @@ function L.new(deps)
       end
 
       vim.ui.input({ prompt = 'Remote URL for origin: ' }, function(url)
-        if not State.is_current(state) then return end
+        if not current() then return end
         url = url and vim.trim(url) or ''
-        if url == '' then return end
-        Git.add_remote(root, 'origin', url, function(ok, out)
+        if url == '' then stop(); return end
+        add_cancel(Git.add_remote(root, 'origin', url, function(ok, out)
+          if not current() then return end
           if not ok then
+            stop()
             vim.notify('[vv-git] Add origin failed' .. (out and ('\n' .. out) or ''), vim.log.levels.ERROR)
             return
           end
           publish_to('origin', true)
-        end)
+        end))
       end)
-    end)
+    end))
   end)
 
   M._goto_file = State.guarded(function(state)

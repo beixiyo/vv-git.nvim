@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.8 - 2026-08-03
+
+### Changed
+
+- **异步生命周期**：loader、自动刷新、外部根目录切换，以及 push / pull / publish 均使用 request scope 绑定面板与仓库所有权
+- **文件对比**：`file_compare` 重构为目录
+
+### Fixed
+
+- **运行时边界**：`nvim_open_win` guard 卸载后不再破坏外层 wrapper，并保持第三方 `noautocmd` 的事件边界
+- **重入清理**：File Compare 在窗口、buffer 与选项回调同步重入时只回收自身资源，不会覆盖 successor 或调用方的窗口状态
+
 ## 0.3.7 - 2026-08-01
 
 ### Added

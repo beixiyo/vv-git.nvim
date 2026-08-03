@@ -10,52 +10,72 @@ local Git = require('vv-git.git')
 
 local M = {}
 
-local cur = nil -- { buf, win }
+local cur = nil -- { buf, win, on_cancel, cancelled }
 
-local function close()
-  vim.cmd('stopinsert')
-  if not cur then return end
-  -- 先快照再清 cur：关窗会同步触发 WinClosed/BufWipeout autocmd 回调，
-  -- 其中也会把 cur 置 nil，若沿用 cur.* 取值会在中途变成索引 nil
-  local win, buf = cur.win, cur.buf
-  cur = nil
+---@param owner table
+local function notify_cancel(owner)
+  if owner.cancelled then return end
+  owner.cancelled = true
+  if owner.on_cancel then owner.on_cancel() end
+end
+
+---@param owner table
+---@param cancelled? boolean
+local function close_owner(owner, cancelled)
+  if owner.closed then return end
+  owner.closed = true
+  local win, buf = owner.win, owner.buf
+  if win and api.nvim_win_is_valid(win) and api.nvim_get_current_win() == win then
+    vim.cmd('stopinsert')
+  end
+  if cur == owner then cur = nil end
   if win and api.nvim_win_is_valid(win) then
     pcall(api.nvim_win_close, win, true)
   end
   if buf and api.nvim_buf_is_valid(buf) then
     pcall(api.nvim_buf_delete, buf, { force = true })
   end
+  if cancelled ~= false then notify_cancel(owner) end
 end
 
+---@param cancelled? boolean
+local function close(cancelled)
+  if cur then close_owner(cur, cancelled) end
+end
+
+---@param owner table
 ---@param git_root string
 ---@param commit_all boolean
 ---@param on_success fun()?
-local function submit(git_root, commit_all, on_success)
+---@param is_current fun():boolean
+local function submit(owner, git_root, commit_all, on_success, is_current)
   vim.cmd('stopinsert')
-  if not cur or not cur.buf or not api.nvim_buf_is_valid(cur.buf) then return end
+  if not is_current() then return end
+  if cur ~= owner or not owner.buf or not api.nvim_buf_is_valid(owner.buf) then return end
   -- 防重入：Git.commit 是异步的，提交进行中再按 <C-s> 会派生第二个 commit 进程
-  if cur.submitting then return end
+  if owner.submitting then return end
   -- 快照本次提交所属的 prompt 身份：cur 是模块级单例，提交在途时若又开了新 prompt，
   -- M.open 会装入一张全新的 cur 表。回调里只在 cur == owner（仍是本 prompt）时才
   -- close()/复位 submitting，避免在途回调把刚开的新 prompt 窗口误关掉
-  local owner = cur
-  local lines = api.nvim_buf_get_lines(cur.buf, 0, -1, false)
+  local lines = api.nvim_buf_get_lines(owner.buf, 0, -1, false)
   local msg = table.concat(lines, '\n')
   msg = msg:gsub('^%s+', ''):gsub('%s+$', '')
   if msg == '' then
     vim.notify('[vv-git] Commit message cannot be empty', vim.log.levels.WARN)
     return
   end
-  cur.submitting = true
+  owner.submitting = true
 
   local function do_commit()
+    if not is_current() then return end
     Git.commit(git_root, msg, function(ok, err)
+      if not is_current() then return end
       if not ok then
         if cur == owner then cur.submitting = false end
         vim.notify('[vv-git] Commit failed: ' .. (err or ''), vim.log.levels.ERROR)
         return
       end
-      if cur == owner then close() end -- 仅本 prompt 仍是当前活动 prompt 时才关
+      if cur == owner then close_owner(owner, false) end
       vim.notify('[vv-git] Commit succeeded', vim.log.levels.INFO)
       if on_success then on_success() end
     end)
@@ -63,6 +83,7 @@ local function submit(git_root, commit_all, on_success)
 
   if commit_all then
     Git.stage_all(git_root, function(ok, err)
+      if not is_current() then return end
       if not ok then
         if cur == owner then cur.submitting = false end
         vim.notify('[vv-git] git add -A failed: ' .. (err or ''), vim.log.levels.ERROR); return
@@ -74,11 +95,22 @@ local function submit(git_root, commit_all, on_success)
   end
 end
 
----@param opts { git_root:string, has_staged:boolean, on_success:fun()? }
+---@param opts { git_root:string, has_staged:boolean, is_current?:fun():boolean, on_success:fun()?, on_cancel?:fun() }
+---@return fun() dispose 只关闭本次 prompt 的幂等 disposer
 function M.open(opts)
   close()
+  local is_current = opts.is_current or function() return true end
 
   local buf = api.nvim_create_buf(false, true)
+  local owner = {
+    buf = buf,
+    on_cancel = opts.on_cancel,
+    cancelled = false,
+    closed = false,
+  }
+  cur = owner
+  local function dispose() close_owner(owner) end
+
   api.nvim_set_option_value('buftype', 'nofile', { buf = buf })
   api.nvim_set_option_value('bufhidden', 'wipe', { buf = buf })
   api.nvim_set_option_value('filetype', 'gitcommit', { buf = buf })
@@ -92,7 +124,7 @@ function M.open(opts)
 
   local title = opts.has_staged and ' Commit staged changes ' or ' Commit ALL changes '
 
-  local win = api.nvim_open_win(buf, true, {
+  local win = api.nvim_open_win(buf, false, {
     relative = 'editor',
     width = width,
     height = height,
@@ -105,6 +137,17 @@ function M.open(opts)
     footer = ' Commit ^s  Cancel Esc/q ',
     footer_pos = 'center',
   })
+  owner.win = win
+
+  if cur ~= owner or not is_current() then
+    close_owner(owner)
+    return dispose
+  end
+  api.nvim_set_current_win(win)
+  if cur ~= owner or not is_current() then
+    close_owner(owner)
+    return dispose
+  end
 
   -- 给浮窗加一点左侧内边距（padding），让输入文本不至于紧贴边框
   -- 通过设置宽度为 1 的 signcolumn 来挤出左边距
@@ -114,14 +157,15 @@ function M.open(opts)
   vim.api.nvim_set_option_value('number', false, { win = win })
   vim.api.nvim_set_option_value('relativenumber', false, { win = win })
 
-  cur = { buf = buf, win = win }
-
   -- 浮窗被外部关闭（非 close()）时复位 cur，避免残留导致下次校验误判
   api.nvim_create_autocmd({ 'WinClosed', 'BufWipeout' }, {
     buffer = buf,
     once = true,
     callback = function()
-      if cur and cur.buf == buf then cur = nil end
+      if cur == owner then
+        cur = nil
+        notify_cancel(owner)
+      end
     end,
   })
 
@@ -137,12 +181,14 @@ function M.open(opts)
   local kopts = { buffer = buf, silent = true, nowait = true }
   local commit_all = not opts.has_staged
   vim.keymap.set({ 'n', 'i' }, '<C-s>', function()
-    submit(opts.git_root, commit_all, opts.on_success)
+    submit(owner, opts.git_root, commit_all, opts.on_success, is_current)
   end, kopts)
-  vim.keymap.set('n', '<Esc>', close, kopts)
-  vim.keymap.set('n', 'q', close, kopts)
+  vim.keymap.set('n', '<Esc>', function() close_owner(owner) end, kopts)
+  vim.keymap.set('n', 'q', function() close_owner(owner) end, kopts)
 
   vim.cmd('startinsert')
+  if cur ~= owner or not is_current() then close_owner(owner) end
+  return dispose
 end
 
 function M.close() close() end

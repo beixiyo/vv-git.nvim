@@ -10,14 +10,45 @@
 local State = require('vv-git.state')
 local RightView = require('vv-git.right.view')
 local Guard = require('vv-git.guard')
+local Async = require('vv-utils.async')
 
 local M = {}
+local setup_scope = Async.scope({ cancel_previous = true })
 
 ---@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun(), on_closed:fun(state:table), on_external_root:fun(dir:string) }
 ---@param config table?  vv-git 合并后的配置（读取 auto_refresh 等）
 function M.setup(handlers, config)
   config = config or {}
+  local setup_request = setup_scope:begin({ key = 'setup' })
   local aug = vim.api.nvim_create_augroup('VVGit', { clear = true })
+  local refresh_ticket
+
+  ---@param state table
+  ---@param need_reshow boolean
+  local function schedule_refresh(state, need_reshow)
+    if refresh_ticket and state._refresh_scheduled == refresh_ticket then
+      refresh_ticket.need_reshow = refresh_ticket.need_reshow or need_reshow
+      return
+    end
+
+    local ticket = { need_reshow = need_reshow }
+    refresh_ticket = ticket
+    state._refresh_scheduled = ticket
+    vim.schedule(function()
+      if refresh_ticket == ticket then refresh_ticket = nil end
+      if state._refresh_scheduled ~= ticket then return end
+      state._refresh_scheduled = nil
+      if not setup_request:is_current() or not State.is_current(state) then return end
+
+      handlers.on_refresh()
+      if not setup_request:is_current() or not State.is_current(state) then return end
+      if refresh_ticket and state._refresh_scheduled == refresh_ticket then
+        refresh_ticket.need_reshow = refresh_ticket.need_reshow or ticket.need_reshow
+        return
+      end
+      if ticket.need_reshow then handlers.on_reshow_view() end
+    end)
+  end
 
   vim.api.nvim_create_autocmd('BufWritePost', {
     group = aug,
@@ -27,18 +58,9 @@ function M.setup(handlers, config)
       if name == '' then return end
       name = vim.fs.normalize(name)
       if name ~= state.git_root and name:sub(1, #state.git_root + 1) ~= state.git_root .. '/' then return end
-      -- 与 GitSignsChanged 共用同一去抖：若两者同 tick 到达，只调度一次 on_refresh()
-      -- 但 reshow 需求要 OR 合并到 _refresh_need_reshow——否则先到的 BufWritePost
-      -- 会让随后的 GitSignsChanged 短路，丢掉它的 on_reshow_view()
-      if state._refresh_scheduled then return end
-      state._refresh_scheduled = true
-      vim.schedule(function()
-        state._refresh_scheduled = false
-        local need_reshow = state._refresh_need_reshow
-        state._refresh_need_reshow = false
-        handlers.on_refresh()
-        if need_reshow then handlers.on_reshow_view() end
-      end)
+      -- 与 GitSignsChanged 共用同一 tick ticket；ticket 带 setup owner identity，
+      -- 旧 setup 已排队的 callback 不能清理或吞掉新 setup 的 refresh
+      schedule_refresh(state, false)
     end),
   })
 
@@ -49,18 +71,7 @@ function M.setup(handlers, config)
     pattern = 'GitSignsChanged',
     callback = State.guarded(function(state)
       if not state.git_root then return end
-      -- 标记本轮去抖需要 reshow（即便 BufWritePost 先置位了 _refresh_scheduled，
-      -- 这里的 need_reshow 也会被合并进同一个 schedule 闭包，不会被吞）
-      state._refresh_need_reshow = true
-      if state._refresh_scheduled then return end
-      state._refresh_scheduled = true
-      vim.schedule(function()
-        state._refresh_scheduled = false
-        local need_reshow = state._refresh_need_reshow
-        state._refresh_need_reshow = false
-        handlers.on_refresh()
-        if need_reshow then handlers.on_reshow_view() end
-      end)
+      schedule_refresh(state, true)
     end),
   })
 
@@ -83,10 +94,12 @@ function M.setup(handlers, config)
   -- BufEnter 会被 diff 预览结束时的「焦点回弹到 panel」反复带起，靠 debounce 收敛：连续
   -- 浏览只在停下后刷一次。render 仅重绘左栏、不切窗口/buffer，故不会自我触发形成回环
   if config.auto_refresh ~= false then
-    local refresh_debounced = require('vv-utils.timer').debounce(State.guarded(function(state)
+    local refresh_debounced, cancel_refresh = require('vv-utils.timer').debounce(State.guarded(function(state)
+      if not setup_request:is_current() then return end
       if not state.git_root then return end
       handlers.on_refresh()
     end), 200)
+    setup_request:set_disposer(cancel_refresh)
 
     vim.api.nvim_create_autocmd({ 'BufEnter', 'FocusGained' }, {
       group = aug,

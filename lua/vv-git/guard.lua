@@ -9,72 +9,117 @@
 --   2. 即使触发，若用 vim.schedule 延迟清 diff，nvim 已完成一次渲染，污染已发生
 -- 所以必须同步拦在 nvim_open_win 返回前把 diff 关掉 → 劫持 API 本身
 --
--- 生命周期：M.open() → install；TabClosed → uninstall。仅在 vv-git tab 存活期间
--- 影响 nvim_open_win；关闭 tab 后全局 API 还原，对其它插件零残留
+-- 生命周期：M.open() → install；TabClosed → uninstall。卸载时若本层仍位于栈顶就
+-- 摘除；若已有后装 wrapper 持有本层，则把闭包停用为透明转发，保持调用链可用
 
 local State = require('vv-git.state')
 
 local M = {}
 
--- 存 install 前的实现；非 nil 即"已劫持"。链式兼容：若别的插件已 patch 过
--- nvim_open_win，我们保存的是他们包装后的版本，uninstall 时还原到他们那层
----@type (fun(buf:integer, enter:boolean, cfg:table):integer)?
-local orig_open_win = nil
-
 -- 只摘会让新窗口进 diff-group 的三个选项。foldmethod/foldexpr/winhighlight
 -- 即便被继承也不会影响 diff 计算（它们只是展示/折叠层），不必动
-local OPTS = { 'diff', 'scrollbind', 'cursorbind' }
-
 ---@param win integer
 local function sanitize(win)
-  for _, opt in ipairs(OPTS) do
-    pcall(vim.api.nvim_set_option_value, opt, false, { win = win })
-  end
+  pcall(vim.api.nvim_win_call, win, function()
+    vim.cmd('noautocmd setlocal nodiff noscrollbind nocursorbind')
+  end)
 end
 
+---@class VVGitOpenWinGuardLayer
+---@field upstream fun(buf:integer, enter:boolean, cfg:table):integer
+---@field active boolean
+---@field call fun(buf:integer, enter:boolean, cfg:table):integer
+
+---@type VVGitOpenWinGuardLayer?
+local installed_layer
+local open_observers = {}
+local next_observer_id = 0
+
 ---@param buf integer
----@param enter boolean
----@param cfg table
----@return integer win
-local function patched(buf, enter, cfg)
-  local open_win = assert(orig_open_win)
-  local win = open_win(buf, enter, cfg)
+---@param win integer
+local function publish_open(buf, win)
+  local matched = {}
+  for id, observer in pairs(open_observers) do
+    if observer.buf == buf then
+      open_observers[id] = nil
+      matched[#matched + 1] = observer.callback
+    end
+  end
+  for _, callback in ipairs(matched) do pcall(callback, win) end
+end
 
-  local state = State.current()
-  if not state or not state.tabpage then return win end
-  if not vim.api.nvim_win_is_valid(win) then return win end
+---@param upstream fun(buf:integer, enter:boolean, cfg:table):integer
+---@return VVGitOpenWinGuardLayer
+local function create_layer(upstream)
+  local layer = { upstream = upstream, active = true }
 
-  -- 新浮窗必须落在 vv-git 专属 tab 内；其它 tab 的 open_win 原样放行
-  local ok, tp = pcall(vim.api.nvim_win_get_tabpage, win)
-  if not ok or tp ~= state.tabpage then return win end
+  layer.call = function(buf, enter, cfg)
+    local win = upstream(buf, enter, cfg)
+    publish_open(buf, win)
+    if not layer.active then return win end
 
-  -- 豁免己方三窗：panel / a_win / b_win
-  local view = state.view
-  local is_mine = (state.panel and state.panel.win == win)
-    or (view and (view.a_win == win or view.b_win == win))
-  if is_mine then return win end
+    -- file_compare 使用 noautocmd 创建普通分屏，并自行持有 diff 配置。若在 API
+    -- 返回后再清理，会把副作用重新带到受控挂载事务之外
+    if vim.api.nvim_buf_is_valid(buf)
+        and vim.b[buf].vv_git_file_compare_ref_pending then
+      return win
+    end
 
-  sanitize(win)
-  return win
+    local state = State.current()
+    if not state or not state.tabpage then return win end
+    if not vim.api.nvim_win_is_valid(win) then return win end
+
+    -- 新浮窗必须落在 vv-git 专属 tab 内；其它 tab 的 open_win 原样放行
+    local ok, tp = pcall(vim.api.nvim_win_get_tabpage, win)
+    if not ok or tp ~= state.tabpage then return win end
+
+    -- 豁免己方三窗：panel / a_win / b_win
+    local view = state.view
+    local is_mine = (state.panel and state.panel.win == win)
+      or (view and (view.a_win == win or view.b_win == win))
+    if is_mine then return win end
+
+    sanitize(win)
+    return win
+  end
+
+  return layer
 end
 
 ---@return boolean installed_now  本次调用是否真的做了 install（幂等：已安装返回 false）
 function M.install()
-  if orig_open_win ~= nil then return false end
-  orig_open_win = vim.api.nvim_open_win
-  vim.api.nvim_open_win = patched
+  if installed_layer and installed_layer.active then return false end
+  local layer = create_layer(vim.api.nvim_open_win)
+  installed_layer = layer
+  vim.api.nvim_open_win = layer.call
   return true
 end
 
 ---@return boolean uninstalled_now
 function M.uninstall()
-  if orig_open_win == nil then return false end
-  if vim.api.nvim_open_win == patched then vim.api.nvim_open_win = orig_open_win end
-  orig_open_win = nil
+  local layer = installed_layer
+  if not layer or not layer.active then return false end
+  layer.active = false
+  if vim.api.nvim_open_win == layer.call then
+    vim.api.nvim_open_win = layer.upstream
+  end
+  -- 外层 wrapper 可能仍持有 layer.call；闭包保留不可变 upstream，并在停用后
+  -- 变为透明转发层
+  installed_layer = nil
   return true
 end
 
 ---@return boolean
-function M.is_installed() return orig_open_win ~= nil end
+function M.is_installed() return installed_layer ~= nil and installed_layer.active end
+
+---@param opts {buf:integer, callback:fun(win:integer)}
+---@return fun() dispose
+function M.observe_open(opts)
+  if not M.is_installed() then return function() end end
+  next_observer_id = next_observer_id + 1
+  local id = next_observer_id
+  open_observers[id] = { buf = opts.buf, callback = opts.callback }
+  return function() open_observers[id] = nil end
+end
 
 return M

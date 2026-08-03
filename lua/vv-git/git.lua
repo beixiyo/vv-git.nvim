@@ -3,15 +3,17 @@
 
 local utils_git = require('vv-utils.git')
 local Fs = require('vv-utils.fs')
+local Process = require('vv-git.process')
 
 local M = {}
 
 ---@param root string
 ---@param cb fun(index: vv-utils.git.Index?)
+---@return fun() cancel
 function M.index(root, cb)
   -- untracked = 'all'：展开所有 untracked 目录到单文件，以便精准过滤嵌套 git 仓库
   -- ignored = false：vv-git 不使用 is_ignored，跳过 --ignored 扫描
-  utils_git.index(root, cb, { untracked = 'all', ignored = false })
+  return utils_git.index(root, cb, { untracked = 'all', ignored = false })
 end
 
 ---@param xy string
@@ -148,7 +150,7 @@ function M.commit(root, message, cb)
 end
 
 -- 取某 rev 版本的文件内容（用于 diff 左侧 a-buffer）
--- rev:
+-- rev 说明：
 --   'HEAD'  → HEAD 版本
 --   ':0'    → index 版本（staged 视图的"旧侧"对比 HEAD）
 ---@param root string
@@ -178,24 +180,20 @@ end
 ---@param root string
 ---@param sub 'push'|'pull'
 ---@param cb fun(ok:boolean, output?:string)
+---@return fun() cancel
 local function net_op(root, sub, cb)
-  vim.system(
-    { 'git', '-C', root, sub },
-    { text = true },
-    vim.schedule_wrap(function(r)
-      local out = (r.stdout or '') .. (r.stderr or '')
-      cb(r.code == 0, out ~= '' and out or nil)
-    end)
-  )
+  return Process.network({ 'git', '-C', root, sub }, cb)
 end
 
 ---@param root string
 ---@param cb fun(ok:boolean, output?:string)
-function M.push(root, cb) net_op(root, 'push', cb) end
+---@return fun() cancel
+function M.push(root, cb) return net_op(root, 'push', cb) end
 
 ---@param root string
 ---@param cb fun(ok:boolean, output?:string)
-function M.pull(root, cb) net_op(root, 'pull', cb) end
+---@return fun() cancel
+function M.pull(root, cb) return net_op(root, 'pull', cb) end
 
 -- 是否有任何已 staged 的变更
 ---@param root string
@@ -396,64 +394,92 @@ end
 ---一次获取分支、HEAD、remote、upstream 与 ahead/behind，避免把查询失败误判成 no remote
 ---@param root string
 ---@param cb fun(info: VVGitRepoInfo?, err?: string)
+---@return fun() cancel
 function M.repo_info(root, cb)
   local status_result, remote_result
+  local producer_cancels = {}
+  local cancelled = false
+  local completed = false
+  local failed = false
+
+  local function cancel()
+    if cancelled or completed then return end
+    cancelled = true
+    for _, cancel_producer in ipairs(producer_cancels) do pcall(cancel_producer) end
+    producer_cancels = {}
+  end
 
   local function finish()
+    if cancelled then return end
     if not status_result or not remote_result then return end
     if status_result.code ~= 0 then
+      completed = true
+      producer_cancels = {}
       cb(nil, status_result.stderr or 'git status failed')
       return
     end
     if remote_result.code ~= 0 then
+      completed = true
+      producer_cancels = {}
       cb(nil, remote_result.stderr or 'git remote failed')
       return
     end
 
     local info, err = M._parse_repo_info(status_result.stdout or '', remote_result.stdout or '')
+    completed = true
+    producer_cancels = {}
     cb(info, err)
   end
 
-  vim.system(
-    { 'git', '-C', root, 'status', '--porcelain=v2', '--branch' },
-    { text = true },
-    vim.schedule_wrap(function(r) status_result = r; finish() end)
-  )
-  vim.system(
-    { 'git', '-C', root, 'remote' },
-    { text = true },
-    vim.schedule_wrap(function(r) remote_result = r; finish() end)
-  )
+  local function start(args, deliver)
+    local cancel_producer, start_error = Process.start(args, { text = true }, function(result)
+      if cancelled or failed then return end
+      deliver(result)
+      finish()
+    end)
+    producer_cancels[#producer_cancels + 1] = cancel_producer
+    if start_error then error(start_error) end
+  end
+
+  local ok, err = xpcall(function()
+    start({ 'git', '-C', root, 'status', '--porcelain=v2', '--branch' }, function(result)
+      status_result = result
+    end)
+    start({ 'git', '-C', root, 'remote' }, function(result)
+      remote_result = result
+    end)
+  end, debug.traceback)
+
+  if not ok then
+    failed = true
+    for _, cancel_producer in ipairs(producer_cancels) do pcall(cancel_producer) end
+    producer_cancels = {}
+    vim.schedule(function()
+      if cancelled or completed then return end
+      completed = true
+      cb(nil, err)
+    end)
+  end
+
+  return cancel
 end
 
 ---@param root string
 ---@param name string
 ---@param url string
 ---@param cb fun(ok:boolean, output?:string)
+---@return fun() cancel
 function M.add_remote(root, name, url, cb)
-  vim.system(
-    { 'git', '-C', root, 'remote', 'add', name, url },
-    { text = true },
-    vim.schedule_wrap(function(r)
-      local out = (r.stdout or '') .. (r.stderr or '')
-      cb(r.code == 0, out ~= '' and out or nil)
-    end)
-  )
+  return Process.network({ 'git', '-C', root, 'remote', 'add', name, url }, cb)
 end
 
 ---发布当前分支，并将远端同名分支设为 upstream
 ---@param root string
 ---@param remote string
 ---@param cb fun(ok:boolean, output?:string)
+---@return fun() cancel
 function M.publish(root, remote, cb)
-  vim.system(
-    { 'git', '-C', root, 'push', '-u', remote, 'HEAD' },
-    { text = true },
-    vim.schedule_wrap(function(r)
-      local out = (r.stdout or '') .. (r.stderr or '')
-      cb(r.code == 0, out ~= '' and out or nil)
-    end)
-  )
+  return Process.network({ 'git', '-C', root, 'push', '-u', remote, 'HEAD' }, cb)
 end
 
 ---@class VVGitWorktree

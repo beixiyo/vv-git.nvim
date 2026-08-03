@@ -7,8 +7,44 @@ local Tree = require('vv-git.tree')
 local LeftRender = require('vv-git.left.render')
 local Subrepo = require('vv-git.subrepo')
 local UGit = require('vv-utils.git')
+local Async = require('vv-utils.async')
 
 local M = {}
+
+local function reload_scope(state)
+  if not state._reload_scope then
+    state._reload_scope = Async.scope({ cancel_previous = true })
+  end
+  return state._reload_scope
+end
+
+local function new_cancel_bag()
+  local cancelled = false
+  local cancels = {}
+
+  local function add(cancel)
+    if type(cancel) ~= 'function' then return end
+    if cancelled then
+      pcall(cancel)
+      return
+    end
+    cancels[#cancels + 1] = cancel
+  end
+
+  local function cancel_all()
+    if cancelled then return end
+    cancelled = true
+    for _, cancel in ipairs(cancels) do pcall(cancel) end
+    cancels = {}
+  end
+
+  return add, cancel_all
+end
+
+---@param state table
+function M.cancel_reload(state)
+  if state and state._reload_scope then state._reload_scope:cancel() end
+end
 
 -- 由 config.subrepo.prune（数组）构造跳过的目录名集合（.git 始终跳过）
 ---@param cfg table
@@ -45,10 +81,11 @@ end
 ---@param pidx table?  父仓库 Git.index 结果
 ---@param is_subroot table<string, boolean>
 ---@param info VVGitRepoInfo?  当前仓库分支 / remote 状态
-local function build_parent_repo(state, pidx, is_subroot, info)
+---@param root string
+local function build_parent_repo(state, pidx, is_subroot, info, root)
   local pmap = strip_subroots(pidx and pidx.status_map, is_subroot)
   state.index = make_repo_index(pmap, pidx and pidx.rename_map)
-  state.tree = Tree.build(pmap, state.git_root)
+  state.tree = Tree.build(pmap, root)
   state.repo_info = info
   state.branch = info and info.branch or nil
 end
@@ -60,14 +97,15 @@ end
 ---@param indexes table<string, table>
 ---@param is_subroot table<string, boolean>
 ---@param infos table<string, VVGitRepoInfo>  root → 分支 / remote 状态
-local function build_subrepos(state, subroots, indexes, is_subroot, infos)
+---@param parent_root string
+local function build_subrepos(state, subroots, indexes, is_subroot, infos, parent_root)
   state.subrepos = {}
   for _, sr in ipairs(subroots) do
     local idx = indexes[sr]
     local smap = strip_subroots(idx and idx.status_map, is_subroot)
     state.subrepos[#state.subrepos + 1] = {
       root = sr,
-      label = sr:sub(#state.git_root + 2), -- 相对父根：'nested' / 'nested/deep'
+      label = sr:sub(#parent_root + 2), -- 相对父根：'nested' / 'nested/deep'
       branch = infos[sr] and infos[sr].branch or nil,
       repo_info = infos[sr],
       tree = Tree.build(smap, sr),
@@ -99,27 +137,43 @@ end
 ---@param passive boolean?  被动刷新（auto_refresh / 保存 / gitsigns / R / commit-push）：
 ---  render 保持光标停在当前文件、不按可能滞后的 cur_path 拉走（防 j/k 导航期光标拉扯）
 function M.reload_index(state, after, passive)
-  state._reload_seq = (state._reload_seq or 0) + 1
-  local seq = state._reload_seq
+  local root = state.git_root
+  local request = reload_scope(state):begin({ key = 'reload' })
+  local add_cancel, cancel_all = new_cancel_bag()
+  request:set_cancel(cancel_all)
   local done_index = false
 
   local function active()
-    return State.is_current(state) and seq == state._reload_seq
+    if not State.is_current(state) or state.git_root ~= root then
+      request:cancel()
+      return false
+    end
+    return request:is_current()
   end
 
   local function finalize()
     if not active() or not done_index then return end
-    LeftRender.render(state, passive)
-    -- 广播 git 状态变更：stage/unstage/discard/commit/push/conflict 等所有变更操作
-    -- 都汇聚到 reload_index（actions → refresh、commit/push → M.refresh），故这里发一个
-    -- User 事件，让 vv-explorer / vv-statuscol 等外部消费者即时刷新自己的 git 索引，
-    -- 无需各自轮询或等 FocusGained。消费者监听 `User VVGitStatusChanged`
-    vim.api.nvim_exec_autocmds('User', {
-      pattern = 'VVGitStatusChanged',
-      modeline = false,
-      data = { root = state.git_root },
-    })
-    if after then after() end
+    local ok, err = xpcall(function()
+      LeftRender.render(state, passive)
+      if not active() then return end
+      -- 广播 git 状态变更：stage/unstage/discard/commit/push/conflict 等所有变更操作
+      -- 都汇聚到 reload_index（actions → refresh、commit/push → M.refresh），故这里发一个
+      -- User 事件，让 vv-explorer / vv-statuscol 等外部消费者即时刷新自己的 git 索引，
+      -- 无需各自轮询或等 FocusGained。消费者监听 `User VVGitStatusChanged`
+      vim.api.nvim_exec_autocmds('User', {
+        pattern = 'VVGitStatusChanged',
+        modeline = false,
+        data = { root = root },
+      })
+      if not active() then return end
+      if after then after() end
+      request:finish()
+    end, debug.traceback)
+
+    if not ok then
+      request:dispose()
+      error(err, 0)
+    end
   end
 
   -- 多仓库：父仓库 + 发现的子仓库各跑一次 index 与 repo info，counter join 后各建一棵独立树
@@ -128,7 +182,7 @@ function M.reload_index(state, after, passive)
   local function proceed(subroots)
     table.sort(subroots) -- 字典序：子仓库与其更深嵌套相邻，块顺序稳定
 
-    local roots_to_index = { state.git_root }
+    local roots_to_index = { root }
     for _, r in ipairs(subroots) do roots_to_index[#roots_to_index + 1] = r end
 
     local is_subroot = {}
@@ -145,8 +199,8 @@ function M.reload_index(state, after, passive)
       pending = pending - 1
       if pending > 0 then return end
 
-      build_parent_repo(state, indexes[state.git_root], is_subroot, infos[state.git_root])
-      build_subrepos(state, subroots, indexes, is_subroot, infos)
+      build_parent_repo(state, indexes[root], is_subroot, infos[root], root)
+      build_subrepos(state, subroots, indexes, is_subroot, infos, root)
       prune_selection(state)
 
       done_index = true
@@ -154,19 +208,19 @@ function M.reload_index(state, after, passive)
     end
 
     for _, r in ipairs(roots_to_index) do
-      Git.index(r, function(idx)
+      add_cancel(Git.index(r, function(idx)
         if not active() then return end
         indexes[r] = idx
         on_part_done()
-      end)
-      Git.repo_info(r, function(info, err)
+      end))
+      add_cancel(Git.repo_info(r, function(info, err)
         if not active() then return end
         if not info and err then
           vim.notify('[vv-git] failed to inspect repository: ' .. r .. '\n' .. err, vim.log.levels.ERROR)
         end
         infos[r] = info
         on_part_done()
-      end)
+      end))
     end
   end
 
@@ -186,11 +240,12 @@ function M.reload_index(state, after, passive)
     -- 可选：跳过被父仓库 gitignore 的目录。先拿忽略目录集合（快路径
     -- ls-files --others --ignored --directory）再据此过滤发现
     -- 默认关闭——HOME-as-repo 场景 ~ 几乎忽略一切，开了会把所有子仓库都屏蔽掉
-    UGit.ignored_entries(state.git_root, function(_, ignored_dirs)
-      proceed(Subrepo.discover(state.git_root, depth, prune, ignored_dirs or {}, cfg.scan_worktrees))
-    end)
+    add_cancel(UGit.ignored_entries(root, function(_, ignored_dirs)
+      if not active() then return end
+      proceed(Subrepo.discover(root, depth, prune, ignored_dirs or {}, cfg.scan_worktrees))
+    end))
   else
-    proceed(Subrepo.discover(state.git_root, depth, prune, nil, cfg.scan_worktrees))
+    proceed(Subrepo.discover(root, depth, prune, nil, cfg.scan_worktrees))
   end
 end
 
