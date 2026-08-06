@@ -68,6 +68,11 @@ function L.new(deps)
     Prompt.close()
   end
 
+  function M._invalidate_command_requests()
+    request_scope:invalidate()
+    Prompt.close()
+  end
+
   M._compare_pick = State.guarded(function(state)
     if not state.git_root then return end
     local Compare = require('vv-git.compare')

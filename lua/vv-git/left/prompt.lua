@@ -78,7 +78,7 @@ local function submit(owner, git_root, commit_all, on_success, is_current)
       if cur == owner then close_owner(owner, false) end
       vim.notify('[vv-git] Commit succeeded', vim.log.levels.INFO)
       if on_success then on_success() end
-    end)
+    end, { is_current = is_current })
   end
 
   if commit_all then
@@ -89,7 +89,7 @@ local function submit(owner, git_root, commit_all, on_success, is_current)
         vim.notify('[vv-git] git add -A failed: ' .. (err or ''), vim.log.levels.ERROR); return
       end
       do_commit()
-    end)
+    end, { is_current = is_current })
   else
     do_commit()
   end

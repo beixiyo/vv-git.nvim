@@ -44,8 +44,10 @@ state.block_folds = {}
 state.selection = {}
 commands._worktree_pick()
 assert(state.git_root == new_root, 'successful tcd commits the new root')
-assert(vim.fn.getcwd(-1, vim.api.nvim_tabpage_get_number(state.tabpage)) == new_root, 'switch changes only the target tab cwd')
-assert(vim.fn.getcwd(-1, vim.api.nvim_tabpage_get_number(source_tab)) == old_root, 'switch preserves the caller tab cwd')
+assert(vim.uv.fs_realpath(vim.fn.getcwd(-1, vim.api.nvim_tabpage_get_number(state.tabpage)))
+    == vim.uv.fs_realpath(new_root), 'switch changes only the target tab cwd')
+assert(vim.uv.fs_realpath(vim.fn.getcwd(-1, vim.api.nvim_tabpage_get_number(source_tab)))
+    == vim.uv.fs_realpath(old_root), 'switch preserves the caller tab cwd')
 assert(state._reloaded == true, 'successful switch reloads the new root')
 
 state.git_root = old_root

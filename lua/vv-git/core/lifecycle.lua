@@ -290,7 +290,9 @@ function L.new(deps)
     state._closing = true
     external_root_scope:cancel()
     Loader.cancel_reload(state)
-    if controller._cancel_command_requests then controller._cancel_command_requests() end
+
+    if controller._invalidate_command_requests then controller._invalidate_command_requests() end
+
     deps.track_panel_width(state)
     deps.persist_panel_width(state)
 

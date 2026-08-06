@@ -4,6 +4,7 @@
 local utils_git = require('vv-utils.git')
 local Fs = require('vv-utils.fs')
 local Process = require('vv-git.process')
+local IndexLock = require('vv-git.index_lock')
 
 local M = {}
 
@@ -55,6 +56,21 @@ local function run(root, args, cb)
   )
 end
 
+---@param root string
+---@param action fun()
+---@param cb fun(ok:boolean, stderr?:string)
+---@param opts? VVGitIndexWriteOptions
+local function with_index(root, action, cb, opts)
+  IndexLock.ensure_available(root, function(ok, err)
+    if not ok then cb(false, err); return end
+    if opts and opts.is_current and not opts.is_current() then
+      cb(false, 'Git operation cancelled: request is no longer current')
+      return
+    end
+    action()
+  end)
+end
+
 -- paths 为空则短路；否则把 prefix_args 与 paths 拼好交给 run
 ---@param root string
 ---@param prefix_args string[]
@@ -70,14 +86,15 @@ end
 ---@param paths string[]  相对路径
 ---@param cb fun(ok:boolean, stderr?:string)
 function M.stage(root, paths, cb)
-  run_paths(root, { 'add', '--' }, paths, cb)
+  with_index(root, function() run_paths(root, { 'add', '--' }, paths, cb) end, cb)
 end
 
 -- 相当于 git add -A（全量 stage，含删除/未跟踪），不接受 paths
 ---@param root string
 ---@param cb fun(ok:boolean, stderr?:string)
-function M.stage_all(root, cb)
-  run(root, { 'add', '-A' }, cb)
+---@param opts? VVGitIndexWriteOptions
+function M.stage_all(root, cb, opts)
+  with_index(root, function() run(root, { 'add', '-A' }, cb) end, cb, opts)
 end
 
 ---@param root string
@@ -85,21 +102,22 @@ end
 ---@param cb fun(ok:boolean, stderr?:string)
 function M.unstage(root, paths, cb)
   if #paths == 0 then cb(true); return end
+  with_index(root, function()
+    -- restore --staged 默认从 HEAD 恢复 index；首次提交前 HEAD 尚不存在
+    vim.system(
+      { 'git', '-C', root, 'rev-parse', '--verify', 'HEAD' },
+      { text = true },
+      vim.schedule_wrap(function(r)
+        if r.code == 0 then
+          run_paths(root, { 'restore', '--staged', '--' }, paths, cb)
+          return
+        end
 
-  -- restore --staged 默认从 HEAD 恢复 index；首次提交前 HEAD 尚不存在
-  vim.system(
-    { 'git', '-C', root, 'rev-parse', '--verify', 'HEAD' },
-    { text = true },
-    vim.schedule_wrap(function(r)
-      if r.code == 0 then
-        run_paths(root, { 'restore', '--staged', '--' }, paths, cb)
-        return
-      end
-
-      -- unborn branch 中 staged 文件都是新增项，移出 index 即可，工作区文件保留
-      run_paths(root, { 'rm', '--cached', '--' }, paths, cb)
-    end)
-  )
+        -- unborn branch 中 staged 文件都是新增项，移出 index 即可，工作区文件保留
+        run_paths(root, { 'rm', '--cached', '--' }, paths, cb)
+      end)
+    )
+  end, cb)
 end
 
 ---@param root string
@@ -134,19 +152,22 @@ end
 ---@param root string
 ---@param message string
 ---@param cb fun(ok:boolean, stderr?:string)
-function M.commit(root, message, cb)
-  -- 用 stdin 喂 message，规避 shell 转义问题
-  vim.system(
-    { 'git', '-C', root, 'commit', '-F', '-' },
-    { text = true, stdin = message },
-    vim.schedule_wrap(function(r)
-      if r.code ~= 0 then
-        cb(false, r.stderr or r.stdout or 'commit failed')
-      else
-        cb(true, r.stdout)
-      end
-    end)
-  )
+---@param opts? VVGitIndexWriteOptions
+function M.commit(root, message, cb, opts)
+  with_index(root, function()
+    -- 用 stdin 喂 message，规避 shell 转义问题
+    vim.system(
+      { 'git', '-C', root, 'commit', '-F', '-' },
+      { text = true, stdin = message },
+      vim.schedule_wrap(function(r)
+        if r.code ~= 0 then
+          cb(false, r.stderr or r.stdout or 'commit failed')
+        else
+          cb(true, r.stdout)
+        end
+      end)
+    )
+  end, cb, opts)
 end
 
 -- 取某 rev 版本的文件内容（用于 diff 左侧 a-buffer）
@@ -331,10 +352,12 @@ end
 ---@param cb fun(ok:boolean, stderr?:string)
 local function accept_side(root, side_flag, paths, cb)
   if #paths == 0 then cb(true); return end
-  run(root, vim.list_extend({ 'checkout', side_flag, '--' }, paths), function(ok, err)
-    if not ok then cb(false, err); return end
-    M.stage(root, paths, cb)
-  end)
+  with_index(root, function()
+    run(root, vim.list_extend({ 'checkout', side_flag, '--' }, paths), function(ok, err)
+      if not ok then cb(false, err); return end
+      M.stage(root, paths, cb)
+    end)
+  end, cb)
 end
 
 ---@param root string
@@ -346,6 +369,9 @@ function M.accept_ours(root, paths, cb) accept_side(root, '--ours', paths, cb) e
 ---@param paths string[]
 ---@param cb fun(ok:boolean, stderr?:string)
 function M.accept_theirs(root, paths, cb) accept_side(root, '--theirs', paths, cb) end
+
+---@class VVGitIndexWriteOptions
+---@field is_current? fun():boolean Request guard checked immediately before starting Git. @default nil
 
 ---@class VVGitRepoInfo
 ---@field branch? string  显示分支；detached 时为短 hash

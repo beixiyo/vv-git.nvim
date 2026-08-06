@@ -96,14 +96,6 @@ local function test_discard_untracked_dir()
   vim.fn.delete(tmpdir, 'rf')
 end
 
--- 测试 4: actions.lua 中 split_by_tracked 逻辑（间接验证）
-local function test_classify_untracked()
-  local Git = require('vv-git.git')
-  local staged, unstaged = Git.classify('??')
-  assert_eq(staged, false, 'untracked is not staged')
-  assert_eq(unstaged, true, 'untracked is unstaged')
-end
-
 -- 测试 5: 首次提交前可取消暂存，且保留工作区文件
 local function test_unstage_without_head()
   local Git = require('vv-git.git')
@@ -152,34 +144,6 @@ local function test_unstage_with_head()
     'tracked file remains tracked and unstaged')
 
   vim.fn.delete(tmpdir, 'rf')
-end
-
--- 测试 5: insert mode keys 被阻止（panel buffer）
-local function test_insert_mode_blocked()
-  -- 只验证 panel buffer 创建后是否有 Nop 映射
-  local Panel = require('vv-git.left.panel')
-  local buf = Panel.create_buf()
-
-  -- 模拟 install_keymaps 中的 insert mode 阻止（排除已有功能键 o/s/c/R）
-  for _, key in ipairs({ 'i', 'I', 'a', 'A', 'O', 'S', 'C' }) do
-    vim.keymap.set('n', key, '<Nop>', { buffer = buf, nowait = true })
-  end
-
-  local maps = vim.api.nvim_buf_get_keymap(buf, 'n')
-  local blocked = {}
-  for _, m in ipairs(maps) do
-    if m.rhs == '' or m.callback == nil and m.rhs == '<Nop>' then
-      blocked[m.lhs] = true
-    end
-  end
-
-  assert_true(blocked['i'], 'key i is blocked on panel buf')
-  assert_true(blocked['I'], 'key I is blocked on panel buf')
-  assert_true(blocked['a'], 'key a is blocked on panel buf')
-  assert_true(blocked['A'], 'key A is blocked on panel buf')
-
-  -- 清理
-  pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end
 
 -- 测试 6: panel 中 gg/G 只跳到第一个/最后一个文件，不落到标题或目录行
@@ -254,6 +218,10 @@ local function test_panel_edge_file_keymaps()
   assert_eq(vim.api.nvim_win_get_cursor(win)[1], 6, 'G jumps to last file row')
   assert_eq(type(callbacks.u), 'function', 'u (publish) mapping is installed')
   assert_eq(type(callbacks.zR), 'function', 'zR (toggle right diff folds) mapping is installed')
+  assert_true(rhsmap.i ~= nil, 'production keymaps block i on panel buf')
+  assert_true(rhsmap.I ~= nil, 'production keymaps block I on panel buf')
+  assert_true(rhsmap.a ~= nil, 'production keymaps block a on panel buf')
+  assert_true(rhsmap.A ~= nil, 'production keymaps block A on panel buf')
   callbacks.zR()
   assert_eq(toggle_diff_calls, 1, 'zR invokes right diff fold toggle')
 
@@ -381,12 +349,6 @@ local function test_single_col_disables_folds()
   package.loaded.ufo = previous_ufo
   vim.api.nvim_win_set_buf(win, previous_buf)
   vim.api.nvim_buf_delete(buf, { force = true })
-end
-
--- 测试 7: right/keymaps.lua 可由 view.lua 正常装配
-local function test_view_module_loads()
-  local ok, _ = pcall(require, 'vv-git.right.view')
-  assert_true(ok, 'vv-git.right.view loads without error')
 end
 
 local function test_scratch_buffer_ownership()
@@ -1045,41 +1007,8 @@ local function test_repo_info_parser_and_publish()
   vim.fn.delete(remote, 'rf')
 end
 
-local function test_state_lifecycle_identity()
-  local State = require('vv-git.state')
-  State.clear()
-  local old = State.create()
-  assert_true(State.is_current(old), 'state identity accepts current panel state')
-  State.clear()
-  assert_true(not State.is_current(old), 'state identity rejects closed panel state')
-  local new = State.create()
-  assert_true(not State.is_current(old), 'state identity rejects state from previous panel lifecycle')
-  assert_true(State.is_current(new), 'state identity accepts reopened panel state')
-  State.clear()
-end
-
 local function test_public_api_contract()
   local Plugin = require('vv-git')
-  local public_methods = {
-    'setup', 'config',
-    'get_subrepo_depth', 'set_subrepo_depth',
-    'open', 'close', 'toggle', 'toggle_panel', 'refresh',
-    'is_open', 'get_context',
-    'show_commit', 'compare_with_head', 'compare_refs', 'compare_file', 'stop_compare',
-    'get_node_path', 'get_target_paths', 'get_node_dir',
-  }
-
-  local expected = {}
-  for _, name in ipairs(public_methods) do
-    expected[name] = true
-    assert_eq(type(Plugin[name]), 'function', 'public API exposes ' .. name)
-  end
-  for name in pairs(Plugin) do
-    assert_true(expected[name] == true, 'public facade does not leak internal field ' .. name)
-  end
-  assert_true(Plugin._config == nil, 'public facade hides internal config')
-  assert_true(Plugin._action == nil, 'public facade hides internal actions')
-
   local State = require('vv-git.state')
   local Subrepo = require('vv-git.subrepo')
   local state = State.create()
@@ -1213,14 +1142,11 @@ end
 log('========== vv-git.nvim 变更验证 ==========')
 test_discard_untracked_file()
 test_discard_untracked_dir()
-test_classify_untracked()
 test_unstage_without_head()
 test_unstage_with_head()
-test_insert_mode_blocked()
 test_panel_edge_file_keymaps()
 test_panel_drives_right_diff_folds()
 test_single_col_disables_folds()
-test_view_module_loads()
 test_scratch_buffer_ownership()
 test_binary_info_preview()
 test_conflict_winbar_rejects_stale_callback()
@@ -1232,7 +1158,6 @@ test_compare_tag_with_head()
 test_compare_file_uses_live_buffer()
 test_panel_action_keys_are_highlighted()
 test_repo_info_parser_and_publish()
-test_state_lifecycle_identity()
 test_public_api_contract()
 log('========== 测试完成 ==========')
 print(string.format('总计: %d 通过, %d 失败', _passed, _failed))

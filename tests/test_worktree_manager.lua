@@ -123,7 +123,8 @@ assert(vim.wait(5000, function()
 end, 10), 'manager opens from a linked worktree')
 vim.api.nvim_feedkeys('a', 'x', false)
 assert(vim.wait(5000, function() return suggested_path ~= nil end, 10), 'create flow reaches the path prompt')
-assert(suggested_path == repo .. '/.worktrees/new-ui', 'linked worktree creation uses the main worktree layout root')
+assert(suggested_path == vim.uv.fs_realpath(repo) .. '/.worktrees/new-ui',
+  'linked worktree creation uses the main worktree layout root')
 vim.ui.select, vim.ui.input = original_select, original_input
 vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
 
