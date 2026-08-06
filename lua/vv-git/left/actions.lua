@@ -8,8 +8,20 @@ local Git = require('vv-git.git')
 local Tree = require('vv-git.tree')
 local Loader = require('vv-git.loader')
 local Subrepo = require('vv-git.subrepo')
+local State = require('vv-git.state')
 
 local M = {}
+
+---@param state table
+---@return VVGitIndexWriteOptions
+local function current_write_opts(state)
+  local owner_root = state.git_root
+  return {
+    is_current = function()
+      return State.is_current(state) and not state._closing and state.git_root == owner_root
+    end,
+  }
+end
 
 -- 并发跑一组异步操作（每个 op 接收 done 回调），全部完成后调用 done（空组立即回调）
 ---@param ops fun(done:fun())[]
@@ -40,12 +52,12 @@ end
 ---@param paths string[]
 ---@param label string
 ---@return fun(done:fun())
-local function git_op(fn, root, paths, label)
+local function git_op(fn, root, paths, label, opts)
   return function(done)
     fn(root, paths, function(ok, err)
       if not ok then notify_err(label, err) end
       done()
-    end)
+    end, opts)
   end
 end
 
@@ -119,15 +131,33 @@ end
 ---@param state table
 ---@param id table
 ---@param after fun()?
-function M.toggle_stage(state, id, after)
+---@param settled fun(ok:boolean)?
+function M.toggle_stage(state, id, after, settled)
   local side, paths, root = collect(state, id)
   if not paths or #paths == 0 then return end
+
+  local owner_root = state.git_root
   local fn = side == 'staged' and Git.unstage or Git.stage
   local label = side == 'staged' and 'unstage' or 'stage'
-  fn(root, paths, function(ok, err)
-    if not ok then notify_err(label, err); return end
-    refresh(state, after)
-  end)
+  local hint = state._action_hint
+
+  fn(root, paths, function(ok, err, idle)
+    if not State.is_current(state) or state._closing or state.git_root ~= owner_root then return end
+
+    if not ok then
+      notify_err(label, err)
+      if state._action_hint == hint then state._action_hint = nil end
+    end
+
+    -- 快速连按时，同仓库 writer queue 只由最后一项触发 reload；否则每完成一项
+    -- 都会重画面板并让后续按键重新读取变化中的树
+    if idle ~= false then
+      refresh(state, function()
+        if ok and after then after() end
+        if settled then settled(ok) end
+      end)
+    end
+  end, current_write_opts(state))
 end
 
 -- 收集节点下所有 leaf 的 xy 状态码
@@ -174,7 +204,7 @@ function M.discard(state, id)
     Git.unstage(root, paths, function(ok, err)
       if not ok then notify_err('unstage', err); return end
       refresh(state)
-    end)
+    end, current_write_opts(state))
     return
   end
 
@@ -258,10 +288,10 @@ function M.toggle_stage_selection(state, items)
   for root, b in pairs(buckets) do
     if #b.staged > 0 then
       append_rename_olds(Subrepo.repo_of(state, root), root, b.staged)
-      ops[#ops + 1] = git_op(Git.unstage, root, b.staged, 'unstage')
+      ops[#ops + 1] = git_op(Git.unstage, root, b.staged, 'unstage', current_write_opts(state))
     end
     if #b.unstaged > 0 then
-      ops[#ops + 1] = git_op(Git.stage, root, b.unstaged, 'stage')
+      ops[#ops + 1] = git_op(Git.stage, root, b.unstaged, 'stage', current_write_opts(state))
     end
   end
 
@@ -291,7 +321,7 @@ function M.discard_selection(state, items)
   local unstage_ops = {}
   for root, b in pairs(buckets) do
     if #b.staged > 0 then
-      unstage_ops[#unstage_ops + 1] = git_op(Git.unstage, root, b.staged, 'unstage')
+      unstage_ops[#unstage_ops + 1] = git_op(Git.unstage, root, b.staged, 'unstage', current_write_opts(state))
     end
   end
 
@@ -337,7 +367,7 @@ local function accept_conflict_side(state, id, side_name)
     end
     reload_conflict_result(state)
     refresh(state)
-  end)
+  end, current_write_opts(state))
 end
 
 ---@param state table
@@ -364,7 +394,9 @@ local function accept_selection(state, items, side_name)
 
   local ops = {}
   for root, paths in pairs(buckets) do
-    ops[#ops + 1] = git_op(Git['accept_' .. side_name], root, paths, 'accept ' .. side_name)
+    ops[#ops + 1] = git_op(
+      Git['accept_' .. side_name], root, paths, 'accept ' .. side_name, current_write_opts(state)
+    )
   end
 
   -- 无 conflicts 选中项 / accept 失败：都不会触发渲染，需主动清掉 M._action 预设的

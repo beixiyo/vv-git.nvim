@@ -40,6 +40,7 @@ local Plugin = require('vv-git')
 local State = require('vv-git.state')
 local Tree = require('vv-git.tree')
 local RightView = require('vv-git.right.view')
+local Git = require('vv-git.git')
 
 Plugin.setup({
   preview = true,
@@ -68,23 +69,33 @@ end), 'a.txt diff did not open')
 local first_win = state.view.a_win or state.view.b_win
 local first_buf = vim.api.nvim_win_get_buf(first_win)
 vim.api.nvim_set_current_win(first_win)
-assert(mapping(first_buf, '-'), 'first diff buffer has no stage mapping')()
+local rapid_toggle = assert(mapping(first_buf, '-'), 'diff buffer has no stage mapping')
+local unstage_calls = {}
+local original_unstage = Git.unstage
+Git.unstage = function(root_arg, paths, callback, opts)
+  unstage_calls[#unstage_calls + 1] = vim.deepcopy(paths)
+  return original_unstage(root_arg, paths, callback, opts)
+end
+rapid_toggle()
+rapid_toggle()
 
-assert(vim.wait(3000, function()
-  return state.view and state.view.path == 'b.txt' and state.view.section == 'staged'
-end), 'first toggle did not keep the next staged diff as the current view')
-
-local second_win = state.view.a_win or state.view.b_win
-local second_buf = vim.api.nvim_win_get_buf(second_win)
-vim.api.nvim_set_current_win(second_win)
-assert(mapping(second_buf, '-'), 'second diff buffer has no stage mapping')()
-
-assert(vim.wait(3000, function()
+local rapid_done = vim.wait(3000, function()
   local tree = state.tree
   if not tree then return false end
   return Tree.leaf_at(tree.unstaged, 'a.txt') ~= nil
     and Tree.leaf_at(tree.unstaged, 'b.txt') ~= nil
-end), 'second toggle did not move the file shown by the current diff to unstaged')
+end)
+Git.unstage = original_unstage
+assert(
+  unstage_calls[1] and unstage_calls[1][1] == 'a.txt'
+    and unstage_calls[2] and unstage_calls[2][1] == 'b.txt',
+  'rapid toggles must capture a.txt then b.txt: ' .. vim.inspect(unstage_calls)
+)
+assert(rapid_done, 'rapid toggles did not unstage both files:\n' .. git({ 'status', '--short' }))
+
+assert(vim.wait(3000, function()
+  return state.view and state.view.path == 'b.txt' and state.view.section == 'unstaged'
+end), 'rapid toggles settle on the last captured file')
 
 local status = git({ 'status', '--short' })
 assert(

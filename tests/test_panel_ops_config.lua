@@ -9,6 +9,7 @@ vim.opt.runtimepath:prepend(root)
 local shown = {}
 local last_show
 local toggled_id
+local toggled_ids = {}
 local staged_node = { relpath = 'src/main.lua', is_dir = false, xy = 'M ' }
 local next_node = { relpath = 'src/next.lua', is_dir = false, xy = ' M' }
 local binary_node = { relpath = 'assets/image.png', is_dir = false, xy = ' M' }
@@ -27,13 +28,20 @@ package.loaded['vv-git.right.view'] = {
 }
 package.loaded['vv-git.left.render'] = { render = function() end }
 package.loaded['vv-git.left.actions'] = {
-  toggle_stage = function(_, action_id, after)
+  toggle_stage = function(_, action_id, after, settled)
     toggled_id = action_id
-    after()
+    toggled_ids[#toggled_ids + 1] = action_id
+    if after then after() end
+    if settled then settled(true) end
   end,
 }
+local fixed_cursor_id = id
 package.loaded['vv-git.core.keymaps'] = {
-  id_under_cursor = function() return id end,
+  id_under_cursor = function(current_state)
+    if fixed_cursor_id then return fixed_cursor_id end
+    local lnum = vim.api.nvim_win_get_cursor(current_state.panel.win)[1]
+    return current_state.panel.id_by_line[lnum]
+  end,
 }
 package.loaded['vv-git.tree'] = {
   leaf_at = function(side, relpath)
@@ -145,6 +153,18 @@ assert(
   state._action_hint and state._action_hint.next_path == next_node.relpath,
   'right-buffer stage gives the panel the same next-file action hint'
 )
+
+-- 左面板无等待连续 `-`：第一次调用返回前就同步推进光标，下一次捕获下一个文件
+fixed_cursor_id = nil
+toggled_ids = {}
+state._action_hint = nil
+vim.api.nvim_win_set_cursor(state.panel.win, { 2, 0 })
+operations._action('toggle_stage')
+operations._action('toggle_stage')
+assert(toggled_ids[1] and toggled_ids[1].node == node,
+  'first rapid panel stage captures the current file')
+assert(toggled_ids[2] and toggled_ids[2].node == next_node,
+  'second rapid panel stage captures the synchronously advanced file')
 
 state.panel.id_by_line = { [2] = id }
 state.view = {

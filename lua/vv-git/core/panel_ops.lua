@@ -365,6 +365,25 @@ end
       state._action_hint = { section = id.section, lnum = lnum, next_path = next_path, prev_path = prev_path }
     end
     fn(state, id)
+
+    -- stage/unstage 是异步写入。按键当下先沿旧树移动光标，使下一次快速 `-`
+    -- 捕获下一个明确文件；Git 完成后的 reload 再以 action hint 校正最终落点
+    if name == 'toggle_stage' and id.node and state._action_hint then
+      local target_path = state._action_hint.next_path or state._action_hint.prev_path
+
+      if target_path then
+        for lnum, panel_id in pairs(state.panel.id_by_line or {}) do
+          if panel_id.section == id.section and panel_id.node
+              and not panel_id.node.is_dir and panel_id.node.relpath == target_path then
+            pcall(vim.api.nvim_win_set_cursor, state.panel.win, { lnum, 0 })
+
+            state.cur_path = target_path
+            state.cur_section = id.section
+            break
+          end
+        end
+      end
+    end
   end)
 
   -- 右侧 diff buffer 的 `-`：以当前 view 为事实来源，不依赖左栏残留的光标行
@@ -372,7 +391,7 @@ end
   -- reshow 复用既有焦点恢复机制，操作前后都留在用户按键的 diff 窗口
   M._toggle_view_stage = State.guarded(function(state)
     if state.compare then return end
-    local view = state.view
+    local view = state._queued_view_stage or state.view
     if not view or not view.node then return end
     if view.section ~= 'staged' and view.section ~= 'unstaged' then return end
 
@@ -407,6 +426,20 @@ end
       }
     end
 
+    -- 右侧 buffer 在 Git 完成前不会切换 view；用独立的语义游标同步推进，
+    -- 让无等待连续 `-` 依次捕获 a、b、c，而不是重复把 a 入队
+    local queued_view
+    local repo = Subrepo.repo_of(state, root)
+    for _, candidate in ipairs({ next_path, prev_path }) do
+      local side = candidate and repo and repo.tree and repo.tree[view.section]
+      local found = side and Tree.leaf_at(side, candidate)
+      if found then
+        queued_view = { root = root, section = view.section, node = found }
+        break
+      end
+    end
+    state._queued_view_stage = queued_view
+
     Actions.toggle_stage(state, id, function()
       if not State.is_current(state) then return end
       local repo = Subrepo.repo_of(state, root)
@@ -435,6 +468,8 @@ end
         state._reshow_restore_win = restore_win
       end
       RightView.show(state, node, section, narrow(), root)
+    end, function()
+      state._queued_view_stage = nil
     end)
   end)
 

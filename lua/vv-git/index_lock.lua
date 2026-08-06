@@ -65,6 +65,8 @@ local function resolve_index_path(root, callback)
   )
 end
 
+M.resolve_path = resolve_index_path
+
 ---@param root string
 ---@param callback fun(ok:boolean, err?:string)
 function M.ensure_available(root, callback)
@@ -78,7 +80,7 @@ function M.ensure_available(root, callback)
     local stat, stat_err, stat_name = vim.uv.fs_lstat(lock)
     if not stat then
       if is_enoent(stat_err, stat_name) then
-        callback(true)
+        callback(true, nil, index)
       else
         callback(false, non_empty(stat_err, 'Could not inspect Git index lock: ' .. lock))
       end

@@ -84,7 +84,8 @@ local function run()
     stage_all_callbacks = stage_all_callbacks + 1
     stage_all_ok = result
   end, { is_current = function() return owner_current end })
-  assert(type(pending_preflight) == 'function', 'stage_all must wait for index preflight')
+  assert(vim.wait(3000, function() return type(pending_preflight) == 'function' end),
+    'stage_all must wait for index preflight')
   owner_current = false
   pending_preflight(true)
   assert(stage_all_callbacks == 1 and stage_all_ok == false,
@@ -96,11 +97,13 @@ local function run()
   assert(vim.v.shell_error ~= 0, 'fixture must start without a commit')
   local commit_callbacks = 0
   local commit_ok
+  pending_preflight = nil
   require('vv-git.git').commit(repo, 'cancelled commit', function(result)
     commit_callbacks = commit_callbacks + 1
     commit_ok = result
   end, { is_current = function() return owner_current end })
-  assert(type(pending_preflight) == 'function', 'commit must wait for index preflight')
+  assert(vim.wait(3000, function() return type(pending_preflight) == 'function' end),
+    'commit must wait for index preflight')
   pending_preflight(true)
   assert(commit_callbacks == 1 and commit_ok == false,
     'cancelled commit callback must fire exactly once with failure')

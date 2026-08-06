@@ -213,13 +213,19 @@ local function accept_hunk(state, side)
   local root = view.root or state.git_root
   if not (relpath and root) then return end
 
+  local owner_root = state.git_root
   Git.stage(root, { relpath }, function(ok, err)
     if not ok then
       vim.notify('[vv-git] stage failed: ' .. (err or ''), vim.log.levels.ERROR)
       return
     end
     require('vv-git.loader').reload_index(state)
-  end)
+  end, {
+    is_current = function()
+      return require('vv-git.state').is_current(state)
+          and not state._closing and state.git_root == owner_root
+    end,
+  })
 end
 
 ---@param buf integer?

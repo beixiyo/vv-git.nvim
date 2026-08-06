@@ -5,8 +5,10 @@ local utils_git = require('vv-utils.git')
 local Fs = require('vv-utils.fs')
 local Process = require('vv-git.process')
 local IndexLock = require('vv-git.index_lock')
+local IndexQueue = require('vv-git.index_queue')
 
 local M = {}
+local index_resolutions = {}
 
 ---@param root string
 ---@param cb fun(index: vv-utils.git.Index?)
@@ -67,7 +69,79 @@ local function with_index(root, action, cb, opts)
       cb(false, 'Git operation cancelled: request is no longer current')
       return
     end
-    action()
+    local action_ok, action_err = xpcall(action, debug.traceback)
+    if not action_ok then cb(false, action_err) end
+  end)
+end
+
+---@param root string
+---@param action fun(done:fun(ok:boolean, err?:string))
+---@param cb fun(ok:boolean, stderr?:string, idle?:boolean)
+---@param opts? VVGitIndexWriteOptions
+local function queue_index_write(root, action, cb, opts)
+  local canonical_root = vim.uv.fs_realpath(root)
+      or vim.fs.normalize(vim.fn.fnamemodify(root, ':p'))
+  local resolution_key = canonical_root .. '\0' .. (vim.env.GIT_INDEX_FILE or '')
+  local resolution = index_resolutions[resolution_key]
+
+  if not resolution then
+    resolution = { pending = {} }
+    index_resolutions[resolution_key] = resolution
+  end
+
+  local function enqueue(index_path)
+    local index_key = vim.uv.fs_realpath(index_path)
+
+    if not index_key then
+      local parent = vim.fs.dirname(index_path)
+      local real_parent = vim.uv.fs_realpath(parent)
+      index_key = real_parent and (real_parent .. '/' .. vim.fs.basename(index_path))
+          or vim.fs.normalize(index_path)
+    end
+
+    resolution.index_key = index_key
+
+    IndexQueue.enqueue(index_key, function(done)
+      with_index(root, function() action(done) end, done, opts)
+    end, function(ok, err, idle)
+      local callback_ok, callback_err = xpcall(function() cb(ok, err, idle) end, debug.traceback)
+
+      if idle then
+        vim.schedule(function()
+          if IndexQueue.is_active(index_key) then return end
+          for key, candidate in pairs(index_resolutions) do
+            if candidate.index_key == index_key then index_resolutions[key] = nil end
+          end
+        end)
+      end
+      if not callback_ok then error(callback_err, 0) end
+    end)
+  end
+
+  if resolution.path then enqueue(resolution.path); return end
+  resolution.pending[#resolution.pending + 1] = {
+    enqueue = enqueue,
+    reject = function(err) cb(false, err) end,
+  }
+  if resolution.resolving then return end
+  resolution.resolving = true
+
+  IndexLock.resolve_path(root, function(index_path, err)
+    resolution.resolving = false
+    local pending = resolution.pending
+    resolution.pending = {}
+
+    if not index_path then
+      index_resolutions[resolution_key] = nil
+      for _, item in ipairs(pending) do
+        local ok, callback_err = xpcall(function() item.reject(err) end, debug.traceback)
+        if not ok then vim.schedule(function() error(callback_err, 0) end) end
+      end
+      return
+    end
+
+    resolution.path = index_path
+    for _, item in ipairs(pending) do item.enqueue(index_path) end
   end)
 end
 
@@ -84,9 +158,12 @@ end
 
 ---@param root string
 ---@param paths string[]  相对路径
----@param cb fun(ok:boolean, stderr?:string)
-function M.stage(root, paths, cb)
-  with_index(root, function() run_paths(root, { 'add', '--' }, paths, cb) end, cb)
+---@param cb fun(ok:boolean, stderr?:string, idle?:boolean)
+---@param opts? VVGitIndexWriteOptions
+function M.stage(root, paths, cb, opts)
+  queue_index_write(root, function(done)
+    run_paths(root, { 'add', '--' }, paths, done)
+  end, cb, opts)
 end
 
 -- 相当于 git add -A（全量 stage，含删除/未跟踪），不接受 paths
@@ -94,30 +171,31 @@ end
 ---@param cb fun(ok:boolean, stderr?:string)
 ---@param opts? VVGitIndexWriteOptions
 function M.stage_all(root, cb, opts)
-  with_index(root, function() run(root, { 'add', '-A' }, cb) end, cb, opts)
+  queue_index_write(root, function(done) run(root, { 'add', '-A' }, done) end, cb, opts)
 end
 
 ---@param root string
 ---@param paths string[]
----@param cb fun(ok:boolean, stderr?:string)
-function M.unstage(root, paths, cb)
+---@param cb fun(ok:boolean, stderr?:string, idle?:boolean)
+---@param opts? VVGitIndexWriteOptions
+function M.unstage(root, paths, cb, opts)
   if #paths == 0 then cb(true); return end
-  with_index(root, function()
+  queue_index_write(root, function(done)
     -- restore --staged 默认从 HEAD 恢复 index；首次提交前 HEAD 尚不存在
     vim.system(
       { 'git', '-C', root, 'rev-parse', '--verify', 'HEAD' },
       { text = true },
       vim.schedule_wrap(function(r)
         if r.code == 0 then
-          run_paths(root, { 'restore', '--staged', '--' }, paths, cb)
+          run_paths(root, { 'restore', '--staged', '--' }, paths, done)
           return
         end
 
         -- unborn branch 中 staged 文件都是新增项，移出 index 即可，工作区文件保留
-        run_paths(root, { 'rm', '--cached', '--' }, paths, cb)
+        run_paths(root, { 'rm', '--cached', '--' }, paths, done)
       end)
     )
-  end, cb)
+  end, cb, opts)
 end
 
 ---@param root string
@@ -154,16 +232,16 @@ end
 ---@param cb fun(ok:boolean, stderr?:string)
 ---@param opts? VVGitIndexWriteOptions
 function M.commit(root, message, cb, opts)
-  with_index(root, function()
+  queue_index_write(root, function(done)
     -- 用 stdin 喂 message，规避 shell 转义问题
     vim.system(
       { 'git', '-C', root, 'commit', '-F', '-' },
       { text = true, stdin = message },
       vim.schedule_wrap(function(r)
         if r.code ~= 0 then
-          cb(false, r.stderr or r.stdout or 'commit failed')
+          done(false, r.stderr or r.stdout or 'commit failed')
         else
-          cb(true, r.stdout)
+          done(true, r.stdout)
         end
       end)
     )
@@ -350,25 +428,25 @@ end
 ---@param side_flag '--ours'|'--theirs'
 ---@param paths string[]
 ---@param cb fun(ok:boolean, stderr?:string)
-local function accept_side(root, side_flag, paths, cb)
+local function accept_side(root, side_flag, paths, cb, opts)
   if #paths == 0 then cb(true); return end
-  with_index(root, function()
+  queue_index_write(root, function(done)
     run(root, vim.list_extend({ 'checkout', side_flag, '--' }, paths), function(ok, err)
-      if not ok then cb(false, err); return end
-      M.stage(root, paths, cb)
+      if not ok then done(false, err); return end
+      run_paths(root, { 'add', '--' }, paths, done)
     end)
-  end, cb)
+  end, cb, opts)
 end
 
 ---@param root string
 ---@param paths string[]
 ---@param cb fun(ok:boolean, stderr?:string)
-function M.accept_ours(root, paths, cb) accept_side(root, '--ours', paths, cb) end
+function M.accept_ours(root, paths, cb, opts) accept_side(root, '--ours', paths, cb, opts) end
 
 ---@param root string
 ---@param paths string[]
 ---@param cb fun(ok:boolean, stderr?:string)
-function M.accept_theirs(root, paths, cb) accept_side(root, '--theirs', paths, cb) end
+function M.accept_theirs(root, paths, cb, opts) accept_side(root, '--theirs', paths, cb, opts) end
 
 ---@class VVGitIndexWriteOptions
 ---@field is_current? fun():boolean Request guard checked immediately before starting Git. @default nil
