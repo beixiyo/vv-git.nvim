@@ -42,6 +42,7 @@
     fold_staged = false,               -- Fold only the Staged Changes section when opening the panel
     diff_fill = ' ',                   -- Fill character for diff filler lines (Vim defaults to '-')
     preview = true,                    -- Refresh the right-side diff when moving over a file row
+    directory_preview = true,          -- Show change counts and status breakdown when moving over a directory row
     inline_diff_max_lines = 10000,     -- Maximum line count for inline diff in single-column mode
     diff_ratio = { 4, 6 },             -- Width ratio of a_win:b_win in two-column mode (defaults to 50:50)
     conflict_result_ratio = 0.5,       -- Height ratio of the bottom result/worktree window in conflict view
@@ -61,6 +62,7 @@
 | `fold_staged` | `boolean` | `false` | Automatically fold the parent repository's `Staged Changes` section to its heading only; nested repository blocks are unaffected |
 | `diff_fill` | `string` | `' '` | Diff filler character, mapped to `diff:X` in `fillchars` |
 | `preview` | `boolean` | `true` | Refresh the right-side diff as the cursor moves in the left panel, without requiring `<CR>` |
+| `directory_preview` | `boolean` | `true` | Show the change count and status breakdown for a directory row on the right (requires `preview`). A directory is only an aggregate node of the change tree, so previewing it never changes the "current file" |
 | `inline_diff_max_lines` | `integer` | `10000` | Maximum line count supported by `vim.diff` in single-column mode; larger files show text without diff highlighting |
 | `right_click` | `string \| false` | `'toggle_stage'` | Action invoked by right-click, such as `'yank_abs_path'`; `false` disables it |
 | `diff_ratio` | `integer[]` | None (50:50) | Width ratio between a_win (old version) and b_win (worktree) in two-column mode; `{4, 6}` makes the left side narrower; omitted means equal widths |

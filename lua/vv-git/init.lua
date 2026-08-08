@@ -37,6 +37,7 @@ local M = {}
 ---@field fold_staged boolean  -- 打开面板时默认把父仓库的 Staged Changes section 折成标题行（仅此一层，子仓库块不受影响）；只在 open 时一次性写入，之后可手动展开/折叠 @default false
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X @default ' '
 ---@field preview boolean  -- panel 中光标移动到文件行时自动刷新右侧 diff，无需手动 <CR>/o/l @default true
+---@field directory_preview boolean  -- 光标移动到目录行时在右侧显示该目录下的变更文件数与状态分布（依赖 preview） @default true
 ---@field auto_refresh boolean  -- BufEnter / FocusGained 时防抖刷新左栏 git 状态，捕获终端 checkout/pull、外部改文件等 @default true
 ---@field preview_debounce_ms integer  -- 预览防抖延迟（毫秒），光标停顿后才刷新右侧 diff，避免快速 j/k 时频繁重算；0 = 不防抖 @default 150
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡） @default 10000
@@ -92,6 +93,7 @@ local defaults = {
   conflict_result_ratio = 0.5,
   diff_fill = ' ',
   preview = true,
+  directory_preview = true,
   preview_debounce_ms = 150,
   auto_refresh = true,
   inline_diff_max_lines = 10000,

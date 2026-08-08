@@ -120,18 +120,28 @@ end
   M._preview = State.guarded(function(state)
     if not config().preview then return end
     if not state.panel or state.panel.win ~= vim.api.nvim_get_current_win() then return end
+
     local id = Keymaps.id_under_cursor(state)
     if not id or id.section_header then return end
     local node = id.node
-    if not node or node.is_dir then return end
+
+    if not node then return end
+    if node.is_dir and not config().directory_preview then return end
+
     local root = id.root or state.git_root
     local view = state.view
+
     if view and view.path == node.relpath and view.section == id.base and view.root == root
         and view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
       return
     end
-    state.cur_path = node.relpath
-    state.cur_section = id.section
+    -- 目录只是变更树的聚合节点，预览它不改变「当前文件」，否则 stage / 导航
+    -- 这些按文件工作的动作会拿着一个目录路径去执行
+    if not node.is_dir then
+      state.cur_path = node.relpath
+      state.cur_section = id.section
+    end
+
     RightView.show(state, node, id.base, narrow(), root)
   end)
 

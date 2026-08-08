@@ -18,6 +18,7 @@ local RightKeymaps = require('vv-git.right.keymaps')
 local RightOptions = require('vv-git.right.options')
 local Buffers = require('vv-git.right.buffers')
 local Conflict = require('vv-git.right.conflict')
+local DirSummary = require('vv-git.right.dir_summary')
 local Layout = require('vv-git.right.layout')
 local Plan = require('vv-git.right.plan')
 
@@ -158,18 +159,17 @@ function M.show(state, node, section, force_single, root)
     if state._reshow_restore_req == nil then state._reshow_restore_win = nil end
   end
 
-  if node.is_dir then drop_unbound_reshow(); return end
-
   local owner = root or state.git_root
   local abspath = owner .. '/' .. node.relpath
-  local info = binary_info(abspath)
+  local info = not node.is_dir and binary_info(abspath) or nil
 
   local xy = node.xy or ''
   local compare = state.compare
   local plan
   local intrinsic_single
 
-  if info then
+  -- 目录和二进制都只有单侧内容可展示，没有 a/b 两版可比，走同一条单栏路径
+  if node.is_dir or info then
     intrinsic_single = true
   else
     plan = Plan.resolve({
@@ -592,7 +592,12 @@ function M.show(state, node, section, force_single, root)
   end
 
   -- Plan 只决定目标形态；异步请求、fallback、资源清理和 attach 生命周期仍由 view 执行
-  if info then
+  if node.is_dir then
+    local lines = DirSummary.lines(node, node.relpath)
+    local buf = Buffers.create_info(lines, abspath)
+    Fs.highlight_file_info(buf)
+    attach_single(buf, nil, nil)
+  elseif info then
     local lines = Fs.file_info_lines(info, { display_path = node.relpath })
     local buf = Buffers.create_info(lines, abspath)
     Fs.highlight_file_info(buf)

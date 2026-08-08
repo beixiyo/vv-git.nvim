@@ -42,6 +42,7 @@
     fold_staged = false,               -- 打开面板时默认折叠 Staged Changes section（仅此一层）
     diff_fill = ' ',                   -- diff 空行填充符（Vim 默认 '-'）
     preview = true,                    -- 光标移动到文件行时自动刷新右侧 diff
+    directory_preview = true,          -- 光标移动到目录行时显示该目录的变更文件数与状态分布
     inline_diff_max_lines = 10000,     -- 单栏 inline diff 最大行数（超过跳过高亮）
     diff_ratio = { 4, 6 },            -- 双栏 a_win:b_win 宽度比例（不填则 50:50）
     conflict_result_ratio = 0.5,       -- 三栏冲突视图底部 result/worktree 高度比例
@@ -61,6 +62,7 @@
 | `fold_staged` | `boolean` | `false` | 自动把父仓库的 `Staged Changes` section 折成标题行（仅此一层，子仓库块不受影响） |
 | `diff_fill` | `string` | `' '` | diff 空行填充符，映射到 `fillchars` 的 `diff:X` |
 | `preview` | `boolean` | `true` | 光标在左栏移动时自动刷新右侧 diff，无需手动 `<CR>` |
+| `directory_preview` | `boolean` | `true` | 光标停在目录行时，右侧显示该目录下的变更文件数与状态分布（依赖 `preview`）；目录只是变更树的聚合节点，预览它不会改变「当前文件」 |
 | `inline_diff_max_lines` | `integer` | `10000` | 单栏模式下 `vim.diff` 最大支持行数，超过只显示文本不画高亮 |
 | `right_click` | `string \| false` | `'toggle_stage'` | 右键触发的 action 名（如 `'yank_abs_path'`），`false` 禁用 |
 | `diff_ratio` | `integer[]` | 无（50:50） | 双栏模式下 a_win（旧版本）与 b_win（工作区）的宽度比例，如 `{4, 6}` 表示左窄右宽；不填则等宽 |

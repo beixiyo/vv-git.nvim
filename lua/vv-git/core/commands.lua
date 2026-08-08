@@ -367,6 +367,9 @@ function L.new(deps)
 
     if view and view.path
         and (cur_win == view.a_win or cur_win == view.b_win) then
+      -- 目录属性视图没有可跳转的文件，别把 `:edit` 指到一个目录上
+      if view.node and view.node.is_dir then return end
+
       abspath = (view.root or state.git_root) .. '/' .. view.path
       if view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
         row = vim.api.nvim_win_get_cursor(view.b_win)[1]
@@ -393,6 +396,7 @@ function L.new(deps)
         end
       end
     end
+
     vim.cmd('edit ' .. vim.fn.fnameescape(abspath))
     if row then
       -- rev/compare 视图行数可能多于工作区文件，clamp 防越界（否则 set_cursor 静默失效，光标落第 1 行）

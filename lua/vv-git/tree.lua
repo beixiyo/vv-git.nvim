@@ -182,6 +182,27 @@ function M.count_files(node)
   return n
 end
 
+-- 聚合子树内 leaf file 的状态分布，供目录节点的属性预览使用
+---@param node table
+---@return { total: integer, letters: table<string, integer> }
+function M.count_status(node)
+  local result = { total = 0, letters = {} }
+
+  local function walk(cur)
+    if not cur.is_dir then
+      result.total = result.total + 1
+      local letter = cur.letter or 'M'
+      result.letters[letter] = (result.letters[letter] or 0) + 1
+      return
+    end
+
+    for _, child in pairs(cur.children or {}) do walk(child) end
+  end
+
+  walk(node)
+  return result
+end
+
 ---@param node table
 ---@param out? string[]
 ---@return string[] relpaths  子树下所有 leaf file
