@@ -32,7 +32,7 @@ local function wait_call(fn, ...)
     done, ok, err = true, result, message
   end
   fn(unpack(args))
-  assert(vim.wait(3000, function() return done end), 'Git operation timed out')
+  assert(vim.wait(3000, function() return done end), 'Git 操作超时')
   return ok, err
 end
 
@@ -42,9 +42,9 @@ end
 
 local function assert_locked(operation, ...)
   local ok, err = wait_call(operation, repo, ...)
-  assert(not ok, 'operation must reject an existing lock')
+  assert(not ok, '操作应因已存在锁而拒绝')
   assert(type(err) == 'string' and err:match('Git index'),
-    'lock rejection must include a non-empty lock error: ' .. tostring(err))
+    '锁拒绝应包含非空锁错误信息: ' .. tostring(err))
 end
 
 local function write_lock(path, lines, timestamp)
@@ -66,7 +66,7 @@ local function run()
   vim.fn.writefile({ 'default' }, repo .. '/default.txt')
   local ok, err = stage('default.txt')
   assert(ok, err)
-  assert(vim.uv.fs_stat(git_dir .. '/index'), 'default Git index was not written')
+  assert(vim.uv.fs_stat(git_dir .. '/index'), '默认 Git index 未写入')
 
   -- A request can be invalidated while the index preflight is still pending.
   -- The writer must report cancellation once and leave both index and history untouched.
@@ -85,16 +85,16 @@ local function run()
     stage_all_ok = result
   end, { is_current = function() return owner_current end })
   assert(vim.wait(3000, function() return type(pending_preflight) == 'function' end),
-    'stage_all must wait for index preflight')
+    'stage_all 应等待 index 预检完成')
   owner_current = false
   pending_preflight(true)
   assert(stage_all_callbacks == 1 and stage_all_ok == false,
-    'cancelled stage_all callback must fire exactly once with failure')
+    '取消的 stage_all 回调应只触发一次且失败')
   assert(git({ 'diff', '--cached', '--name-only' }) == staged_before,
-    'cancelled stage_all must not modify the index')
+    '取消的 stage_all 不应修改 index')
 
   local head_before = vim.fn.system({ 'git', '-C', repo, 'rev-parse', '--verify', 'HEAD' })
-  assert(vim.v.shell_error ~= 0, 'fixture must start without a commit')
+  assert(vim.v.shell_error ~= 0, 'fixture 应从无提交状态开始')
   local commit_callbacks = 0
   local commit_ok
   pending_preflight = nil
@@ -103,13 +103,13 @@ local function run()
     commit_ok = result
   end, { is_current = function() return owner_current end })
   assert(vim.wait(3000, function() return type(pending_preflight) == 'function' end),
-    'commit must wait for index preflight')
+    'commit 应等待 index 预检完成')
   pending_preflight(true)
   assert(commit_callbacks == 1 and commit_ok == false,
-    'cancelled commit callback must fire exactly once with failure')
+    '取消的 commit 回调应只触发一次且失败')
   local head_after = vim.fn.system({ 'git', '-C', repo, 'rev-parse', '--verify', 'HEAD' })
   assert(vim.v.shell_error ~= 0 and head_after == head_before,
-    'cancelled commit must not create a commit')
+    '取消的 commit 不应创建提交')
 
   IndexLock.ensure_available = original_ensure_available
 
@@ -120,11 +120,11 @@ local function run()
   vim.fn.writefile({ 'absolute' }, repo .. '/absolute.txt')
   ok, err = stage('absolute.txt')
   assert(ok, err)
-  assert(vim.uv.fs_stat(absolute_index), 'absolute GIT_INDEX_FILE was not written')
+  assert(vim.uv.fs_stat(absolute_index), '绝对 GIT_INDEX_FILE 未被写入')
   local absolute_lock = absolute_index .. '.lock'
   write_lock(absolute_lock, { 'owned' })
   assert_locked(require('vv-git.git').stage, { 'absolute-locked.txt' })
-  assert(vim.uv.fs_stat(absolute_lock), 'absolute lock must be preserved')
+  assert(vim.uv.fs_stat(absolute_lock), '绝对锁文件应保留')
 
   -- Relative GIT_INDEX_FILE with a trailing space is resolved relative to -C root.
   vim.fn.mkdir(repo .. '/relative', 'p')
@@ -134,29 +134,29 @@ local function run()
   vim.fn.writefile({ 'relative' }, repo .. '/relative.txt')
   ok, err = stage('relative.txt')
   assert(ok, err)
-  assert(vim.uv.fs_stat(relative_index_abs), 'relative GIT_INDEX_FILE was not written')
+  assert(vim.uv.fs_stat(relative_index_abs), '相对 GIT_INDEX_FILE 未被写入')
   local lock = relative_index_abs .. '.lock'
   local old = os.time() - 120
 
   -- A fresh empty lock is active and must not be removed or bypassed.
   write_lock(lock, {})
   ok, err = stage('fresh.txt')
-  assert(not ok and err:match('Git index is locked'), 'fresh empty lock must be rejected')
-  assert(vim.uv.fs_stat(lock), 'fresh empty lock must be preserved')
+  assert(not ok and err:match('Git index is locked'), '空锁应被拒绝')
+  assert(vim.uv.fs_stat(lock), '空锁应被保留')
 
   -- A stale empty lock is reported for manual recovery, never auto-unlinked.
   write_lock(lock, {}, old)
   ok, err = stage('stale.txt')
   assert(not ok and err:match('stale') and err:match('manually'),
-    'stale empty lock must require manual removal')
-  assert(vim.uv.fs_stat(lock), 'stale empty lock must be preserved')
+    '过期空锁应要求手动移除')
+  assert(vim.uv.fs_stat(lock), '过期空锁应被保留')
 
   -- Non-empty locks are rejected and preserved as well.
   write_lock(lock, { 'owned' })
   vim.fn.writefile({ 'three' }, repo .. '/three.txt')
   ok, err = stage('three.txt')
-  assert(not ok and err:match('Git index is locked'), 'non-empty lock must be rejected')
-  assert(vim.uv.fs_stat(lock), 'non-empty lock must be preserved')
+  assert(not ok and err:match('Git index is locked'), '非空锁应被拒绝')
+  assert(vim.uv.fs_stat(lock), '非空锁应被保留')
 
   -- Every index-writing operation must use the same preflight.
   assert_locked(require('vv-git.git').stage_all)
@@ -175,4 +175,4 @@ end
 local ok, err = xpcall(run, debug.traceback)
 cleanup()
 if not ok then error(err) end
-print('vv-git index lock safety: PASS')
+print('PASS: vv-git index 锁安全校验')

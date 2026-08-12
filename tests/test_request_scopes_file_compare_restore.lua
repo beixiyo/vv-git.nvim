@@ -46,11 +46,11 @@ end)
 setter_error_close.callback()
 vim.api.nvim_set_option_value = real_set_option
 vim.notify = setter_error_notify
-assert(setter_error_injected, 'test injects a real post-side-effect setter failure')
+assert(setter_error_injected, '测试注入真实的后置副作用设置器失败')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = setter_error_context.source_win }), '5',
-  'later desired options are restored after one setter reports an error')
+  '单个 setter 失败后，仍恢复后续期望的选项')
 assert(vim.w[setter_error_context.source_win].vv_git_file_compare_owner == nil,
-  'setter error still releases compare ownership')
+  'setter 失败后仍释放 compare 所有权')
 end
 
 -- listener 瞬时删除失败会在忘记 handle 前重试
@@ -78,9 +78,9 @@ vim.api.nvim_buf_call(vim.api.nvim_win_get_buf(listener_delete_context.ref_win),
 end)
 listener_delete_close.callback()
 vim.api.nvim_del_autocmd = real_delete_autocmd
-assert(listener_delete_injected, 'test injects a before-side-effect listener delete failure')
+assert(listener_delete_injected, '测试注入真实的前置监听器删除失败')
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'OptionSet' }), listener_count_before,
-  'listener delete retry leaves no stale transaction closure')
+  '监听器删除重试后不遗留过期的 transaction closure')
 end
 
 -- shared listener 部分创建失败会回滚全部 handle，包括瞬时删除失败
@@ -123,10 +123,10 @@ vim.api.nvim_del_autocmd = real_delete
 vim.wait(100, function()
   return first_id and #vim.api.nvim_get_autocmds({ id = first_id }) == 0
 end)
-assert(transaction.cleanup_error, 'partial listener creation reports its cleanup error')
-assert_eq(delete_failures, 2, 'test reaches the verified asynchronous delete retry')
+assert(transaction.cleanup_error, '部分监听器创建报告其清理错误')
+assert_eq(delete_failures, 2, '达到预期的异步 delete 重试')
 assert_eq(#vim.api.nvim_get_autocmds({ id = first_id }), 0,
-  'partial listener creation leaves no untracked autocmd closure')
+  '部分监听器创建后不保留未跟踪的 autocmd closure')
 vim.api.nvim_win_set_buf(win, source_buf)
 vim.api.nvim_buf_delete(replacement, { force = true })
 end
@@ -182,17 +182,17 @@ vim.api.nvim_del_autocmd = function(id)
 end
 vim.api.nvim_win_set_buf(win, source_buf)
 vim.api.nvim_del_autocmd = real_delete
-assert(second_registered, 'new restore ticket is registered while the old set is stopping')
+assert(second_registered, '旧集合停止时会注册新的恢复票据')
 vim.api.nvim_win_set_buf(win, second_source)
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = win }), false,
-  'replacement listener set consumes the new restore ticket')
+  '替换的监听器集合消费新的恢复票据')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = win }), '7',
-  'replacement listener set retains every required restore event')
+  '替换的监听器集合保留全部必需恢复事件')
 vim.wait(100, function()
   return #vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }) == baseline
 end)
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline,
-  'old and replacement shared listener sets are both released')
+  '旧与新的共享监听器集合都已释放')
 vim.api.nvim_win_set_buf(win, source_buf)
 vim.api.nvim_buf_delete(replacement, { force = true })
 vim.api.nvim_buf_delete(second_source, { force = true })
@@ -236,20 +236,20 @@ FileCompareWinopts.defer_restore({
   source_desired_winopts = desired,
 })
 vim.api.nvim_create_autocmd = real_create
-assert(reentered, 'test reenters after the first listener creation side effect')
-assert_eq(#created_ids, 3, 'reentrant ticket reuses one complete listener set')
+assert(reentered, '首个监听器创建副作用后会重入')
+assert_eq(#created_ids, 3, '重入票据复用完整监听器集合')
 vim.api.nvim_win_set_buf(win, source_buf)
 vim.api.nvim_win_set_buf(win, second_source)
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = win }), false,
-  'reentrant ticket restores wrap through the shared listener set')
+  '重入票据通过共享监听器集合恢复 wrap')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = win }), '6',
-  'reentrant ticket restores foldcolumn through the shared listener set')
+  '重入票据通过共享监听器集合恢复 foldcolumn')
 vim.wait(100, function()
   return #vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }) == baseline
 end)
 for _, id in ipairs(created_ids) do
   assert_eq(#vim.api.nvim_get_autocmds({ id = id }), 0,
-    'every listener created by the outer transaction is released')
+    '外层事务创建的所有监听器都已释放')
 end
 vim.api.nvim_win_set_buf(win, source_buf)
 vim.api.nvim_buf_delete(replacement, { force = true })
@@ -296,23 +296,23 @@ local first = {
 }
 FileCompareWinopts.defer_restore(first)
 vim.api.nvim_create_autocmd = real_create
-assert(reentered, 'listener creation reenters with a same-target successor ticket')
-assert(first.cleanup_error, 'outer ticket reports the injected listener creation failure')
+assert(reentered, '同目标监听器创建会重入并生成后继票据')
+assert(first.cleanup_error, '外层票据报告了注入的监听器创建失败')
 vim.wait(100, function()
   return #vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }) == baseline + 1
 end)
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline + 1,
-  'scheduled reconcile builds one complete successor listener set')
+  '异步对账构建了一套完整后继监听器集合')
 vim.api.nvim_win_set_buf(win, source_buf)
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = win }), false,
-  'same-target successor preserves its latest wrap value')
+  '同目标后继者保留最新 wrap 值')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = win }), '8',
-  'same-target successor preserves its latest foldcolumn value')
+  '同目标后继者保留最新 foldcolumn 值')
 vim.wait(100, function()
   return #vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }) == baseline
 end)
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline,
-  'same-target successor listener set is released after consumption')
+  '同目标后继者的监听器集合在消费后被释放')
 vim.api.nvim_buf_delete(replacement, { force = true })
 end
 
@@ -352,22 +352,22 @@ FileCompareWinopts.defer_restore({
   source_desired_winopts = first_desired,
 })
 vim.api.nvim_create_autocmd = real_create
-assert(reentered, 'listener creation reenters before the first real listener exists')
+assert(reentered, '在首个真实监听器创建前先发生重入')
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = win }), false,
-  'immediate successor applies its latest wrap value')
+  '立即后继写入最新 wrap')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = win }), '8',
-  'immediate successor applies its latest foldcolumn value')
+  '立即后继写入最新 foldcolumn')
 vim.wait(100, function()
   return #vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }) == baseline
 end)
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline,
-  'superseded outer ticket leaves no shared restore listener')
+  '被替代外层票据不保留共享恢复监听器')
 vim.api.nvim_win_set_buf(win, replacement)
 vim.api.nvim_win_set_buf(win, source_buf)
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = win }), false,
-  'superseded outer ticket cannot later restore its old wrap value')
+  '被替代外层票据后续不能恢复旧 wrap')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = win }), '8',
-  'superseded outer ticket cannot later restore its old foldcolumn value')
+  '被替代外层票据后续不能恢复旧 foldcolumn')
 vim.api.nvim_buf_delete(replacement, { force = true })
 end
 
@@ -416,11 +416,11 @@ vim.wait(100, function()
       and vim.w[source_win].vv_git_file_compare_owner == nil
       and #vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }) == baseline + 1
 end)
-assert(switched, 'a real restore OptionSet synchronously replaces the source buffer')
+assert(switched, '真实恢复的 OptionSet 会同步替换源 buffer')
 assert_eq(vim.api.nvim_win_get_buf(source_win), replacement,
-  'interrupted cleanup does not switch away the replacement buffer')
+  '中断的 cleanup 不会切走 replacement buffer')
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline + 1,
-  'interrupted immediate restore keeps one shared listener for its ticket')
+  '中断即时恢复持有一个共享监听器到票据')
 
 vim.api.nvim_win_set_buf(source_win, source_buf)
 vim.wait(100, function()
@@ -447,11 +447,11 @@ vim.wait(100, function()
       and #vim.api.nvim_tabpage_list_wins(0) == 1
 end)
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = source_win }), false,
-  'a consumed A ticket cannot overwrite the user wrap value after B')
+  '已消费 A 的票据不能在 B 后覆盖用户 wrap')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = source_win }), '5',
-  'a consumed A ticket cannot overwrite the user foldcolumn after B')
+  '已消费 A 的票据不能在 B 后覆盖用户 foldcolumn')
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline,
-  'interrupted restore listeners are released after the exact target returns')
+  '中断恢复的监听器在目标返回后释放')
 vim.api.nvim_del_augroup_by_id(switch_group)
 vim.api.nvim_buf_delete(replacement, { force = true })
 end
@@ -510,12 +510,12 @@ vim.wait(100, function()
       and vim.w[source_win].vv_git_file_compare_owner == nil
       and #vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }) == baseline
 end)
-assert(switched_away, 'restore OptionSet moves the exact target away')
-assert(returned_before_listener, 'the target returns before the first shared listener is registered')
+assert(switched_away, '恢复 OptionSet 先将目标移出')
+assert(returned_before_listener, '首个共享监听器注册前目标已返回')
 assert_eq(vim.api.nvim_win_get_buf(source_win), source_buf,
-  'listener activation reconciliation keeps the returned target current')
+  '监听器激活对账后仍保持返回目标为当前')
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline,
-  'activation reconciliation consumes the ticket and releases its listeners')
+  '激活对账消费票据并释放其监听器')
 
 vim.api.nvim_set_option_value('wrap', false, { win = source_win, scope = 'local' })
 vim.api.nvim_set_option_value('foldcolumn', '5', { win = source_win, scope = 'local' })
@@ -538,11 +538,11 @@ vim.wait(100, function()
       and #vim.api.nvim_tabpage_list_wins(0) == 1
 end)
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = source_win }), false,
-  'reconciled A ticket cannot overwrite the user wrap value after B')
+  '对账后的 A 票据不能在 B 后覆盖用户 wrap')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = source_win }), '5',
-  'reconciled A ticket cannot overwrite the user foldcolumn after B')
+  '对账后的 A 票据不能在 B 后覆盖用户 foldcolumn')
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline,
-  'listener activation reconciliation leaves no shared listener')
+  '监听器激活对账后不保留共享监听器')
 vim.api.nvim_del_augroup_by_id(switch_group)
 vim.api.nvim_buf_delete(replacement, { force = true })
 end
@@ -573,10 +573,10 @@ FileCompareWinopts.defer_restore({
   source_desired_winopts = desired,
 })
 vim.api.nvim_create_autocmd = real_create
-assert(closed_before_listener, 'target closes before the shared WinClosed listener exists')
-assert(not vim.api.nvim_win_is_valid(target_win), 'listener activation preserves the closed target state')
+assert(closed_before_listener, '在共享 WinClosed 监听器建立前目标已关闭')
+assert(not vim.api.nvim_win_is_valid(target_win), '监听器激活保留已关闭目标状态')
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'BufWinEnter' }), baseline,
-  'activation reconciliation drops the invalid ticket and releases its listeners')
+  '激活对账丢弃无效票据并释放其监听器')
 vim.api.nvim_buf_delete(replacement, { force = true })
 end
 
@@ -625,17 +625,17 @@ vim.api.nvim_win_set_buf(source_win, source_buf)
 vim.api.nvim_set_option_value = real_set_option
 vim.wait(100, function() return b_ready ~= nil end)
 assert(b_ready and vim.api.nvim_win_is_valid(b_ready.ref_win),
-  'successor compare mounts from inside the old restore setter')
+  '后继 compare 在旧恢复 setter 内挂载')
 assert(vim.api.nvim_get_option_value('diff', { win = source_win }),
-  'old restore attempt cannot disable successor diff')
+  '旧恢复尝试不能关闭后继者的 diff')
 assert(vim.api.nvim_get_option_value('scrollbind', { win = source_win }),
-  'old restore attempt cannot disable successor scroll binding')
+  '旧恢复尝试不能关闭后继者的 scrollbind')
 assert(vim.api.nvim_get_option_value('cursorbind', { win = source_win }),
-  'old restore attempt cannot disable successor cursor binding')
+  '旧恢复尝试不能关闭后继者的 cursorbind')
 assert_eq(vim.api.nvim_get_option_value('foldmethod', { win = source_win }), 'diff',
-  'old restore attempt cannot restore successor fold method')
+  '旧恢复尝试不能恢复后继者的 foldmethod')
 assert_eq(vim.api.nvim_get_option_value('wrap', { win = source_win }), false,
-  'old restore attempt cannot restore successor wrap')
+  '旧恢复尝试不能恢复后继者的 wrap')
 vim.api.nvim_win_close(b_ready.ref_win, true)
 vim.wait(100, function()
   return vim.w[source_win].vv_git_file_compare_owner == nil
@@ -675,13 +675,13 @@ assert(FileCompare.open('A-invisible-reentrant', {
 }))
 vim.wait(100, function() return invisible_reentrant_ready ~= nil end)
 assert(invisible_reentrant_ready and #vim.api.nvim_tabpage_list_wins(0) == 2,
-  'invisible-buffer reentrant mount is serialized onto the original layout')
+  '不可见 buffer 的重入挂载按原布局串行执行')
 vim.api.nvim_win_close(invisible_reentrant_ready.ref_win, true)
 vim.wait(50, function()
   return vim.api.nvim_win_get_buf(invisible_reentrant_ready.source_win) == previous_visible
 end)
 assert_eq(vim.api.nvim_win_get_buf(invisible_reentrant_ready.source_win), previous_visible,
-  'reentrant invisible compare restores the buffer visible before A started')
+  '重入 invisible compare 恢复 A 开始前可见的 buffer')
 
 -- 恢复不可见 source 可通过 BufEnter 重入；新 owner 会等待 cleanup 完成
 local cleanup_invisible_b = vim.api.nvim_create_buf(true, false)
@@ -717,15 +717,15 @@ end)
 cleanup_invisible_mapping.callback()
 vim.wait(100, function() return cleanup_invisible_b_ready ~= nil end)
 assert(cleanup_invisible_b_ready and vim.api.nvim_win_is_valid(cleanup_invisible_b_ready.ref_win),
-  'BufEnter cleanup reentry mounts after the old invisible source is restored')
+  'BufEnter cleanup 重入在旧 invisible source 恢复后再挂载')
 assert(vim.w[cleanup_invisible_b_ready.source_win].vv_git_file_compare_owner ~= nil,
-  'old cleanup cannot clear the new invisible compare owner token')
+  '旧 cleanup 不能清理新 invisible compare 的 owner token')
 vim.api.nvim_win_close(cleanup_invisible_b_ready.ref_win, true)
 vim.wait(50, function()
   return vim.api.nvim_win_get_buf(cleanup_invisible_b_ready.source_win) == previous_visible
 end)
 assert_eq(vim.api.nvim_win_get_buf(cleanup_invisible_b_ready.source_win), previous_visible,
-  'closing cleanup-reentrant B restores the pre-A visible buffer')
+  '关闭 cleanup-reentrant B 恢复 A 之前可见的 buffer')
 
 local invisible_ready
 assert(FileCompare.open('HEAD', {
@@ -735,11 +735,11 @@ assert(FileCompare.open('HEAD', {
 }))
 vim.wait(50, function() return invisible_ready ~= nil end)
 assert_eq(vim.api.nvim_win_get_buf(invisible_ready.source_win), invisible_source,
-  'invisible source buffer is mounted into the owner window')
+  '不可见 source buffer 被挂载到 owner window')
 vim.api.nvim_win_close(invisible_ready.ref_win, true)
 vim.wait(50, function() return vim.api.nvim_win_get_buf(invisible_ready.source_win) == previous_visible end)
 assert_eq(vim.api.nvim_win_get_buf(invisible_ready.source_win), previous_visible,
-  'closing compare restores the exact previous buffer')
+  '关闭 compare 恢复精确前一个 buffer')
 
 local wipe_source = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_buf_set_name(wipe_source, '/repo/wipe.lua')
@@ -752,20 +752,20 @@ assert(FileCompare.open('HEAD', {
 }))
 vim.wait(50, function() return wipe_ready ~= nil end)
 vim.api.nvim_buf_delete(wipe_source, { force = true })
-assert(not vim.api.nvim_buf_is_valid(wipe_source), 'source buffer is wiped by the test')
+assert(not vim.api.nvim_buf_is_valid(wipe_source), '源 buffer 在测试中被清理')
 vim.wait(50, function()
   return not vim.api.nvim_win_is_valid(wipe_ready.ref_win)
       or vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(wipe_ready.ref_win)) == ''
 end)
 if vim.api.nvim_win_is_valid(wipe_ready.ref_win) then
   assert_eq(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(wipe_ready.ref_win)), '',
-    'only remaining window no longer contains compare UI after source wipe')
-  assert(not vim.wo[wipe_ready.ref_win].diff, 'only remaining window leaves diff mode after source wipe')
+    '仅剩窗口在源缓冲清理后不再显示 compare UI')
+  assert(not vim.wo[wipe_ready.ref_win].diff, '源缓冲清理后仅剩窗口保留 diff 模式')
   assert(vim.w[wipe_ready.ref_win].vv_git_file_compare_owner == nil,
-    'only remaining window releases compare ownership after source wipe')
+    '源缓冲清理后仅剩窗口释放 compare ownership')
 end
 
 Git.show = original_show
 UGit.root = original_root
 State.clear()
-print('vv-git request scopes file compare restore: PASS')
+print('PASS: vv-git request scopes 文件比较恢复')

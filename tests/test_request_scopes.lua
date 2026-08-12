@@ -45,11 +45,11 @@ Autocmds.setup(handlers, { auto_refresh = true })
 local timers_after_first = count_timers()
 Autocmds.setup(handlers, { auto_refresh = true })
 local timers_after_second = count_timers()
-assert_eq(timers_after_first, timers_before + 1, 'first setup creates one debounce timer')
-assert_eq(timers_after_second, timers_after_first, 'second setup disposes the previous debounce timer')
+assert_eq(timers_after_first, timers_before + 1, '首次 setup 会创建一个 debounce 计时器')
+assert_eq(timers_after_second, timers_after_first, '第二次 setup 会释放上一个 debounce 计时器')
 Autocmds.setup(handlers, { auto_refresh = false })
 vim.wait(20)
-assert_eq(count_timers(), timers_before, 'disabling auto refresh releases the setup-owned timer')
+assert_eq(count_timers(), timers_before, '关闭 auto refresh 时会释放 setup 持有的计时器')
 
 -- scheduled refresh 与 external-root 回归共用当前 panel state
 State.clear()
@@ -77,14 +77,14 @@ Autocmds.setup(old_scheduled_handlers, { auto_refresh = false })
 vim.api.nvim_exec_autocmds('BufWritePost', { buffer = 0 })
 Autocmds.setup(new_scheduled_handlers, { auto_refresh = false })
 vim.api.nvim_exec_autocmds('User', { pattern = 'GitSignsChanged' })
-assert_eq(#scheduled_refreshes, 2, 'old and new setup each queued one production refresh')
+assert_eq(#scheduled_refreshes, 2, '新旧 setup 各自入队一次生产刷新')
 scheduled_refreshes[1]()
 scheduled_refreshes[2]()
 vim.schedule = original_schedule
 if saved_name ~= '' then vim.api.nvim_buf_set_name(0, saved_name) end
-assert_eq(old_setup_refreshes, 0, 'old setup scheduled callback cannot refresh')
-assert_eq(new_setup_refreshes, 1, 'new setup refresh is not swallowed by the old pending ticket')
-assert_eq(new_setup_reshows, 1, 'new GitSignsChanged ticket retains its reshow intent')
+assert_eq(old_setup_refreshes, 0, '旧 setup 的 scheduled 回调不会触发刷新')
+assert_eq(new_setup_refreshes, 1, '新 setup 的刷新不会被旧 pending 票据吞掉')
+assert_eq(new_setup_reshows, 1, '新 GitSignsChanged 票据保留重显意图')
 
 -- refresh handler 可同步替换 setup；旧调用栈不得 reshow 新 owner
 local reentrant_schedules = {}
@@ -107,15 +107,15 @@ local reentrant_old_handlers = vim.tbl_extend('force', handlers, {
 })
 Autocmds.setup(reentrant_old_handlers, { auto_refresh = false })
 vim.api.nvim_exec_autocmds('User', { pattern = 'GitSignsChanged' })
-assert_eq(#reentrant_schedules, 1, 'old setup queues its production refresh')
+assert_eq(#reentrant_schedules, 1, '旧 setup 会排入一次生产刷新')
 reentrant_schedules[1]()
-assert_eq(reentrant_old_refreshes, 1, 'old refresh handler executes before replacing setup')
-assert_eq(reentrant_old_reshows, 0, 'old stack cannot reshow after its handler replaces setup')
-assert_eq(#reentrant_schedules, 2, 'replacement setup queues its own refresh')
+assert_eq(reentrant_old_refreshes, 1, '旧刷新处理器先执行旧 refresh')
+assert_eq(reentrant_old_reshows, 0, '旧调用栈替换 setup 后不能再重显')
+assert_eq(#reentrant_schedules, 2, '替换后的 setup 排入自己的刷新')
 reentrant_schedules[2]()
 vim.schedule = original_schedule
-assert_eq(reentrant_new_refreshes, 1, 'replacement setup refresh still executes')
-assert_eq(reentrant_new_reshows, 1, 'replacement setup owns its reshow')
+assert_eq(reentrant_new_refreshes, 1, '替换后的 setup 的刷新依然执行')
+assert_eq(reentrant_new_reshows, 1, '替换后的 setup 保留重显权限')
 
 -- 同 owner 的低优先级 successor 会继承已经要求的 reshow
 local successor_schedules = {}
@@ -134,12 +134,12 @@ local successor_handlers = vim.tbl_extend('force', handlers, {
 Autocmds.setup(successor_handlers, { auto_refresh = false })
 vim.api.nvim_exec_autocmds('User', { pattern = 'GitSignsChanged' })
 successor_schedules[1]()
-assert_eq(successor_reshows, 0, 'old ticket defers reshow to its same-owner successor')
-assert_eq(#successor_schedules, 2, 'refresh handler queues the lower-priority successor')
+assert_eq(successor_reshows, 0, '同 owner 的旧票据会把重显延后给后继者')
+assert_eq(#successor_schedules, 2, '刷新处理器排入低优先级后继者')
 successor_schedules[2]()
 vim.schedule = original_schedule
-assert_eq(successor_refreshes, 2, 'same-owner successor performs the follow-up refresh')
-assert_eq(successor_reshows, 1, 'same-owner successor inherits the original reshow intent')
+assert_eq(successor_refreshes, 2, '同 owner 的后继者执行后续刷新')
+assert_eq(successor_reshows, 1, '同 owner 的后继者继承原始重显意图')
 
 -- 已由 libuv 排队的 debounce callback 不能越过 setup owner 生命周期
 local original_debounce = Timer.debounce
@@ -156,10 +156,10 @@ local queued_handlers = vim.tbl_extend('force', handlers, {
 })
 Autocmds.setup(queued_handlers, { auto_refresh = true })
 vim.api.nvim_exec_autocmds('FocusGained', {})
-assert(type(queued_refresh) == 'function', 'production autocmd queues the debounced refresh')
+assert(type(queued_refresh) == 'function', '生产 autocmd 会排队 debounce 刷新')
 Autocmds.setup(queued_handlers, { auto_refresh = false })
 queued_refresh()
-assert_eq(stale_refreshes, 0, 'queued debounce callback cannot refresh after setup invalidation')
+assert_eq(stale_refreshes, 0, 'setup 失效后，入队的 debounce 回调不能刷新')
 Timer.debounce = original_debounce
 
 local original_root_async = UGit.root_async
@@ -190,11 +190,11 @@ local lifecycle = Lifecycle.new({
 })
 lifecycle._follow_external_root('/repo-a')
 lifecycle._follow_external_root('/repo-b')
-assert_eq(cancelled_roots['/repo-a'], 1, 'new external root physically cancels the old lookup')
+assert_eq(cancelled_roots['/repo-a'], 1, '新 external root 会物理取消旧 lookup')
 pending_roots['/repo-b']('/repo-b')
 pending_roots['/repo-a']('/repo-a')
-assert_eq(state.git_root, '/repo-b', 'latest external root wins')
-assert_eq(vim.inspect(reloads), vim.inspect({ '/repo-b' }), 'only the latest root reloads')
+assert_eq(state.git_root, '/repo-b', '以新 external root 为准')
+assert_eq(vim.inspect(reloads), vim.inspect({ '/repo-b' }), '仅最新 root 会执行 reload')
 
 UGit.root_async = original_root_async
 Loader.reload_index = original_reload
@@ -205,6 +205,7 @@ local original_push = Git.push
 local push_callback
 local push_cancels = 0
 local push_notifications = 0
+local push_refreshes = 0
 local original_notify = vim.notify
 Git.push = function(_, callback)
   push_callback = callback
@@ -214,7 +215,7 @@ vim.notify = function() push_notifications = push_notifications + 1 end
 
 local close_commands = Commands.new({
   controller = {
-    refresh = noop,
+    refresh = function() push_refreshes = push_refreshes + 1 end,
     _invoke_callback = noop,
     _context = function() return {} end,
   },
@@ -240,14 +241,15 @@ local close_lifecycle = Lifecycle.new({
 state.git_root = '/repo-close'
 state.tabpage = nil
 close_commands._push()
-assert_eq(push_notifications, 1, 'push starts before lifecycle close')
-assert(close_lifecycle.close(), 'production Lifecycle.close handles an owner without a live tab')
-assert_eq(close_invalidations, 1, 'Lifecycle.close invalidates command requests')
-assert_eq(push_cancels, 0, 'Lifecycle.close does not cancel the active push producer')
+assert_eq(push_notifications, 1, 'Lifecycle close 前 push 已开始')
+assert(close_lifecycle.close(), 'Lifecycle.close 处理无活跃 tab 的 owner')
+assert_eq(close_invalidations, 1, 'Lifecycle.close 会使命令请求失效')
+assert_eq(push_cancels, 0, 'Lifecycle.close 不会取消活跃 push 生产者')
 push_callback(true, 'done')
-assert_eq(push_notifications, 1, 'late push completion cannot publish after Lifecycle.close')
+assert_eq(push_notifications, 2, 'Lifecycle.close 后已启动的 push 完成仍应发布')
+assert_eq(push_refreshes, 0, 'Lifecycle.close 后 push 完成不能刷新已关闭 UI')
 
 Git.push = original_push
 vim.notify = original_notify
 State.clear()
-print('vv-git request scopes lifecycle: PASS')
+print('PASS: vv-git request scopes 生命周期')

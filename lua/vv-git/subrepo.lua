@@ -145,4 +145,13 @@ function M.repo_of(state, root)
   return nil
 end
 
+--- 返回仍属于当前父仓库或子仓库快照的仓库根
+---@param state table
+---@param root string?
+---@return string?
+function M.current_root(state, root)
+  local repo = M.repo_of(state, root)
+  return repo and repo.root or nil
+end
+
 return M

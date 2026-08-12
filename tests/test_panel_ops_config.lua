@@ -99,39 +99,39 @@ local operations = require('vv-git.core.panel_ops').new({
 operations._preview_on_move()
 assert(
   vim.wait(200, function() return #shown == 1 end),
-  'debounced preview must execute with injected config'
+  '注入配置下应执行防抖预览'
 )
-assert(shown[1] == true, 'preview reads single_col_threshold from injected config')
+assert(shown[1] == true, '预览应从注入配置读取 single_col_threshold')
 
 config.single_col_threshold = 0
 operations._activate()
-assert(shown[2] == false, 'activate reads the latest injected config')
+assert(shown[2] == false, '激活应读取最新注入配置')
 
 vim.api.nvim_win_set_cursor(state.panel.win, { 2, 0 })
 last_show = nil
 operations._navigate_view_file(1)
 assert(
   vim.api.nvim_win_get_cursor(state.panel.win)[1] == 3,
-  'right-buffer next file includes binary info nodes'
+  '右侧缓冲区的下一文件应包含二进制信息节点'
 )
 assert(
   last_show and last_show.node == binary_node and last_show.section == 'staged',
-  'right-buffer next file previews the next leaf'
+  '右侧缓冲区下一文件应预览到下一个 leaf'
 )
 operations._navigate_view_file(1)
 assert(
   vim.api.nvim_win_get_cursor(state.panel.win)[1] == 4,
-  'right-buffer next file advances past the binary info node'
+  '右侧缓冲区下一文件应跳过二进制信息节点'
 )
 operations._navigate_view_file(1)
 assert(
   vim.api.nvim_win_get_cursor(state.panel.win)[1] == 2,
-  'right-buffer next file wraps to the first leaf'
+  '右侧缓冲区下一文件应回绕到首个 leaf'
 )
 operations._navigate_view_file(-1)
 assert(
   vim.api.nvim_win_get_cursor(state.panel.win)[1] == 4,
-  'right-buffer previous file wraps to the last leaf'
+  '右侧缓冲区上一文件应回绕到最后 leaf'
 )
 vim.api.nvim_win_set_cursor(state.panel.win, { 2, 0 })
 
@@ -141,17 +141,17 @@ state.view = {
   root = state.git_root,
 }
 operations._toggle_view_stage()
-assert(toggled_id and toggled_id.node == node, 'right-buffer stage uses the current view node')
-assert(toggled_id.base == 'unstaged', 'right-buffer stage uses the current view section')
+assert(toggled_id and toggled_id.node == node, '右侧缓冲区 stage 应使用当前视图 node')
+assert(toggled_id.base == 'unstaged', '右侧缓冲区 stage 应使用当前视图 section')
 assert(
   last_show and last_show.node == next_node
     and last_show.section == 'unstaged'
     and last_show.owner == state.git_root,
-  'right-buffer stage advances to the next file in the original section'
+  '右侧缓冲区 stage 应跳转到原始 section 下一个文件'
 )
 assert(
   state._action_hint and state._action_hint.next_path == next_node.relpath,
-  'right-buffer stage gives the panel the same next-file action hint'
+  '右侧缓冲区 stage 应给 panel 提供一致的下一文件动作提示'
 )
 
 -- 左面板无等待连续 `-`：第一次调用返回前就同步推进光标，下一次捕获下一个文件
@@ -162,9 +162,9 @@ vim.api.nvim_win_set_cursor(state.panel.win, { 2, 0 })
 operations._action('toggle_stage')
 operations._action('toggle_stage')
 assert(toggled_ids[1] and toggled_ids[1].node == node,
-  'first rapid panel stage captures the current file')
+  '第一次快速 panel stage 应捕获当前文件')
 assert(toggled_ids[2] and toggled_ids[2].node == next_node,
-  'second rapid panel stage captures the synchronously advanced file')
+  '第二次快速 panel stage 应捕获同步推进后的文件')
 
 state.panel.id_by_line = { [2] = id }
 state.view = {
@@ -176,8 +176,8 @@ last_show = nil
 operations._toggle_view_stage()
 assert(
   last_show and last_show.node == staged_node and last_show.section == 'staged',
-  'right-buffer stage keeps showing the moved file when its section has no neighbor'
+  '当原 section 无邻居节点时，右侧缓冲区 stage 应继续显示移动后的文件'
 )
 
 State.clear()
-print('vv-git panel operations config: PASS')
+print('PASS: vv-git panel 操作配置回归')

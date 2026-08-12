@@ -9,6 +9,7 @@ local Tree = require('vv-git.tree')
 local Loader = require('vv-git.loader')
 local Subrepo = require('vv-git.subrepo')
 local State = require('vv-git.state')
+local Discard = require('vv-git.left.discard')
 
 local M = {}
 
@@ -16,9 +17,13 @@ local M = {}
 ---@return VVGitIndexWriteOptions
 local function current_write_opts(state)
   local owner_root = state.git_root
+  local owner_generation = State.root_generation(state)
   return {
     is_current = function()
-      return State.is_current(state) and not state._closing and state.git_root == owner_root
+      return State.is_current(state)
+          and not state._closing
+          and state.git_root == owner_root
+          and State.root_generation(state) == owner_generation
     end,
   }
 end
@@ -54,7 +59,17 @@ end
 ---@return fun(done:fun())
 local function git_op(fn, root, paths, label, opts)
   return function(done)
+    if opts and opts.is_current and not opts.is_current() then
+      done()
+      return
+    end
+
     fn(root, paths, function(ok, err)
+      if opts and opts.is_current and not opts.is_current() then
+        done()
+        return
+      end
+
       if not ok then notify_err(label, err) end
       done()
     end, opts)
@@ -63,9 +78,19 @@ end
 
 -- discard 确认框里的 untracked 永久删除告警（单/多选共用，保证文案一致）
 ---@param n integer
----@return string
+---@return VVConfirmMessageLine
 local function untracked_warn(n)
-  return string.format('\n⚠ %d untracked file(s) will be permanently deleted!', n)
+  return {
+    icon = '⚠',
+    icon_hl = 'DiagnosticWarn',
+    text = string.format('%d untracked file%s will be permanently deleted!', n, n == 1 and '' or 's'),
+  }
+end
+
+---@param n integer
+---@return string
+local function file_count(n)
+  return string.format('%d file%s', n, n == 1 and '' or 's')
 end
 
 -- 给某仓库的 staged 列表补上 rename 旧路径（就地扩展）：unstage rename 需带旧路径，
@@ -77,10 +102,13 @@ end
 local function append_rename_olds(repo, root, staged)
   local rmap = repo and repo.index and repo.index.rename_map
   if not rmap then return end
+
   local prefix_len = #root + 2
   local extras = {}
+
   for _, p in ipairs(staged) do
     local old_abs = rmap[root .. '/' .. p]
+
     if old_abs then
       extras[#extras + 1] = (old_abs:sub(1, #root + 1) == root .. '/') and old_abs:sub(prefix_len) or old_abs
     end
@@ -92,9 +120,13 @@ end
 ---@return 'staged'|'unstaged'|'conflicts'|nil base, string[]? paths, string? root
 local function collect(state, id)
   if not id then return nil, nil, nil end
-  local root = id.root or state.git_root
+
+  local root = Subrepo.current_root(state, id.root)
+  if not root then return nil, nil, nil end
+
   local repo = Subrepo.repo_of(state, root)
   local side, paths
+
   if id.section_header then
     side = id.base
     paths = (repo and repo.tree and repo.tree[side]) and Tree.leaf_paths(repo.tree[side]) or {}
@@ -116,6 +148,7 @@ end
 local function reload_conflict_result(state)
   local c_buf = state.view and state.view.c_buf
   if not c_buf or not api.nvim_buf_is_valid(c_buf) then return end
+
   pcall(api.nvim_buf_call, c_buf, function()
     vim.cmd('silent! edit!')
   end)
@@ -137,12 +170,18 @@ function M.toggle_stage(state, id, after, settled)
   if not paths or #paths == 0 then return end
 
   local owner_root = state.git_root
+  local owner_generation = State.root_generation(state)
   local fn = side == 'staged' and Git.unstage or Git.stage
   local label = side == 'staged' and 'unstage' or 'stage'
   local hint = state._action_hint
 
   fn(root, paths, function(ok, err, idle)
-    if not State.is_current(state) or state._closing or state.git_root ~= owner_root then return end
+    if not State.is_current(state)
+        or state._closing
+        or state.git_root ~= owner_root
+        or State.root_generation(state) ~= owner_generation then
+      return
+    end
 
     if not ok then
       notify_err(label, err)
@@ -165,6 +204,7 @@ end
 ---@return table<string, string>  { relpath = xy }
 local function collect_xy(node)
   local map = {}
+
   if not node.is_dir then
     if node.xy then map[node.relpath] = node.xy end
   else
@@ -183,6 +223,7 @@ end
 ---@return string[] untracked, string[] tracked
 local function split_by_tracked(paths, xy_map)
   local untracked, tracked = {}, {}
+
   for _, p in ipairs(paths) do
     if xy_map[p] == '??' then
       untracked[#untracked + 1] = p
@@ -201,7 +242,16 @@ function M.discard(state, id)
 
   -- staged 区：d = unstage（与 VSCode 行为一致），不做 discard
   if side == 'staged' then
+    local owner_root = state.git_root
+    local owner_generation = State.root_generation(state)
+
     Git.unstage(root, paths, function(ok, err)
+      if not State.is_current(state)
+          or state._closing
+          or state.git_root ~= owner_root
+          or State.root_generation(state) ~= owner_generation then
+        return
+      end
       if not ok then notify_err('unstage', err); return end
       refresh(state)
     end, current_write_opts(state))
@@ -211,6 +261,7 @@ function M.discard(state, id)
   -- unstaged 区：d = discard（弹确认框）
   local repo = Subrepo.repo_of(state, root)
   local xy_map = {}
+
   if id.section_header then
     local root_node = repo and repo.tree and repo.tree[id.base]
     if root_node then xy_map = collect_xy(root_node) end
@@ -219,10 +270,10 @@ function M.discard(state, id)
   end
 
   local untracked, tracked = split_by_tracked(paths, xy_map)
-
   local prompt_msg
+
   if id.section_header then
-    prompt_msg = string.format('Are you sure you want to discard ALL %d unstaged file(s)?', #paths)
+    prompt_msg = string.format('Are you sure you want to discard ALL %s?', file_count(#paths))
   else
     local label = id.node.is_dir
         and string.format('directory %s (%d files)', id.node.relpath, #paths)
@@ -230,34 +281,22 @@ function M.discard(state, id)
     prompt_msg = string.format('Are you sure you want to discard %s?', label)
   end
 
-  if #untracked > 0 then
-    prompt_msg = prompt_msg .. untracked_warn(#untracked)
-  end
+  local message = { prompt_msg }
+  if #untracked > 0 then message[#message + 1] = untracked_warn(#untracked) end
 
-  local choice = vim.fn.confirm(prompt_msg, '&Yes\n&No', 2)
-  if choice ~= 1 then
-    -- 用户取消：清掉 M._action 预设的 hint，否则它会在下次无关渲染（R / gitsigns / 保存）时错位光标
-    state._action_hint = nil
-    return
-  end
-
-  local function on_done()
-    refresh(state, function()
-      local view = state.view
-      if view and view.b_buf and vim.api.nvim_buf_is_valid(view.b_buf) then
-        pcall(vim.api.nvim_buf_call, view.b_buf, function()
-          vim.cmd('silent! checktime')
-        end)
-      end
-    end)
-  end
-
-  -- tracked / untracked 各自一个 op，失败也继续（git_op 恒调 done）：否则链被掐断，
-  -- 面板与磁盘（可能已部分 restore）不一致。与 discard_selection 的并发 discard 对齐
-  local dops = {}
-  if #tracked > 0 then dops[#dops + 1] = git_op(Git.discard, root, tracked, 'discard') end
-  if #untracked > 0 then dops[#dops + 1] = git_op(Git.discard_untracked, root, untracked, 'delete untracked') end
-  join(dops, on_done)
+  Discard.confirm(state, { { root = root, tracked = tracked, untracked = untracked } }, {
+    title = 'Discard changes?',
+    message = message,
+    severity = #untracked > 0 and 'danger' or 'warn',
+    after = function()
+      refresh(state, function()
+        local view = state.view
+        if view and view.b_buf and api.nvim_buf_is_valid(view.b_buf) then
+          pcall(api.nvim_buf_call, view.b_buf, function() vim.cmd('silent! checktime') end)
+        end
+      end)
+    end,
+  })
 end
 
 -- 把多选 items 按所属仓库分桶，每桶再分 staged / unstaged
@@ -266,14 +305,17 @@ end
 ---@return table<string, { staged:string[], unstaged:string[] }>
 local function bucket_items(state, items)
   local buckets = {}
+
   for _, it in ipairs(items) do
-    local root = it.root or state.git_root
-    local b = buckets[root]
-    if not b then b = { staged = {}, unstaged = {} }; buckets[root] = b end
-    if it.base == 'staged' then
-      b.staged[#b.staged + 1] = it.relpath
-    else
-      b.unstaged[#b.unstaged + 1] = it.relpath
+    local root = Subrepo.current_root(state, it.root)
+    if root then
+      local b = buckets[root]
+      if not b then b = { staged = {}, unstaged = {} }; buckets[root] = b end
+      if it.base == 'staged' then
+        b.staged[#b.staged + 1] = it.relpath
+      else
+        b.unstaged[#b.unstaged + 1] = it.relpath
+      end
     end
   end
   return buckets
@@ -285,6 +327,7 @@ end
 function M.toggle_stage_selection(state, items)
   local buckets = bucket_items(state, items)
   local ops = {}
+
   for root, b in pairs(buckets) do
     if #b.staged > 0 then
       append_rename_olds(Subrepo.repo_of(state, root), root, b.staged)
@@ -303,21 +346,32 @@ end
 ---@param state table
 ---@param items {root:string, base:string, relpath:string}[]
 function M.discard_selection(state, items)
-  local buckets = bucket_items(state, items)
+  local owner_root = state.git_root
+  local owner_generation = State.root_generation(state)
 
-  -- 先对各仓库的 unstaged 分 untracked/tracked 并统计总数（确认框只弹一次）
+  local function current()
+    return State.is_current(state)
+        and not state._closing
+        and state.git_root == owner_root
+        and State.root_generation(state) == owner_generation
+  end
+
+  local buckets = bucket_items(state, items)
+  local groups = {}
   local total_unstaged, total_untracked = 0, 0
+
   for root, b in pairs(buckets) do
     if #b.unstaged > 0 then
       local repo = Subrepo.repo_of(state, root)
       local xy_map = (repo and repo.tree and repo.tree.unstaged) and collect_xy(repo.tree.unstaged) or {}
+
       b.untracked, b.tracked = split_by_tracked(b.unstaged, xy_map)
+      groups[#groups + 1] = { root = root, tracked = b.tracked, untracked = b.untracked }
       total_unstaged = total_unstaged + #b.unstaged
       total_untracked = total_untracked + #b.untracked
     end
   end
 
-  -- staged 侧 unstage（无需确认）
   local unstage_ops = {}
   for root, b in pairs(buckets) do
     if #b.staged > 0 then
@@ -325,27 +379,28 @@ function M.discard_selection(state, items)
     end
   end
 
-  local function run_unstaged(after)
-    if total_unstaged == 0 then after(); return end
-    local msg = string.format('Discard %d selected file(s)?', total_unstaged)
-    if total_untracked > 0 then
-      msg = msg .. untracked_warn(total_untracked)
+  join(unstage_ops, function()
+    if not current() then
+      state._action_hint = nil
+      return
     end
-    if vim.fn.confirm(msg, '&Yes\n&No', 2) ~= 1 then after(); return end
-
-    local dops = {}
-    for root, b in pairs(buckets) do
-      if b.tracked and #b.tracked > 0 then
-        dops[#dops + 1] = git_op(Git.discard, root, b.tracked, 'discard')
-      end
-      if b.untracked and #b.untracked > 0 then
-        dops[#dops + 1] = git_op(Git.discard_untracked, root, b.untracked, 'delete untracked')
-      end
+    if total_unstaged == 0 then
+      Loader.reload_index(state)
+      return
     end
-    join(dops, after)
-  end
+    local message = { string.format('Discard %s selected?', file_count(total_unstaged)) }
+    if total_untracked > 0 then message[#message + 1] = untracked_warn(total_untracked) end
 
-  join(unstage_ops, function() run_unstaged(function() Loader.reload_index(state) end) end)
+    Discard.confirm(state, groups, {
+      title = 'Discard selected changes?',
+      message = message,
+      severity = total_untracked > 0 and 'danger' or 'warn',
+      owner_root = owner_root,
+      owner_generation = owner_generation,
+      after = function() Loader.reload_index(state) end,
+      on_cancel = function() Loader.reload_index(state) end,
+    })
+  end)
 end
 
 ---@param state table
@@ -359,7 +414,10 @@ local function accept_conflict_side(state, id, side_name)
     state._action_hint = nil
     return
   end
+
+  local write_opts = current_write_opts(state)
   Git['accept_' .. side_name](root, paths, function(ok, err)
+    if not write_opts.is_current() then return end
     if not ok then
       notify_err('accept ' .. side_name, err)
       state._action_hint = nil
@@ -367,7 +425,7 @@ local function accept_conflict_side(state, id, side_name)
     end
     reload_conflict_result(state)
     refresh(state)
-  end, current_write_opts(state))
+  end, write_opts)
 end
 
 ---@param state table
@@ -384,11 +442,14 @@ function M.accept_theirs(state, id) accept_conflict_side(state, id, 'theirs') en
 ---@param side_name 'ours'|'theirs'
 local function accept_selection(state, items, side_name)
   local buckets = {}
+
   for _, it in ipairs(items) do
     if it.base == 'conflicts' then
-      local root = it.root or state.git_root
-      buckets[root] = buckets[root] or {}
-      buckets[root][#buckets[root] + 1] = it.relpath
+      local root = Subrepo.current_root(state, it.root)
+      if root then
+        buckets[root] = buckets[root] or {}
+        buckets[root][#buckets[root] + 1] = it.relpath
+      end
     end
   end
 

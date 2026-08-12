@@ -63,20 +63,20 @@ pending[#pending + 1] = { name = 'B' }
 local after_b = 0
 Loader.reload_index(state, function() after_b = after_b + 1 end)
 
-assert_eq(cancels['A:index'], 1, 'B physically cancels A index')
-assert_eq(cancels['A:info'], 1, 'B physically cancels A repo info')
-assert_eq(cancels['B:index'], nil, 'old request cleanup does not cancel B index')
-assert_eq(cancels['B:info'], nil, 'old request cleanup does not cancel B repo info')
+assert_eq(cancels['A:index'], 1, 'B 物理取消 A 的 index 请求')
+assert_eq(cancels['A:info'], 1, 'B 物理取消 A 的 repo_info 请求')
+assert_eq(cancels['B:index'], nil, '旧请求清理不取消 B 的 index 请求')
+assert_eq(cancels['B:info'], nil, '旧请求清理不取消 B 的 repo_info 请求')
 
 pending[2].info({ branch = 'new' })
 pending[2].index({ status_map = {}, rename_map = {} })
 pending[1].index({ status_map = {}, rename_map = {} })
 pending[1].info({ branch = 'old' })
-assert_eq(state.branch, 'new', 'A slow cannot overwrite B fast')
-assert_eq(vim.inspect(renders), vim.inspect({ 'new' }), 'only B renders')
-assert_eq(after_a, 0, 'A after callback is suppressed')
-assert_eq(after_b, 1, 'B after callback publishes once')
-assert_eq(events, 1, 'only B emits the status event')
+assert_eq(state.branch, 'new', 'A 的慢回调不能覆盖 B 的快回调')
+assert_eq(vim.inspect(renders), vim.inspect({ 'new' }), '仅 B 触发 render')
+assert_eq(after_a, 0, 'A 的 after 回调被抑制')
+assert_eq(after_b, 1, 'B 的 after 回调仅发布一次')
+assert_eq(events, 1, '仅 B 发出状态事件')
 
 pending[#pending + 1] = { name = 'C' }
 local after_c = 0
@@ -88,12 +88,12 @@ local lifecycle = Lifecycle.new({
   persist_panel_width = function() end,
 })
 lifecycle._cancel_reload_requests(state)
-assert_eq(cancels['C:index'], 1, 'close cancellation kills outstanding index')
-assert_eq(cancels['C:info'], 1, 'close cancellation kills outstanding repo info')
+assert_eq(cancels['C:index'], 1, 'close 会终止尚未完成的 index')
+assert_eq(cancels['C:info'], 1, 'close 会终止尚未完成的 repo_info')
 pending[3].index({ status_map = {}, rename_map = {} })
 pending[3].info({ branch = 'closed' })
-assert_eq(after_c, 0, 'callback queued before close cannot publish afterward')
-assert_eq(state.branch, 'new', 'close leaves stale callback unable to mutate state')
+assert_eq(after_c, 0, 'close 前排队的回调不能在关闭后发布')
+assert_eq(state.branch, 'new', 'close 后遗留回调不能修改 state')
 
 local ignored_callback
 local ignored_cancels = 0
@@ -107,23 +107,23 @@ state._subrepo = {
 }
 Loader.reload_index(state)
 Loader.cancel_reload(state)
-assert_eq(ignored_cancels, 1, 'respect_gitignore producer belongs to the reload request')
+assert_eq(ignored_cancels, 1, 'respect_gitignore producer 属于对应的 reload 请求')
 ignored_callback({}, {})
-assert_eq(#pending, 3, 'ignored callback after cancel cannot start repository producers')
+assert_eq(#pending, 3, 'cancel 后的 ignored 回调不能启动 repository producers')
 
 state._subrepo = nil
 state.git_root = '/repo-before-root-change'
 pending[#pending + 1] = { name = 'D' }
 local after_d = 0
 Loader.reload_index(state, function() after_d = after_d + 1 end)
-state.git_root = '/repo-after-root-change'
+State.set_root(state, '/repo-after-root-change')
 pending[4].index({ status_map = {}, rename_map = {} })
 pending[4].info({ branch = 'wrong-root' })
-assert_eq(cancels['D:index'], 1, 'root drift callback cancels its index producer')
-assert_eq(cancels['D:info'], 1, 'root drift callback cancels the remaining repo info producer')
-assert_eq(after_d, 0, 'captured root invalidates old request before a successor begins')
-assert_eq(state.branch, 'new', 'root drift alone prevents stale state mutation')
-assert_eq(vim.inspect(renders), vim.inspect({ 'new' }), 'root-drifted request cannot render')
+assert_eq(cancels['D:index'], 1, 'root 漂移时 callback 会终止自己的 index producer')
+assert_eq(cancels['D:info'], 1, 'root 漂移时 callback 会终止剩余 repo_info producer')
+assert_eq(after_d, 0, '捕获的 root 漂移在 successor 启动前使旧请求失效')
+assert_eq(state.branch, 'new', '仅 root 漂移已足以阻止过期状态写入')
+assert_eq(vim.inspect(renders), vim.inspect({ 'new' }), 'root 漂移后的请求不会 render')
 
 state.git_root = '/repo-reentry'
 pending[#pending + 1] = { name = 'E' }
@@ -136,11 +136,11 @@ on_event = function()
 end
 pending[5].index({ status_map = {}, rename_map = {} })
 pending[5].info({ branch = 'event-old' })
-assert_eq(after_e, 0, 'synchronous User listener successor stops old after callback')
+assert_eq(after_e, 0, '发布期间启动的 successor 停止旧的 after 回调')
 pending[6].index({ status_map = {}, rename_map = {} })
 pending[6].info({ branch = 'event-new' })
-assert_eq(after_f, 1, 'successor started during publication can complete')
-assert_eq(state.branch, 'event-new', 'publication successor owns final state')
+assert_eq(after_f, 1, 'publication 中启动的 successor 可完成')
+assert_eq(state.branch, 'event-new', 'publication 的 successor 拥有最终状态')
 
 state.git_root = '/repo-render-reentry'
 pending[#pending + 1] = { name = 'G' }
@@ -153,11 +153,11 @@ on_render = function()
 end
 pending[7].index({ status_map = {}, rename_map = {} })
 pending[7].info({ branch = 'render-old' })
-assert_eq(after_g, 0, 'successor started by render stops the old event and after callback')
+assert_eq(after_g, 0, '由 render 启动的 successor 停止旧事件和 after 回调')
 pending[8].index({ status_map = {}, rename_map = {} })
 pending[8].info({ branch = 'render-new' })
-assert_eq(after_h, 1, 'successor started during render can complete')
-assert_eq(state.branch, 'render-new', 'render successor owns final state')
+assert_eq(after_h, 1, 'render 期间启动的 successor 可完成')
+assert_eq(state.branch, 'render-new', 'render 的 successor 拥有最终状态')
 
 state.git_root = '/repo-after-error'
 pending[#pending + 1] = { name = 'I' }
@@ -165,11 +165,11 @@ Loader.reload_index(state, function() error('injected after failure') end)
 pending[9].index({ status_map = {}, rename_map = {} })
 local publish_ok, publish_err = pcall(pending[9].info, { branch = 'after-error' })
 assert(not publish_ok and tostring(publish_err):find('injected after failure', 1, true),
-  'publication error must remain observable')
+  'publication 错误必须可见')
 pending[#pending + 1] = { name = 'J' }
 Loader.reload_index(state)
-assert_eq(cancels['I:index'], nil, 'failed publication must terminally release its completed index')
-assert_eq(cancels['I:info'], nil, 'failed publication must terminally release its completed repo info')
+assert_eq(cancels['I:index'], nil, '失败 publication 应彻底释放已完成的 index')
+assert_eq(cancels['I:info'], nil, '失败 publication 应彻底释放已完成的 repo_info')
 Loader.cancel_reload(state)
 
 Git.index = original_index
@@ -186,7 +186,7 @@ local handles = {}
 vim.system = function(command)
   local handle = { command = command, kills = 0 }
   function handle:kill(signal)
-    assert_eq(signal, 'sigterm', 'repo_info uses sigterm')
+    assert_eq(signal, 'sigterm', 'repo_info 取消时使用 sigterm')
     self.kills = self.kills + 1
   end
   handles[#handles + 1] = handle
@@ -197,10 +197,10 @@ local delivered = 0
 local cancel_repo_info = Git.repo_info('/repo', function() delivered = delivered + 1 end)
 cancel_repo_info()
 cancel_repo_info()
-assert_eq(#handles, 2, 'repo_info starts two production Git commands')
-assert_eq(handles[1].kills, 1, 'repo_info cancel kills status once')
-assert_eq(handles[2].kills, 1, 'repo_info cancel kills remote once')
-assert_eq(delivered, 0, 'active producer cancellation does not publish')
+assert_eq(#handles, 2, 'repo_info 会启动两个生产级 Git 命令')
+assert_eq(handles[1].kills, 1, '取消 repo_info 时会终止 status 进程一次')
+assert_eq(handles[2].kills, 1, '取消 repo_info 时会终止 remote 进程一次')
+assert_eq(delivered, 0, '生产者取消后不会发布')
 
 -- 原始进程完成后会在 Lua delivery 执行前释放物理所有权
 local queued = {}
@@ -218,9 +218,9 @@ delivered = 0
 cancel_repo_info = Git.repo_info('/repo', function() delivered = delivered + 1 end)
 cancel_repo_info()
 for _, callback in ipairs(queued) do callback() end
-assert_eq(handles[1].kills, 0, 'completed status producer is not killed while delivery is queued')
-assert_eq(handles[2].kills, 0, 'completed remote producer is not killed while delivery is queued')
-assert_eq(delivered, 0, 'cancel suppresses queued delivery after raw completion')
+assert_eq(handles[1].kills, 0, 'delivery 排队时已完成的 status 生产者不会被 kill')
+assert_eq(handles[2].kills, 0, 'delivery 排队时已完成的 remote 生产者不会被 kill')
+assert_eq(delivered, 0, '原始执行完成后 cancel 会抑制排队 callback')
 
 -- 后续 producer 构造失败会回滚先前的 active producer，并通过回调报告
 queued = {}
@@ -237,14 +237,14 @@ end
 
 local spawn_error
 local repo_ok, repo_cancel = pcall(Git.repo_info, '/repo', function(info, err)
-  assert_eq(info, nil, 'spawn failure cannot publish repository info')
+  assert_eq(info, nil, '生产者构造失败不能发布 repository info')
   spawn_error = err
 end)
-assert(repo_ok and type(repo_cancel) == 'function', 'repo_info must contain producer construction errors')
-assert_eq(handles[1].kills, 1, 'second spawn failure rolls back the first active producer')
+assert(repo_ok and type(repo_cancel) == 'function', 'repo_info 在生产者构造失败时也应返回取消函数')
+assert_eq(handles[1].kills, 1, '第二次 spawn 失败会回滚第一个活跃生产者')
 for _, callback in ipairs(queued) do callback() end
 assert(spawn_error and spawn_error:find('injected second spawn failure', 1, true),
-  'repo_info reports the construction failure exactly once')
+  'repo_info 只报告一次构造失败')
 
 -- 网络 helper 向命令 request scope 暴露只取消 active producer 的精确能力
 queued = {}
@@ -258,42 +258,42 @@ end
 local network_deliveries = 0
 local cancel_push = Git.push('/repo', function() network_deliveries = network_deliveries + 1 end)
 cancel_push()
-assert_eq(handles[1].kills, 1, 'active push producer is physically cancelled')
+assert_eq(handles[1].kills, 1, 'active push 生产者被物理终止')
 handles[1].callback({ code = 0, stdout = '' })
 for _, callback in ipairs(queued) do callback() end
-assert_eq(network_deliveries, 0, 'cancelled push cannot publish a queued result')
+assert_eq(network_deliveries, 0, '被 cancel 的 push 不会发布排队结果')
 
 queued = {}
 local cancel_publish = Git.publish('/repo', 'origin', function() network_deliveries = network_deliveries + 1 end)
 handles[2].callback({ code = 0, stdout = '' })
 cancel_publish()
 for _, callback in ipairs(queued) do callback() end
-assert_eq(handles[2].kills, 0, 'raw-completed publish producer is not killed before Lua delivery')
-assert_eq(network_deliveries, 0, 'publish cancellation still suppresses queued delivery')
+assert_eq(handles[2].kills, 0, 'publish 已完成时在 Lua 回调前不会被 kill')
+assert_eq(network_deliveries, 0, 'publish cancel 仍会抑制排队回调')
 
 queued = {}
 vim.system = function() error('injected push spawn failure') end
 local push_error
 local push_ok, failed_push_cancel = pcall(Git.push, '/repo', function(ok, out)
-  assert_eq(ok, false, 'push spawn failure cannot report success')
+  assert_eq(ok, false, 'push 构造失败不能返回成功')
   push_error = out
 end)
 assert(push_ok and type(failed_push_cancel) == 'function',
-  'single network producer leaked its spawn error across the async API')
+  '单次网络生产者的 spawn 错误不应透传 async API')
 failed_push_cancel()
 for _, callback in ipairs(queued) do callback() end
-assert_eq(push_error, nil, 'cancel suppresses a queued network construction error')
+assert_eq(push_error, nil, 'cancel 会抑制排队的网络构造错误')
 
 queued = {}
 Git.push('/repo', function(ok, out)
-  assert_eq(ok, false, 'push spawn failure cannot report success')
+  assert_eq(ok, false, 'push 构造失败不能返回成功')
   push_error = out
 end)
 for _, callback in ipairs(queued) do callback() end
 assert(push_error and push_error:find('injected push spawn failure', 1, true),
-  'push spawn failure is delivered through the normal callback')
+  'push 构造失败通过普通回调返回')
 
 vim.system = original_system
 vim.schedule = original_schedule
 
-print('ok - loader scope latest-wins and physical cancellation')
+print('PASS: vv-git loader latest 请求优先与物理取消')

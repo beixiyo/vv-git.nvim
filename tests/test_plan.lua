@@ -29,14 +29,14 @@ local function assert_plan(label, overrides, expected)
   ))
 end
 
-assert_plan('staged add stays intrinsically single', { xy = 'A ' }, {
+assert_plan('暂存区新增应天然是单窗口', { xy = 'A ' }, {
   kind = 'single_rev',
   rev = ':0',
   path = 'new.lua',
   side = 'new',
   intrinsic_single = true,
 })
-assert_plan('staged delete stays intrinsically single on narrow screens', {
+assert_plan('窄屏下暂存区删除应天然是单窗口', {
   xy = 'D ',
   force_single = true,
 }, {
@@ -46,7 +46,7 @@ assert_plan('staged delete stays intrinsically single on narrow screens', {
   side = 'old',
   intrinsic_single = true,
 })
-assert_plan('staged modification uses a wide dual revision plan', {}, {
+assert_plan('暂存区修改在宽屏下应使用双修订窗口方案', {}, {
   kind = 'dual_rev_rev',
   a_rev = 'HEAD',
   b_rev = ':0',
@@ -55,7 +55,7 @@ assert_plan('staged modification uses a wide dual revision plan', {}, {
   fallback = 'staged',
   intrinsic_single = false,
 })
-assert_plan('staged modification uses a narrow inline plan', { force_single = true }, {
+assert_plan('暂存区修改在窄屏下应使用行内方案', { force_single = true }, {
   kind = 'single_rev_inline',
   a_rev = 'HEAD',
   b_rev = ':0',
@@ -65,7 +65,7 @@ assert_plan('staged modification uses a narrow inline plan', { force_single = tr
   intrinsic_single = false,
 })
 
-assert_plan('unstaged add stays intrinsically single', {
+assert_plan('未暂存新增应天然是单窗口', {
   section = 'unstaged',
   xy = '??',
 }, {
@@ -73,7 +73,7 @@ assert_plan('unstaged add stays intrinsically single', {
   path = 'new.lua',
   intrinsic_single = true,
 })
-assert_plan('unstaged delete stays intrinsically single on narrow screens', {
+assert_plan('窄屏下未暂存删除应天然是单窗口', {
   section = 'unstaged',
   xy = ' D',
   force_single = true,
@@ -84,7 +84,7 @@ assert_plan('unstaged delete stays intrinsically single on narrow screens', {
   side = 'old',
   intrinsic_single = true,
 })
-assert_plan('unstaged modification uses a wide revision-worktree plan', {
+assert_plan('未暂存修改在宽屏下应使用修订-工作树方案', {
   section = 'unstaged',
 }, {
   kind = 'dual_rev_worktree',
@@ -93,7 +93,7 @@ assert_plan('unstaged modification uses a wide revision-worktree plan', {
   path = 'new.lua',
   intrinsic_single = false,
 })
-assert_plan('unstaged modification uses a narrow worktree inline plan', {
+assert_plan('未暂存修改在窄屏下应使用工作树行内方案', {
   section = 'unstaged',
   force_single = true,
 }, {
@@ -104,7 +104,7 @@ assert_plan('unstaged modification uses a narrow worktree inline plan', {
   intrinsic_single = false,
 })
 
-assert_plan('wide compare rename keeps old and new paths', {
+assert_plan('宽屏比较重命名应保留新旧路径', {
   section = 'compare',
   compare_status = 'R',
 }, {
@@ -116,7 +116,7 @@ assert_plan('wide compare rename keeps old and new paths', {
   fallback = 'compare',
   intrinsic_single = false,
 })
-assert_plan('narrow compare rename keeps old and new paths', {
+assert_plan('窄屏比较重命名应保留新旧路径', {
   section = 'compare',
   compare_status = 'R',
   force_single = true,
@@ -129,7 +129,7 @@ assert_plan('narrow compare rename keeps old and new paths', {
   fetch_mode = 'serial',
   intrinsic_single = false,
 })
-assert_plan('compare add displays only the target revision', {
+assert_plan('比较新增应仅显示目标修订', {
   section = 'compare',
   compare_status = 'A',
 }, {
@@ -139,7 +139,7 @@ assert_plan('compare add displays only the target revision', {
   side = 'new',
   intrinsic_single = true,
 })
-assert_plan('compare delete displays the old path from the source revision', {
+assert_plan('比较删除应显示来源修订中的旧路径', {
   section = 'compare',
   compare_status = 'D',
 }, {
@@ -150,7 +150,7 @@ assert_plan('compare delete displays the old path from the source revision', {
   intrinsic_single = true,
 })
 
-assert_plan('wide conflict uses a three-window plan', {
+assert_plan('宽屏冲突应使用三窗方案', {
   section = 'conflicts',
 }, {
   kind = 'conflict3',
@@ -160,7 +160,7 @@ assert_plan('wide conflict uses a three-window plan', {
   b_path = 'new.lua',
   intrinsic_single = false,
 })
-assert_plan('narrow conflict uses an inline ours-theirs plan', {
+assert_plan('窄屏冲突应使用行内 ours-theirs 方案', {
   section = 'conflicts',
   force_single = true,
 }, {
@@ -173,4 +173,4 @@ assert_plan('narrow conflict uses an inline ours-theirs plan', {
   intrinsic_single = false,
 })
 
-print('vv-git right plan routing: PASS')
+print('PASS: vv-git 右侧 plan 路由回归')

@@ -66,7 +66,7 @@ assert(Plugin.open({
   on_ready = function() ready = true end,
   on_error = function(err) open_error = err end,
 }))
-assert(vim.wait(5000, function() return ready end), open_error or 'repository did not open')
+assert(vim.wait(5000, function() return ready end), open_error or '仓库未打开')
 
 local state = State.get()
 
@@ -77,16 +77,16 @@ local function dir_at(side_root, relpath)
   local cur = side_root
   for _, part in ipairs(vim.split(relpath, '/', { plain = true })) do
     cur = cur.children and cur.children[part]
-    assert(cur, 'directory node not found: ' .. relpath)
+  assert(cur, '目录节点不存在: ' .. relpath)
   end
-  assert(cur.is_dir, relpath .. ' should be a directory node')
+  assert(cur.is_dir, relpath .. ' 应为目录节点')
   return cur
 end
 
 ---@return string
 local function view_text()
   local buf = state.view and state.view.b_buf
-  assert(buf and vim.api.nvim_buf_is_valid(buf), 'right view has no buffer')
+  assert(buf and vim.api.nvim_buf_is_valid(buf), '右侧视图未创建 buffer')
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n')
 end
 
@@ -184,4 +184,4 @@ if failed > 0 then
   print('存在失败项')
   vim.cmd('cquit 1')
 end
-print('vv-git dir preview: PASS')
+print('PASS: vv-git 目录预览')

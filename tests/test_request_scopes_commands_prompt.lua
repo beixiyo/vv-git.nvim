@@ -38,7 +38,7 @@ state.git_root = '/repo-a'
 commands._commit()
 state.git_root = '/repo-b'
 staged_callback(true)
-assert_eq(prompt_opens, 0, 'late staged check cannot open a commit prompt for the old root')
+assert_eq(prompt_opens, 0, '晚到的 staged 检查不能为旧 root 打开 commit 提示')
 commands._cancel_command_requests()
 
 local repo_info_callback
@@ -65,7 +65,7 @@ end
 state.git_root = '/repo-a'
 commands._publish()
 commands._cancel_command_requests()
-assert_eq(repo_info_cancels, 1, 'publish lifecycle cancellation reaches repo_info producers')
+assert_eq(repo_info_cancels, 1, 'publish 生命周期取消应到达 repo_info 生产者')
 
 state.git_root = '/repo-a'
 commands._publish()
@@ -80,9 +80,9 @@ repo_info_callback({
 input_callback('git@example/repo.git')
 state.git_root = '/repo-b'
 add_remote_callback(true)
-assert_eq(publishes, 0, 'root change between add-remote and publish stops the old chain')
+assert_eq(publishes, 0, '在 add-remote 与 publish 之间切 root 时应停止旧链路')
 commands._cancel_command_requests()
-assert_eq(add_remote_cancels, 1, 'publish lifecycle cancellation reaches add-remote producer')
+assert_eq(add_remote_cancels, 1, 'publish 生命周期取消应到达 add-remote 生产者')
 
 state.git_root = '/repo-a'
 commands._publish()
@@ -94,9 +94,9 @@ repo_info_callback({
   upstream = nil,
   remotes = { 'origin' },
 })
-assert_eq(publishes, 1, 'publish producer starts after repository inspection')
+assert_eq(publishes, 1, 'repo_info 检查后应启动 publish 生产者')
 commands._cancel_command_requests()
-assert_eq(publish_cancels, 1, 'publish lifecycle cancellation reaches active push producer')
+assert_eq(publish_cancels, 1, 'publish 生命周期取消应到达活跃 push 生产者')
 
 Keymaps.id_under_cursor = original_cursor
 Git.has_staged = original_has_staged
@@ -133,14 +133,14 @@ Prompt.open({
 })
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'test commit' })
 local submit_mapping = vim.fn.maparg('<C-s>', 'i', false, true)
-assert(type(submit_mapping.callback) == 'function', 'production prompt installs the submit callback')
+assert(type(submit_mapping.callback) == 'function', '生产 prompt 应安装提交回调')
 submit_mapping.callback()
-assert(type(stage_all_callback) == 'function', 'commit-all starts stage_all while the owner is current')
+assert(type(stage_all_callback) == 'function', 'owner 当前时 commit-all 应启动 stage_all')
 assert(type(stage_all_opts) == 'table' and type(stage_all_opts.is_current) == 'function',
-  'prompt passes its current-owner guard to stage_all')
+  'prompt 应把当前 owner 守卫传递给 stage_all')
 prompt_current = false
 stage_all_callback(true)
-assert_eq(commit_calls, 0, 'invalidated prompt cannot continue from stage_all into commit')
+assert_eq(commit_calls, 0, '失效 prompt 不应从 stage_all 继续到 commit')
 Prompt.close()
 
 prompt_current = true
@@ -152,12 +152,12 @@ Prompt.open({
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'test commit' })
 vim.fn.maparg('<C-s>', 'i', false, true).callback()
 stage_all_callback(true)
-assert_eq(commit_calls, 1, 'current prompt continues from stage_all into commit')
+assert_eq(commit_calls, 1, '当前 prompt 应从 stage_all 继续到 commit')
 assert(type(commit_opts) == 'table' and commit_opts.is_current == stage_all_opts.is_current,
-  'prompt passes the same current-owner guard to commit')
+  'prompt 应把相同 owner 守卫传递给 commit')
 prompt_current = false
 commit_callback(true)
-assert_eq(commit_calls, 1, 'invalidated prompt does not start a second commit')
+assert_eq(commit_calls, 1, '失效 prompt 不应启动第二次 commit')
 Prompt.close()
 
 local successes = 0
@@ -170,10 +170,10 @@ Prompt.open({
 })
 vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'test commit' })
 vim.fn.maparg('<C-s>', 'i', false, true).callback()
-assert_eq(commit_calls, 2, 'current prompt starts commit')
+assert_eq(commit_calls, 2, '当前 prompt 应启动 commit')
 prompt_current = false
 commit_callback(true)
-assert_eq(successes, 0, 'invalidated commit callback cannot publish success side effects')
+assert_eq(successes, 0, '失效 commit 回调不能触发成功副作用')
 Prompt.close()
 
 Git.stage_all = original_stage_all
@@ -206,10 +206,10 @@ local prompt_b_win = vim.api.nvim_get_current_win()
 local prompt_b_buf = vim.api.nvim_get_current_buf()
 dispose_prompt_a()
 assert(vim.api.nvim_win_is_valid(prompt_b_win) and vim.api.nvim_buf_is_valid(prompt_b_buf),
-  'stale prompt disposer closed the reentrant replacement prompt')
+  '失效 prompt disposer 应关闭重入替换 prompt')
 dispose_prompt_b()
 
--- root 或生命周期失效后，push/pull 回调不得发布结果
+-- root 失效或关闭 UI 后，已启动 producer 仍通知但不刷新；物理取消不通知
 local original_push = Git.push
 local original_notify = vim.notify
 local push_callback
@@ -231,28 +231,28 @@ local net_commands = Commands.new({
 })
 state.git_root = '/repo-a'
 net_commands._push()
-assert_eq(net_notifications, 1, 'push start notification is emitted while current')
+assert_eq(net_notifications, 1, '当前状态下应发出 push 开始通知')
 state.git_root = '/repo-b'
 push_callback(true, 'done')
-assert_eq(net_notifications, 1, 'stale push callback emits no completion notification')
-assert_eq(net_refreshes, 0, 'stale push callback cannot refresh the new root')
+assert_eq(net_notifications, 2, '失效 push 完成仍应发出通知')
+assert_eq(net_refreshes, 0, '失效 push 回调不能刷新新 root')
 
 state.git_root = '/repo-a'
 net_commands._push()
 net_commands._invalidate_command_requests()
-assert_eq(push_cancels, 0, 'closing UI does not terminate the active push producer')
+assert_eq(push_cancels, 0, '关闭 UI 不应终止活跃的 push producer')
 push_callback(true, 'done')
-assert_eq(net_notifications, 2, 'invalidated push callback emits no completion notification')
-assert_eq(net_refreshes, 0, 'invalidated push callback cannot refresh')
+assert_eq(net_notifications, 4, '关闭 UI 后已启动的 push 完成仍应通知')
+assert_eq(net_refreshes, 0, '关闭 UI 后 push 完成不能刷新新 UI')
 
 net_commands._push()
 net_commands._cancel_command_requests()
-assert_eq(push_cancels, 1, 'push lifecycle cancellation reaches its active producer')
+assert_eq(push_cancels, 1, 'push 生命周期取消应到达活跃生产者')
 push_callback(true, 'done')
-assert_eq(net_notifications, 3, 'cancelled push callback emits no completion notification')
-assert_eq(net_refreshes, 0, 'cancelled push callback cannot refresh')
+assert_eq(net_notifications, 5, '物理取消后的 push 回调不应发出完成通知')
+assert_eq(net_refreshes, 0, '取消 push 回调不能刷新')
 Git.push = original_push
 vim.notify = original_notify
 
 State.clear()
-print('vv-git request scopes commands and prompt: PASS')
+print('PASS: vv-git request scopes 与命令 prompt 回归')

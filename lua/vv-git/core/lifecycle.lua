@@ -10,6 +10,7 @@ local Keymaps = require('vv-git.core.keymaps')
 local Subrepo = require('vv-git.subrepo')
 local UGit = require('vv-utils.git')
 local Async = require('vv-utils.async')
+local Discard = require('vv-git.left.discard')
 
 ---@param root string
 ---@return string? relpath
@@ -219,7 +220,7 @@ function L.new(deps)
     local state = State.create()
     state.tabpage = tabpage
     state.prev_tab = prev_tab
-    state.git_root = root
+    State.set_root(state, root)
     state.cur_path = rel_path
     state._resume_after_close = resume_after_close
     -- 把子仓库扫描深度/配置以闭包注入 state，避免数据层 loader 反向 require 顶层 init
@@ -289,6 +290,7 @@ function L.new(deps)
     -- 临时宽度重新写回 state；若 tabclose 失败则恢复监听
     state._closing = true
     external_root_scope:cancel()
+    Discard.cancel()
     Loader.cancel_reload(state)
 
     if controller._invalidate_command_requests then controller._invalidate_command_requests() end
@@ -344,6 +346,7 @@ function L.new(deps)
     local visible = win and vim.api.nvim_win_is_valid(win)
 
     if visible then
+      Discard.cancel()
       deps.track_panel_width(state)
       deps.persist_panel_width(state)
 
@@ -398,7 +401,8 @@ function L.new(deps)
       if not root or root == state.git_root then return end
 
       if controller._cancel_command_requests then controller._cancel_command_requests() end
-      state.git_root = root
+      Discard.cancel()
+      State.set_root(state, root)
       state.cur_path = nil
       state.selection = {}
       state.folds = {}

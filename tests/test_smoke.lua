@@ -61,11 +61,11 @@ local function test_discard_untracked_file()
   local f = io.open(abspath, 'w')
   if f then f:write('test'); f:close() end
 
-  assert_true(vim.uv.fs_stat(abspath) ~= nil, 'untracked file exists before discard')
+  assert_true(vim.uv.fs_stat(abspath) ~= nil, 'discard 前未跟踪文件存在')
 
   Git.discard_untracked(tmpdir, { testfile }, function(ok, err)
-    assert_true(ok, 'discard_untracked succeeded')
-    assert_true(vim.uv.fs_stat(abspath) == nil, 'untracked file removed after discard')
+    assert_true(ok, 'discard_untracked 成功')
+    assert_true(vim.uv.fs_stat(abspath) == nil, 'discard 后未跟踪文件已移除')
   end)
 
   -- 清理
@@ -85,11 +85,11 @@ local function test_discard_untracked_dir()
   local f = io.open(tmpdir .. '/' .. subdir .. '/file.txt', 'w')
   if f then f:write('test'); f:close() end
 
-  assert_true(vim.uv.fs_stat(tmpdir .. '/' .. subdir) ~= nil, 'untracked dir exists before discard')
+  assert_true(vim.uv.fs_stat(tmpdir .. '/' .. subdir) ~= nil, 'discard 前未跟踪目录存在')
 
   Git.discard_untracked(tmpdir, { subdir }, function(ok, err)
-    assert_true(ok, 'discard_untracked dir succeeded')
-    assert_true(vim.uv.fs_stat(tmpdir .. '/' .. subdir) == nil, 'untracked dir removed after discard')
+    assert_true(ok, 'discard_untracked 目录成功')
+    assert_true(vim.uv.fs_stat(tmpdir .. '/' .. subdir) == nil, 'discard 后未跟踪目录已移除')
   end)
 
   -- 清理
@@ -107,14 +107,14 @@ local function test_unstage_without_head()
 
   local done = false
   Git.unstage(tmpdir, { 'draft.txt' }, function(ok, err)
-    assert_true(ok, 'unborn repository unstage succeeded: ' .. tostring(err or ''))
+    assert_true(ok, '无 HEAD 仓库取消暂存成功: ' .. tostring(err or ''))
     done = true
   end)
 
-  assert_true(vim.wait(3000, function() return done end), 'unborn repository unstage completed')
-  assert_true(vim.uv.fs_stat(tmpdir .. '/draft.txt') ~= nil, 'unborn repository unstage keeps worktree file')
+  assert_true(vim.wait(3000, function() return done end), '无 HEAD 仓库取消暂存完成')
+  assert_true(vim.uv.fs_stat(tmpdir .. '/draft.txt') ~= nil, '无 HEAD 仓库取消暂存保留工作区文件')
   assert_eq(vim.fn.system({ 'git', '-C', tmpdir, 'status', '--short', 'draft.txt' }), '?? draft.txt\n',
-    'unborn repository file becomes untracked')
+    '无 HEAD 仓库下状态应显示未跟踪')
 
   vim.fn.delete(tmpdir, 'rf')
 end
@@ -135,13 +135,13 @@ local function test_unstage_with_head()
 
   local done = false
   Git.unstage(tmpdir, { 'tracked.txt' }, function(ok, err)
-    assert_true(ok, 'repository with HEAD unstage succeeded: ' .. tostring(err or ''))
+    assert_true(ok, '有 HEAD 仓库取消暂存成功: ' .. tostring(err or ''))
     done = true
   end)
 
-  assert_true(vim.wait(3000, function() return done end), 'repository with HEAD unstage completed')
+  assert_true(vim.wait(3000, function() return done end), '有 HEAD 仓库取消暂存完成')
   assert_eq(vim.fn.system({ 'git', '-C', tmpdir, 'status', '--short', 'tracked.txt' }), ' M tracked.txt\n',
-    'tracked file remains tracked and unstaged')
+    '跟踪文件仍为已跟踪且未暂存状态')
 
   vim.fn.delete(tmpdir, 'rf')
 end
@@ -209,25 +209,25 @@ local function test_panel_edge_file_keymaps()
     rhsmap[m.lhs] = m.rhs
   end
 
-  assert_eq(type(callbacks.gg), 'function', 'gg mapping is installed')
+  assert_eq(type(callbacks.gg), 'function', '已安装 gg 映射')
   callbacks.gg()
-  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 4, 'gg jumps to first file row')
+  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 4, 'gg 跳转到首个文件行')
 
-  assert_eq(type(callbacks.G), 'function', 'G mapping is installed')
+  assert_eq(type(callbacks.G), 'function', '已安装 G 映射')
   callbacks.G()
-  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 6, 'G jumps to last file row')
-  assert_eq(type(callbacks.u), 'function', 'u (publish) mapping is installed')
-  assert_eq(type(callbacks.zR), 'function', 'zR (toggle right diff folds) mapping is installed')
-  assert_true(rhsmap.i ~= nil, 'production keymaps block i on panel buf')
-  assert_true(rhsmap.I ~= nil, 'production keymaps block I on panel buf')
-  assert_true(rhsmap.a ~= nil, 'production keymaps block a on panel buf')
-  assert_true(rhsmap.A ~= nil, 'production keymaps block A on panel buf')
+  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 6, 'G 跳转到最后文件行')
+  assert_eq(type(callbacks.u), 'function', '已安装 u（publish）映射')
+  assert_eq(type(callbacks.zR), 'function', '已安装 zR（切换右侧 diff 折叠）映射')
+  assert_true(rhsmap.i ~= nil, '生产面板键位屏蔽了 i')
+  assert_true(rhsmap.I ~= nil, '生产面板键位屏蔽了 I')
+  assert_true(rhsmap.a ~= nil, '生产面板键位屏蔽了 a')
+  assert_true(rhsmap.A ~= nil, '生产面板键位屏蔽了 A')
   callbacks.zR()
-  assert_eq(toggle_diff_calls, 1, 'zR invokes right diff fold toggle')
+  assert_eq(toggle_diff_calls, 1, 'zR 触发右侧 diff 折叠切换')
 
   -- 左侧面板驱动右侧 diff chunk 跳转：]c / [c 已安装，且无 diff 视图时安全早退（不报错）
-  assert_eq(type(callbacks[']c']), 'function', ']c (next_chunk) mapping is installed')
-  assert_eq(type(callbacks['[c']), 'function', '[c (prev_chunk) mapping is installed')
+  assert_eq(type(callbacks[']c']), 'function', ']c（下一个块）映射已安装')
+  assert_eq(type(callbacks['[c']), 'function', '[c（上一个块）映射已安装')
   assert_true(pcall(callbacks[']c']), ']c 在无 diff 视图时安全早退')
   assert_true(pcall(callbacks['[c']), '[c 在无 diff 视图时安全早退')
 
@@ -238,7 +238,7 @@ local function test_panel_edge_file_keymaps()
   assert_true(rhsmap['<4-LeftMouse>'] ~= nil, '<4-LeftMouse> 已 Nop（防四击选块）')
   -- 跨窗口拖入/多击兜底：面板 buffer 挂了 ModeChanged 守卫
   local mc = vim.api.nvim_get_autocmds({ event = 'ModeChanged', buffer = buf })
-  assert_true(#mc >= 1, '面板 buffer 注册了 ModeChanged 防 visual 守卫')
+  assert_true(#mc >= 1, '面板缓冲区注册了 ModeChanged 可视模式防护守卫')
 
   vim.api.nvim_win_set_buf(win, old_buf)
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
@@ -266,15 +266,15 @@ local function test_panel_drives_right_diff_folds()
   vim.api.nvim_set_current_win(panel_win)
   local state = { view = { mode = 'single', b_win = diff_win, b_buf = diff_buf } }
 
-  assert_true(RightView.toggle_all_folds(state), 'panel zR finds single-column right diff')
-  assert_eq(vim.api.nvim_get_current_win(), panel_win, 'opening diff folds keeps focus in panel')
+  assert_true(RightView.toggle_all_folds(state), 'panel zR 在单列布局找到了右侧 diff')
+  assert_eq(vim.api.nvim_get_current_win(), panel_win, '打开 diff 折叠后焦点仍在面板')
   local opened = vim.api.nvim_win_call(diff_win, function() return vim.fn.foldclosed(3) end)
-  assert_eq(opened, -1, 'first panel zR opens all right diff folds')
+  assert_eq(opened, -1, '第一次 panel zR 展开全部右侧 diff 折叠')
 
-  assert_true(RightView.toggle_all_folds(state), 'panel zR handles an open right diff')
-  assert_eq(vim.api.nvim_get_current_win(), panel_win, 'closing diff folds keeps focus in panel')
+  assert_true(RightView.toggle_all_folds(state), 'panel zR 处理打开中的右侧 diff')
+  assert_eq(vim.api.nvim_get_current_win(), panel_win, '关闭 diff 折叠后焦点仍在面板')
   local closed = vim.api.nvim_win_call(diff_win, function() return vim.fn.foldclosed(3) end)
-  assert_eq(closed, 2, 'second panel zR closes all right diff folds')
+  assert_eq(closed, 2, '第二次 panel zR 关闭全部右侧 diff 折叠')
 
   vim.api.nvim_set_current_win(diff_win)
   vim.cmd('leftabove vsplit')
@@ -295,12 +295,12 @@ local function test_panel_drives_right_diff_folds()
   state.view.a_buf = left_diff_buf
   vim.api.nvim_set_current_win(panel_win)
 
-  assert_true(RightView.toggle_all_folds(state), 'panel zR finds both diff columns')
-  assert_eq(vim.api.nvim_get_current_win(), panel_win, 'toggling two diff columns keeps focus in panel')
+  assert_true(RightView.toggle_all_folds(state), 'panel zR 同时定位左右两列 diff')
+  assert_eq(vim.api.nvim_get_current_win(), panel_win, '双列切换 diff 时焦点仍在面板')
   local left_opened = vim.api.nvim_win_call(left_diff_win, function() return vim.fn.foldclosed(3) end)
   local right_opened = vim.api.nvim_win_call(diff_win, function() return vim.fn.foldclosed(3) end)
-  assert_eq(left_opened, -1, 'panel zR opens all left diff folds')
-  assert_eq(right_opened, -1, 'panel zR opens all right diff folds in two-column view')
+  assert_eq(left_opened, -1, 'panel zR 展开全部左侧 diff 折叠')
+  assert_eq(right_opened, -1, 'panel zR 在双列视图展开全部右侧 diff 折叠')
 
   vim.api.nvim_win_close(left_diff_win, true)
   vim.api.nvim_win_close(diff_win, true)
@@ -338,13 +338,13 @@ local function test_single_col_disables_folds()
     fold_unchanged = false,
   })
 
-  assert_eq(detached, 1, 'single-column fold disable detaches ufo')
+  assert_eq(detached, 1, '单列布局禁用折叠会分离 ufo')
   assert_eq(vim.api.nvim_get_option_value('foldenable', { win = win }), false,
-    'single-column fold disable turns foldenable off')
+    '单列布局禁用时关闭 foldenable')
   assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = win }), '0',
-    'single-column fold disable hides fold column')
+    '单列布局禁用时隐藏 foldcolumn')
   assert_eq(vim.api.nvim_win_call(win, function() return vim.fn.foldclosed(3) end), -1,
-    'single-column fold disable clears existing folds')
+    '单列布局禁用时清理现有折叠')
 
   package.loaded.ufo = previous_ufo
   vim.api.nvim_win_set_buf(win, previous_buf)
@@ -360,9 +360,9 @@ local function test_scratch_buffer_ownership()
 
   Buffers.wipe_scratch({ owned, foreign })
 
-  assert_true(not vim.api.nvim_buf_is_valid(owned), 'scratch cleanup deletes owned buffers')
+  assert_true(not vim.api.nvim_buf_is_valid(owned), 'scratch 清理会删除带标记的缓冲区')
   assert_true(vim.api.nvim_buf_is_valid(foreign),
-    'scratch cleanup preserves unmarked third-party wipe buffers')
+    'scratch 清理会保留未标记的第三方 wipe 缓冲区')
   vim.api.nvim_buf_delete(foreign, { force = true })
 end
 
@@ -408,30 +408,30 @@ local function test_binary_info_preview()
   }, 'unstaged', false, tmpdir)
 
   assert_true(state.view and state.view.mode == 'single',
-    'extensionless binary renders as a single right-side info buffer')
+    '无扩展名二进制会按单列右侧信息缓冲区渲染')
   local buf = state.view and state.view.b_buf
   local lines = buf and vim.api.nvim_buf_get_lines(buf, 0, -1, false) or {}
   local text = table.concat(lines, '\n')
   assert_true(text:find('Binary file', 1, true) ~= nil,
-    'binary preview displays an English title')
+    '二进制预览显示英文标题')
   assert_true(text:find('Type: Mach-O 64-bit executable', 1, true) ~= nil,
-    'binary preview displays the detected executable type')
+    '二进制预览显示检测到的可执行文件类型')
   assert_true(text:find('Architecture: arm64', 1, true) ~= nil,
-    'binary preview displays the detected architecture')
+    '二进制预览显示检测到的架构')
   assert_true(text:find('Executable: Yes', 1, true) ~= nil,
-    'binary preview displays executable permissions')
+    '二进制预览显示可执行权限')
   assert_true(buf and vim.b[buf].vv_git_binary_info == true,
     'binary preview buffer exposes its ownership marker')
   assert_true(buf and vim.b[buf].vv_git_diff_source == nil,
-    'binary info buffer is not exposed as a textual diff source')
+    '二进制信息缓冲区不会作为文本 diff 来源暴露')
   assert_true(buf and vim.bo[buf].readonly and not vim.bo[buf].modifiable,
-    'binary info buffer is explicitly read-only')
+    '二进制信息缓冲区明确设为只读')
   local highlighted = {}
   for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
     highlighted[mark[4].hl_group] = true
   end
   assert_true(highlighted.VVUtilsFileInfoTitle and highlighted.VVUtilsFileInfoLabel,
-    'binary info buffer applies shared title and label highlights')
+    '二进制信息缓冲区应用了共享标题与标签高亮')
 
   pcall(RightView.close, state)
   vim.cmd('tabclose')
@@ -452,7 +452,7 @@ local function test_conflict_winbar_rejects_stale_callback()
   pending({ branch = 'main', hash = 'abc123', subject = 'stale title' })
 
   assert_eq(vim.api.nvim_get_option_value('winbar', { win = win }), '',
-    'cleared conflict winbar rejects stale async callback')
+    '已清理的冲突 winbar 会拒绝过期异步回调')
 
   Git.conflict_info = original_conflict_info
   vim.api.nvim_set_option_value('winbar', original_winbar, { win = win, scope = 'local' })
@@ -516,7 +516,7 @@ local function test_conflict_hunks_stage_after_last_resolution()
 
   vim.api.nvim_win_set_cursor(win, { 3, 0 })
   accept_ours()
-  assert_eq(#stage_calls, 0, 'accepting a non-final conflict hunk does not stage')
+  assert_eq(#stage_calls, 0, '接受非最终冲突块时不会暂存')
 
   vim.api.nvim_win_set_cursor(win, { 5, 0 })
   accept_ours()
@@ -524,7 +524,7 @@ local function test_conflict_hunks_stage_after_last_resolution()
     'final conflict hunk stages through view root')
   assert_eq(stage_calls[1] and stage_calls[1].path, 'conflicted.txt',
     'final conflict hunk stages the current path')
-  assert_eq(reload_calls, 1, 'successful final conflict resolution reloads once')
+  assert_eq(reload_calls, 1, '最终冲突解决成功后仅重载一次')
   assert_eq(
     table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n'),
     table.concat({ 'start', 'ordinary ours', 'middle', 'diff3 ours', 'end' }, '\n'),
@@ -556,13 +556,13 @@ local function test_right_layout_lifecycle()
 
   local b_win, a_win = layout.ensure(state, true)
   assert_true(vim.api.nvim_win_is_valid(a_win) and vim.api.nvim_win_is_valid(b_win),
-    'right layout creates a real dual-window view')
+    '右侧布局会创建真实双窗口视图')
   state.view.a_win, state.view.b_win = a_win, b_win
 
   local conflict_b, conflict_a, c_win = layout.ensure_conflict(state)
-  assert_eq(conflict_b, b_win, 'conflict layout preserves the main b window')
+  assert_eq(conflict_b, b_win, '冲突布局保留主窗口 b')
   assert_true(vim.api.nvim_win_is_valid(conflict_a) and vim.api.nvim_win_is_valid(c_win),
-    'conflict layout creates real ours and result windows')
+    '冲突布局会创建真实的 ours 与结果窗口')
   assert_true(vim.api.nvim_win_get_position(c_win)[1] > vim.api.nvim_win_get_position(conflict_b)[1],
     'conflict result window is below the dual diff')
 
@@ -572,25 +572,25 @@ local function test_right_layout_lifecycle()
   vim.api.nvim_win_close(conflict_a, true)
 
   local rebuilt_b, rebuilt_a, rebuilt_c = layout.ensure_conflict(state)
-  assert_eq(rebuilt_b, b_win, 'incomplete conflict rebuild preserves the main b window')
+  assert_eq(rebuilt_b, b_win, '未完成重建冲突时保留主窗口 b')
   assert_true(vim.api.nvim_win_is_valid(rebuilt_a) and vim.api.nvim_win_is_valid(rebuilt_c),
-    'incomplete conflict layout is rebuilt')
+    '不完整的冲突布局会被重建')
   assert_true(not vim.api.nvim_win_is_valid(c_win),
-    'conflict rebuild closes the stale result window')
-  assert_eq(#removed, 1, 'conflict rebuild releases the stale result resources exactly once')
-  assert_eq(removed[1], old_c_buf, 'conflict rebuild releases the stale result buffer')
+    '重建冲突布局会关闭过期结果窗口')
+  assert_eq(#removed, 1, '冲突重建仅释放一次过期结果资源')
+  assert_eq(removed[1], old_c_buf, '冲突重建释放过期结果缓冲区')
 
   local c_buf = vim.api.nvim_create_buf(false, true)
   state.view.a_win, state.view.b_win = rebuilt_a, rebuilt_b
   state.view.c_win, state.view.c_buf = rebuilt_c, c_buf
   local single_b, single_a = layout.ensure(state, false)
-  assert_eq(single_b, b_win, 'single layout reuses the main b window')
+  assert_eq(single_b, b_win, '单列布局复用主窗口 b')
   assert_true(single_a == nil and not vim.api.nvim_win_is_valid(rebuilt_a),
-    'leaving conflict closes the ours window')
+    '离开冲突视图会关闭 ours 窗口')
   assert_true(not vim.api.nvim_win_is_valid(rebuilt_c),
-    'leaving conflict closes extra layout windows')
-  assert_eq(#removed, 2, 'each conflict result lifecycle is released exactly once')
-  assert_eq(removed[2], c_buf, 'leaving conflict releases the current result buffer')
+    '离开冲突视图会关闭额外布局窗口')
+  assert_eq(#removed, 2, '每个冲突结果生命周期仅释放一次')
+  assert_eq(removed[2], c_buf, '退出冲突后释放当前结果缓冲区')
 
   vim.api.nvim_buf_delete(old_c_buf, { force = true })
   vim.api.nvim_buf_delete(c_buf, { force = true })
@@ -652,37 +652,37 @@ local function test_staged_scrollbar_source()
   local ready = vim.wait(3000, function()
     return state.view and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
   end)
-  assert_true(ready, 'staged diff right buffer rendered')
+  assert_true(ready, '已渲染 staged 右侧 diff 缓冲区')
 
   local right_maps = {}
   for _, map in ipairs(vim.api.nvim_buf_get_keymap(state.view.b_buf, 'n')) do
     right_maps[map.lhs] = map.callback
   end
-  assert_eq(type(right_maps['-']), 'function', 'right diff buffer installs toggle_stage mapping')
+  assert_eq(type(right_maps['-']), 'function', '右侧 diff 缓冲区安装 toggle_stage 映射')
   right_maps['-']()
-  assert_eq(toggle_stage_calls, 1, 'right diff - invokes toggle_stage handler')
+  assert_eq(toggle_stage_calls, 1, '右侧 diff 中 - 调用 toggle_stage 处理器')
 
   local reconfigured_calls = 0
   RightView.configure({
     on_toggle_stage = function() reconfigured_calls = reconfigured_calls + 1 end,
   })
   right_maps['-']()
-  assert_eq(toggle_stage_calls, 1, 'installed mapping stops calling the replaced handler')
-  assert_eq(reconfigured_calls, 1, 'installed mapping calls the latest configured handler')
+  assert_eq(toggle_stage_calls, 1, '替换映射后不再调用旧处理器')
+  assert_eq(reconfigured_calls, 1, '安装映射调用最新配置的处理器')
 
   local source = ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
   assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
-    'staged right window keeps scrollbar marker track visible')
+    'staged 右侧窗口应持续显示滚动条标记')
   assert_eq(vim.w[state.view.b_win].vv_statuscol_git_disabled, true,
-    'vv-git preview window hides statuscol git markers')
-  assert_eq(source and source.root, tmpdir, 'staged scrollbar source carries git root')
-  assert_eq(source and source.path, 'sample.txt', 'staged scrollbar source carries relative path')
-  assert_eq(source and source.mode, 'staged', 'staged scrollbar source selects cached diff')
-  assert_eq(source and source.side, 'new', 'staged modified file projects onto index side')
+    'vv-git 预览窗口应隐藏 statuscol git 标记')
+  assert_eq(source and source.root, tmpdir, 'staged 滚动条来源携带 git root')
+  assert_eq(source and source.path, 'sample.txt', 'staged 滚动条来源携带相对路径')
+  assert_eq(source and source.mode, 'staged', 'staged 滚动条来源使用缓存 diff')
+  assert_eq(source and source.side, 'new', 'staged 已修改文件映射到 index 侧')
   assert_eq(
     vim.b[state.view.b_buf].vv_git_source_path,
     vim.fs.normalize(tmpdir .. '/sample.txt'),
-    'staged scratch buffer exposes its workspace file path'
+    'staged scratch 缓冲区暴露其工作区文件路径'
   )
 
   RightView.show(state, { is_dir = false, relpath = 'removed.txt', xy = 'D ' }, 'staged', false, tmpdir)
@@ -690,16 +690,16 @@ local function test_staged_scrollbar_source()
     return state.view and state.view.path == 'removed.txt'
       and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
   end)
-  assert_true(deletion_ready, 'staged deletion right buffer rendered')
+  assert_true(deletion_ready, 'staged 删除右侧缓冲区已渲染')
 
   local deletion_source = deletion_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
-  assert_eq(deletion_source and deletion_source.path, 'removed.txt', 'staged deletion carries relative path')
-  assert_eq(deletion_source and deletion_source.side, 'old', 'staged deletion projects onto HEAD side')
+  assert_eq(deletion_source and deletion_source.path, 'removed.txt', 'staged 删除项包含相对路径')
+  assert_eq(deletion_source and deletion_source.side, 'old', 'staged 删除项落到 HEAD 侧')
 
   local preview_win = state.view.b_win
   pcall(RightView.close, state)
   assert_eq(vim.w[preview_win].vv_statuscol_git_disabled, nil,
-    'closing vv-git restores statuscol git markers for the reused window')
+    '关闭 vv-git 会恢复复用窗口的 statuscol Git 标记')
 
   vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'second' })
   state.compare = { from_rev = 'HEAD^', to_rev = 'HEAD' }
@@ -713,18 +713,18 @@ local function test_staged_scrollbar_source()
       and state.view.a_buf and vim.api.nvim_buf_is_valid(state.view.a_buf)
       and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
   end)
-  assert_true(compare_ready, 'revision compare buffers rendered')
+  assert_true(compare_ready, '已渲染 revision 对比缓冲区')
 
   local a_source = compare_ready and vim.b[state.view.a_buf].vv_git_diff_source or nil
   local b_source = compare_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
-  assert_eq(a_source and a_source.from_rev, 'HEAD^', 'compare old source carries from_rev')
-  assert_eq(a_source and a_source.side, 'old', 'compare old source projects old side')
-  assert_eq(b_source and b_source.to_rev, 'HEAD', 'compare new source carries to_rev')
-  assert_eq(b_source and b_source.side, 'new', 'compare new source projects new side')
+  assert_eq(a_source and a_source.from_rev, 'HEAD^', 'compare old source 包含 from_rev')
+  assert_eq(a_source and a_source.side, 'old', 'compare old source 落在旧侧')
+  assert_eq(b_source and b_source.to_rev, 'HEAD', 'compare new source 包含 to_rev')
+  assert_eq(b_source and b_source.side, 'new', 'compare new source 落在新侧')
   assert_eq(vim.w[state.view.a_win].vv_statuscol_git_disabled, nil,
-    'compare old window enables revision statuscol markers')
+    'compare 旧侧窗口应启用 revision statuscol 标记')
   assert_eq(vim.w[state.view.b_win].vv_statuscol_git_disabled, nil,
-    'compare new window enables revision statuscol markers')
+    'compare 新侧窗口应启用 revision statuscol 标记')
 
   local previous_compare_buf = state.view.b_buf
   state.compare = { from_rev = 'HEAD^', to_rev = 'missing-ref' }
@@ -738,10 +738,10 @@ local function test_staged_scrollbar_source()
       and state.view.b_buf ~= previous_compare_buf
       and vim.api.nvim_buf_is_valid(state.view.b_buf)
   end)
-  assert_true(fallback_ready, 'compare falls back to the source revision when target loading fails')
+  assert_true(fallback_ready, '目标版本加载失败时 compare 回退到源版本')
   local fallback_source = fallback_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
   assert_eq(fallback_source and fallback_source.side, 'old',
-    'compare source fallback projects the displayed old revision')
+    'compare 回退时复用源版本到旧侧显示')
 
   pcall(RightView.close, state)
   vim.fn.delete(tmpdir, 'rf')
@@ -767,17 +767,17 @@ local function test_compare_tag_with_head()
   local state = State.create()
   state.git_root = tmpdir
   Compare.start(state, 'v1.0.0', 'v1.0.0', 'v1.0.0..HEAD', function() done = true end)
-  assert_true(vim.wait(3000, function() return done end), 'tag..HEAD compare completed')
-  assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', 'tag ref preserved as compare source')
-  assert_eq(state.compare and state.compare.to_rev, 'HEAD', 'tag compare targets HEAD')
+  assert_true(vim.wait(3000, function() return done end), 'tag 与 HEAD 对比完成')
+  assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', 'tag 作为对比来源 ref 保留')
+  assert_eq(state.compare and state.compare.to_rev, 'HEAD', 'tag 对比目标保持为 HEAD')
   assert_eq(state.compare and state.compare.files[1] and state.compare.files[1].path, 'sample.txt',
-    'tag..HEAD compare returns changed file')
+    'tag..HEAD compare 返回已变更文件')
 
   done = false
   Compare.start_refs(state, 'v1.0.0', 'HEAD', 'v1.0.0', 'v1.0.0..HEAD', function() done = true end)
-  assert_true(vim.wait(3000, function() return done end), 'arbitrary refs compare completed')
-  assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', 'arbitrary refs preserve source ref')
-  assert_eq(state.compare and state.compare.to_rev, 'HEAD', 'arbitrary refs preserve target ref')
+  assert_true(vim.wait(3000, function() return done end), '任意 refs 对比完成')
+  assert_eq(state.compare and state.compare.from_rev, 'v1.0.0', '任意 refs 保留来源 ref')
+  assert_eq(state.compare and state.compare.to_rev, 'HEAD', '任意 refs 保持目标 ref')
 
   State.clear()
   vim.fn.delete(tmpdir, 'rf')
@@ -826,47 +826,47 @@ local function test_compare_file_uses_live_buffer()
       if name:find('/HEAD/sample.txt', 1, true) then ref_buf = buf end
     end
     return ref_buf ~= nil
-  end), 'file compare opens the requested revision buffer')
+  end), 'file compare 打开请求的 revision 缓冲区')
   assert_true(vim.wait(1000, function() return ready_context ~= nil end),
-    'file compare invokes ready callback')
-  assert_eq(ready_context.root, vim.uv.fs_realpath(tmpdir), 'file compare ready context carries root')
-  assert_eq(ready_context.ref, 'HEAD', 'file compare ready context carries ref')
+    'file compare 调用就绪回调')
+  assert_eq(ready_context.root, vim.uv.fs_realpath(tmpdir), 'file compare 就绪上下文携带 root')
+  assert_eq(ready_context.ref, 'HEAD', 'file compare 就绪上下文携带引用')
 
   assert_eq(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)[1], 'unsaved',
-    'file compare includes unsaved buffer lines')
+    'file compare 包含未保存缓冲区行')
   assert_eq(vim.api.nvim_buf_get_lines(ref_buf, 0, -1, false)[1], 'committed',
-    'file compare loads the requested ref')
+    'file compare 加载请求的引用')
 
   local diff_windows = 0
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if vim.api.nvim_get_option_value('diff', { win = win }) then diff_windows = diff_windows + 1 end
   end
-  assert_eq(diff_windows, 2, 'file compare opens a native two-column diff')
+  assert_eq(diff_windows, 2, 'file compare 打开原生双列 diff')
 
   local close_map
   for _, map in ipairs(vim.api.nvim_buf_get_keymap(source_buf, 'n')) do
     if map.lhs == 'q' then close_map = map; break end
   end
-  assert_true(close_map and type(close_map.callback) == 'function', 'file compare installs q close callback')
+  assert_true(close_map and type(close_map.callback) == 'function', 'file compare 安装 q 关闭回调')
   close_map.callback()
-  assert_true(vim.wait(1000, function() return closed end), 'file compare invokes close callback')
-  assert_eq(vim.api.nvim_get_current_tabpage(), source_tab, 'file compare returns to the source tab')
-  assert_true(vim.api.nvim_win_is_valid(source_win), 'file compare keeps the source window')
+  assert_true(vim.wait(1000, function() return closed end), '文件 compare 调用了关闭回调')
+  assert_eq(vim.api.nvim_get_current_tabpage(), source_tab, '文件 compare 返回源 tab')
+  assert_true(vim.api.nvim_win_is_valid(source_win), '文件 compare 保留源窗口')
   assert_eq(vim.api.nvim_get_option_value('diff', { win = source_win }), false,
-    'file compare restores source window diff option')
+    'file compare 恢复源窗口 diff 选项')
 
   local restored_maps = {}
   for _, map in ipairs(vim.api.nvim_buf_get_keymap(source_buf, 'n')) do
     restored_maps[map.lhs] = map
   end
   assert_eq(restored_maps.q and restored_maps.q.desc, 'original q mapping',
-    'file compare restores the original q mapping')
+    'file compare 恢复原始 q 映射')
   assert_eq(restored_maps['<Esc>'] and restored_maps['<Esc>'].desc, 'original escape mapping',
-    'file compare restores the original escape mapping')
+    'file compare 恢复原始 Escape 映射')
   restored_maps.q.callback()
   restored_maps['<Esc>'].callback()
-  assert_true(original_q_called, 'restored q mapping remains callable')
-  assert_true(original_escape_called, 'restored escape mapping remains callable')
+  assert_true(original_q_called, '恢复的 q 映射仍可调用')
+  assert_true(original_escape_called, '恢复的 Escape 映射仍可调用')
 
   local compare_error
   local closed_after_error = false
@@ -876,9 +876,9 @@ local function test_compare_file_uses_live_buffer()
     on_close = function() closed_after_error = true end,
   })
   assert_true(vim.wait(3000, function() return compare_error ~= nil end),
-    'file compare invokes error callback when the ref cannot be loaded')
-  assert_true(compare_error:find('missing%-ref') ~= nil, 'file compare error identifies the missing ref')
-  assert_true(not closed_after_error, 'file compare does not report close when no view opened')
+    'file compare 在无法加载 ref 时调用错误回调')
+  assert_true(compare_error:find('missing%-ref') ~= nil, 'file compare 错误可识别缺失引用')
+  assert_true(not closed_after_error, '未打开视图时 file compare 不会触发 close 回调')
 
   pcall(vim.api.nvim_buf_delete, source_buf, { force = true })
   vim.fn.delete(tmpdir, 'rf')
@@ -911,13 +911,13 @@ local function test_panel_action_keys_are_highlighted()
     end
   end
 
-  assert_true(highlighted.c == true, 'commit action key uses VVGitPanelKey highlight')
-  assert_true(highlighted.p == true, 'push action key uses VVGitPanelKey highlight')
-  assert_true(highlighted.P == true, 'pull action key preserves uppercase P')
-  assert_true(vim.tbl_contains(lines, '  c  Commit 1 staged file'), 'commit hint uses exact lowercase key')
-  assert_true(vim.tbl_contains(lines, '  p  Push 1 commit'), 'single commit uses singular noun')
-  assert_true(vim.tbl_contains(lines, '  P  Pull 2 commits'), 'multiple commits use plural noun')
-  assert_true(not table.concat(lines, '\n'):find('commit%(s%)'), 'panel never renders a parenthesized plural placeholder')
+  assert_true(highlighted.c == true, 'commit 操作键使用 VVGitPanelKey 高亮')
+  assert_true(highlighted.p == true, 'push 操作键使用 VVGitPanelKey 高亮')
+  assert_true(highlighted.P == true, 'pull 操作键保留大写 P')
+  assert_true(vim.tbl_contains(lines, '  c  Commit 1 staged file'), 'commit 提示使用小写 c 键')
+  assert_true(vim.tbl_contains(lines, '  p  Push 1 commit'), '单条提交显示单数名词')
+  assert_true(vim.tbl_contains(lines, '  P  Pull 2 commits'), '多条提交显示复数名词')
+  assert_true(not table.concat(lines, '\n'):find('commit%(s%)'), '面板不会渲染括号复数占位符')
 
   local panel_buf = Panel.create_buf()
   Panel.flush(panel_buf, lines, extmarks, Render.ns)
@@ -929,7 +929,7 @@ local function test_panel_action_keys_are_highlighted()
     if details.hl_group == 'VVGitCommitHint' then hint_priority = details.priority end
   end
   assert_true(key_priority and hint_priority and key_priority > hint_priority,
-    'action key highlight renders above the full-line hint highlight')
+    '操作键高亮应高于整行提示高亮')
   Panel.wipe_buf(panel_buf)
 
   local compare_lines, compare_marks = Render.build({
@@ -945,7 +945,7 @@ local function test_panel_action_keys_are_highlighted()
       if text == '<Esc>' then escape_highlighted = true end
     end
   end
-  assert_true(escape_highlighted, 'compare exit key uses VVGitPanelKey highlight')
+  assert_true(escape_highlighted, 'compare 退出键使用 VVGitPanelKey 高亮')
 end
 
 local function test_repo_info_parser_and_publish()
@@ -956,25 +956,25 @@ local function test_repo_info_parser_and_publish()
     '# branch.upstream origin/main',
     '# branch.ab +1 -2',
   }, '\n'), 'backup\norigin\n'))
-  assert_eq(parsed.branch_name, 'main', 'repo info parses branch name')
-  assert_eq(parsed.upstream, 'origin/main', 'repo info parses upstream')
-  assert_eq(parsed.ahead, 1, 'repo info parses ahead count')
-  assert_eq(parsed.behind, 2, 'repo info parses behind count')
-  assert_eq(table.concat(parsed.remotes, ','), 'backup,origin', 'repo info sorts remotes')
+  assert_eq(parsed.branch_name, 'main', 'repo info 解析分支名')
+  assert_eq(parsed.upstream, 'origin/main', 'repo info 解析上游')
+  assert_eq(parsed.ahead, 1, 'repo info 解析领先数量')
+  assert_eq(parsed.behind, 2, 'repo info 解析落后数量')
+  assert_eq(table.concat(parsed.remotes, ','), 'backup,origin', 'repo info 解析并排序远端')
 
   local unborn = assert(Git._parse_repo_info(table.concat({
     '# branch.oid (initial)',
     '# branch.head main',
   }, '\n'), ''))
-  assert_true(unborn.unborn, 'repo info detects unborn branch')
-  assert_true(unborn.head == nil, 'unborn branch has no HEAD')
+  assert_true(unborn.unborn, 'repo info 检测到未初始化分支')
+  assert_true(unborn.head == nil, 'unborn 分支未设置 HEAD')
 
   local detached = assert(Git._parse_repo_info(table.concat({
     '# branch.oid abcdef1234567890',
     '# branch.head (detached)',
   }, '\n'), 'origin\n'))
-  assert_true(detached.detached, 'repo info detects detached HEAD')
-  assert_eq(detached.branch, 'abcdef1', 'detached branch display uses short hash')
+  assert_true(detached.detached, 'repo info 检测到 detached HEAD')
+  assert_eq(detached.branch, 'abcdef1', 'detached 分支使用短哈希显示')
 
   local tmpdir = vim.fn.tempname()
   local remote = vim.fn.tempname() .. '.git'
@@ -989,19 +989,19 @@ local function test_repo_info_parser_and_publish()
 
   local added
   Git.add_remote(tmpdir, 'origin', remote, function(ok) added = ok end)
-  assert_true(vim.wait(3000, function() return added ~= nil end), 'add_remote callback completed')
-  assert_true(added, 'add_remote succeeds')
+  assert_true(vim.wait(3000, function() return added ~= nil end), 'add_remote 回调完成')
+  assert_true(added, 'add_remote 执行成功')
 
   local published
   Git.publish(tmpdir, 'origin', function(ok) published = ok end)
-  assert_true(vim.wait(3000, function() return published ~= nil end), 'publish callback completed')
-  assert_true(published, 'publish succeeds against local bare remote')
+  assert_true(vim.wait(3000, function() return published ~= nil end), 'publish 回调完成')
+  assert_true(published, 'publish 在本地 bare 仓库中成功')
 
   local info
   Git.repo_info(tmpdir, function(value) info = value end)
-  assert_true(vim.wait(3000, function() return info ~= nil end), 'repo_info callback completed')
-  assert_eq(info.upstream, 'origin/main', 'publish establishes upstream')
-  assert_eq(info.ahead, 0, 'published branch is not ahead')
+  assert_true(vim.wait(3000, function() return info ~= nil end), 'repo_info 回调完成')
+  assert_eq(info.upstream, 'origin/main', 'publish 已建立上游')
+  assert_eq(info.ahead, 0, '已发布分支未领先')
 
   vim.fn.delete(tmpdir, 'rf')
   vim.fn.delete(remote, 'rf')
@@ -1021,20 +1021,20 @@ local function test_public_api_contract()
   assert_eq(
     table.concat(Plugin.get_target_paths(), '\n'),
     '/repo/same.lua\n/repo/sub/nested.lua',
-    'target paths resolve subrepos, deduplicate files, and sort absolute paths'
+    '目标路径会解析子仓库并去重后按绝对路径排序'
   )
   State.clear()
 
   local config_copy = Plugin.config()
   local configured_width = config_copy.width
   config_copy.width = -1
-  assert_eq(Plugin.config().width, configured_width, 'config returns an isolated copy')
+  assert_eq(Plugin.config().width, configured_width, 'config 返回隔离副本')
 
   local depth_ok = Plugin.set_subrepo_depth(2)
-  assert_true(depth_ok, 'public subrepo depth accepts a non-negative integer')
-  assert_eq(Plugin.get_subrepo_depth(), 2, 'public subrepo depth reads the override')
+  assert_true(depth_ok, '公开的 subrepo depth 接受非负整数')
+  assert_eq(Plugin.get_subrepo_depth(), 2, '公开的 subrepo depth 读取覆盖值')
   local invalid_depth = Plugin.set_subrepo_depth(-1)
-  assert_true(not invalid_depth, 'public subrepo depth rejects negative values')
+  assert_true(not invalid_depth, '公开的 subrepo depth 拒绝负数')
   Plugin.set_subrepo_depth(0)
 
   local before_open_calls = 0
@@ -1056,7 +1056,7 @@ local function test_public_api_contract()
     'VVGitCompareStop', 'VVGitCommitShow', 'VVGitWorktree', 'VVGitPublish',
     'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
   }) do
-    assert_eq(vim.fn.exists(':' .. command), 2, 'setup registers :' .. command)
+    assert_eq(vim.fn.exists(':' .. command), 2, 'setup 注册命令：:' .. command)
   end
 
   local invalid_error
@@ -1064,10 +1064,10 @@ local function test_public_api_contract()
     root = '/vv-git/not-a-repository',
     on_error = function(message) invalid_error = message end,
   })
-  assert_true(not invalid_open, 'root-aware open rejects a non-repository')
+  assert_true(not invalid_open, 'root-aware open 拒绝非仓库路径')
   assert_true(vim.wait(1000, function() return invalid_error ~= nil end),
-    'root-aware open invokes error callback')
-  assert_eq(before_open_calls, 0, 'invalid root does not invoke before_open')
+    'root-aware open 已触发错误回调')
+  assert_eq(before_open_calls, 0, '无效 root 不触发 before_open')
 
   local tmpdir = vim.fn.tempname()
   vim.fn.mkdir(tmpdir, 'p')
@@ -1087,19 +1087,19 @@ local function test_public_api_contract()
     on_error = function(message) open_error = message end,
     on_close = function(context) close_context = context end,
   })
-  assert_true(opened, 'root-aware open starts for an explicit repository')
-  assert_eq(before_open_calls, 1, 'fresh open invokes before_open exactly once')
+  assert_true(opened, 'root-aware open 启动显式仓库')
+  assert_eq(before_open_calls, 1, '首次 open 只触发一次')
   assert_true(vim.wait(3000, function() return ready_context ~= nil end),
-    'root-aware open invokes ready callback')
-  assert_true(open_error == nil, 'root-aware open does not report a false error')
-  assert_true(Plugin.is_open(), 'is_open reports the active vv-git tab')
-  assert_eq(ready_context.root, vim.uv.fs_realpath(tmpdir), 'open context carries normalized root')
-  assert_eq(ready_context.path, 'sample.txt', 'open context carries requested path')
-  assert_eq(ready_context.mode, 'workspace', 'open context reports workspace mode')
+    'root-aware open 调用就绪回调')
+  assert_true(open_error == nil, 'root-aware open 不会报告伪错误')
+  assert_true(Plugin.is_open(), 'is_open 返回活跃 vv-git tab')
+  assert_eq(ready_context.root, vim.uv.fs_realpath(tmpdir), 'open context 携带标准化 root')
+  assert_eq(ready_context.path, 'sample.txt', 'open context 携带请求路径')
+  assert_eq(ready_context.mode, 'workspace', 'open context 报告 workspace 模式')
 
   Plugin.toggle_panel()
-  assert_true(Plugin.is_open(), 'hiding the panel keeps the vv-git tab open')
-  assert_true(close_context == nil, 'hiding the panel does not invoke close callback')
+  assert_true(Plugin.is_open(), '隐藏面板后 vv-git tab 保持打开')
+  assert_true(close_context == nil, '隐藏面板不触发 close 回调')
   Plugin.toggle_panel()
 
   local compare_context, compare_error
@@ -1107,33 +1107,33 @@ local function test_public_api_contract()
     root = tmpdir,
     on_ready = function(context) compare_context = context end,
     on_error = function(message) compare_error = message end,
-  }), 'public compare_refs starts with an explicit root')
+  }), 'public compare_refs 使用显式 root 启动')
   assert_true(vim.wait(3000, function() return compare_context ~= nil end),
-    'public compare_refs invokes ready callback')
-  assert_true(compare_error == nil, 'public compare_refs does not report a false error')
-  assert_eq(compare_context.mode, 'compare', 'compare context reports compare mode')
-  assert_eq(compare_context.from_ref, 'HEAD', 'compare context carries source ref')
-  assert_eq(compare_context.to_ref, 'HEAD', 'compare context carries target ref')
-  assert_true(Plugin.stop_compare(), 'stop_compare exits an active comparison')
-  assert_eq(Plugin.get_context().mode, 'workspace', 'stop_compare restores workspace context')
+    'public compare_refs 调用就绪回调')
+  assert_true(compare_error == nil, 'public compare_refs 不会返回伪错误')
+  assert_eq(compare_context.mode, 'compare', 'compare context 报告 compare 模式')
+  assert_eq(compare_context.from_ref, 'HEAD', 'compare context 携带来源 ref')
+  assert_eq(compare_context.to_ref, 'HEAD', 'compare context 携带目标 ref')
+  assert_true(Plugin.stop_compare(), 'stop_compare 结束进行中的对比')
+  assert_eq(Plugin.get_context().mode, 'workspace', 'stop_compare 恢复 workspace context')
 
   local revision_error
   assert_true(Plugin.compare_refs('missing-ref', 'HEAD', {
     root = tmpdir,
     on_error = function(message) revision_error = message end,
-  }), 'public compare_refs accepts an asynchronous comparison request')
+  }), 'public compare_refs 接受异步比较请求')
   assert_true(vim.wait(3000, function() return revision_error ~= nil end),
-    'public compare_refs invokes error callback for an invalid ref')
+    'public compare_refs 为无效引用调用错误回调')
   assert_true(revision_error:find('missing%-ref') ~= nil,
-    'public compare_refs error identifies the invalid ref')
+    'public compare_refs 错误可识别无效引用')
 
   Plugin.close()
   assert_true(vim.wait(1000, function() return close_context ~= nil end),
-    'closing the vv-git tab invokes close callback')
-  assert_true(not Plugin.is_open(), 'is_open clears after the vv-git tab closes')
-  assert_eq(close_context.root, vim.uv.fs_realpath(tmpdir), 'close context preserves repository root')
+    '关闭 vv-git tab 时会触发 close 回调')
+  assert_true(not Plugin.is_open(), 'vv-git tab 关闭后 is_open 为 false')
+  assert_eq(close_context.root, vim.uv.fs_realpath(tmpdir), 'close context 保留仓库 root')
   assert_true(vim.wait(1000, function() return resume_after_close_calls == 1 end),
-    'closing vv-git invokes the matching resume callback exactly once')
+    '关闭 vv-git 时仅触发一次匹配的 resume 回调')
 
   vim.fn.delete(tmpdir, 'rf')
 end

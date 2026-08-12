@@ -33,13 +33,13 @@ end, function(ok, _, idle)
   callbacks[#callbacks + 1] = { 'b1', ok, idle }
 end)
 
-assert(vim.deep_equal(starts, { 'a1', 'b1' }), 'same repo waits while another repo may start')
+assert(vim.deep_equal(starts, { 'a1', 'b1' }), '同仓库必须等待另一个仓库先启动')
 done_a(true)
-assert(vim.deep_equal(starts, { 'a1', 'b1', 'a2' }), 'same repo starts in FIFO order')
+assert(vim.deep_equal(starts, { 'a1', 'b1', 'a2' }), '同仓库按 FIFO 顺序启动')
 assert(callbacks[2][1] == 'a1' and callbacks[2][3] == false,
-  'non-final same-repo callback reports a non-idle queue')
+  '非终态同仓回调应返回队列未空闲')
 assert(callbacks[3][1] == 'a2' and callbacks[3][3] == true,
-  'final same-repo callback reports an idle queue')
+  '最终同仓回调应返回队列空闲')
 
 local recovered = {}
 IndexQueue.enqueue('/repo-c', function()
@@ -54,7 +54,7 @@ end, function(ok)
   recovered[#recovered + 1] = ok
 end)
 assert(vim.deep_equal(recovered, { true, true }),
-  'a thrown starter and duplicate completion cannot wedge or double-finish the queue')
+  '启动失败和重复 completion 不应卡住或重复完成队列')
 
 local Git = require('vv-git.git')
 local repo = vim.fn.tempname()
@@ -68,20 +68,20 @@ end
 local completed = {}
 for _, path in ipairs({ 'a.txt', 'b.txt', 'c.txt' }) do
   Git.stage(repo, { path }, function(ok, err, idle)
-    assert(ok, err or ('rapid stage failed for ' .. path))
+  assert(ok, err or ('快速 stage 失败: ' .. path))
     completed[#completed + 1] = { path, idle }
   end)
 end
 
-assert(vim.wait(3000, function() return #completed == 3 end), 'rapid stage queue completes')
-assert(completed[1][1] == 'a.txt' and completed[1][2] == false, 'first stage remains queued')
-assert(completed[2][1] == 'b.txt' and completed[2][2] == false, 'second stage remains queued')
-assert(completed[3][1] == 'c.txt' and completed[3][2] == true, 'last stage drains queue')
+assert(vim.wait(3000, function() return #completed == 3 end), '快速 stage 队列应全部完成')
+assert(completed[1][1] == 'a.txt' and completed[1][2] == false, '第一个 stage 应保持排队状态')
+assert(completed[2][1] == 'b.txt' and completed[2][2] == false, '第二个 stage 应保持排队状态')
+assert(completed[3][1] == 'c.txt' and completed[3][2] == true, '最后一个 stage 应清空队列')
 
 local status = vim.fn.systemlist({ 'git', '-C', repo, 'status', '--short' })
 table.sort(status)
 assert(vim.deep_equal(status, { 'A  a.txt', 'A  b.txt', 'A  c.txt' }),
-  'rapid stage writes every captured file without index.lock loss')
+  '快速 stage 应写入所有捕获文件且不丢失 index.lock')
 
 vim.fn.delete(repo, 'rf')
-print('vv-git index writer queue: PASS')
+print('PASS: vv-git index 写入队列回归')

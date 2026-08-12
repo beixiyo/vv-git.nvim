@@ -21,6 +21,7 @@
 -- state.block_folds = { [repo_root] = true }  被折叠的整个仓库块（根仓库 state.git_root / 子仓库根；只留标题行）
 -- state.selection = { ['<section_id>\0<relpath>'] = true }  多选集合（仅文件节点）
 -- state.cur_path  = 当前选中文件相对路径
+-- state._root_generation = git_root 每次实际变更时递增，拒绝 A → B → A 的旧回调
 
 local M = {}
 
@@ -41,6 +42,7 @@ function M.create()
       panel = nil,
       view = nil,
       git_root = nil,
+      _root_generation = 0,
       index = nil,
       repo_info = nil,
       tree = nil,
@@ -62,6 +64,22 @@ end
 
 ---@return table?
 function M.current() return current end
+
+---@param state table
+---@return integer
+function M.root_generation(state) return rawget(state, '_root_generation') or 0 end
+
+--- 切换根仓库并立即废弃旧根的行快照与异步 owner
+---@param state table
+---@param root string?
+---@return boolean changed
+function M.set_root(state, root)
+  if state.git_root == root then return false end
+  state.git_root = root
+  state._root_generation = M.root_generation(state) + 1
+  if state.panel then state.panel.id_by_line = {} end
+  return true
+end
 
 function M.clear() current = nil end
 

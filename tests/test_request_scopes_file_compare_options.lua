@@ -47,11 +47,11 @@ local restored_pending_mapping
 vim.api.nvim_buf_call(source_buf, function()
   restored_pending_mapping = vim.fn.maparg('q', 'n', false, true)
 end)
-assert(type(restored_pending_mapping.callback) == 'function', 'pending-time mapping remains callable after close')
+assert(type(restored_pending_mapping.callback) == 'function', 'pending-time 映射在关闭后仍可调用')
 restored_pending_mapping.callback()
-assert_eq(old_pending_mapping_calls, 0, 'producer-start mapping snapshot is not restored')
-assert_eq(new_pending_mapping_calls, 1, 'pending-time mapping replacement is restored on close')
-assert(vim.wo.wrap, 'pending-time window option replacement is restored on close')
+assert_eq(old_pending_mapping_calls, 0, 'pending 启动时的映射快照未恢复')
+assert_eq(new_pending_mapping_calls, 1, 'pending-time 映射替换在关闭后恢复')
+assert(vim.wo.wrap, 'pending-time 窗口选项替换在关闭后恢复')
 
 -- pending listener 建立失败会被收敛，并立即释放 transaction
 local saved_create_autocmd = vim.api.nvim_create_autocmd
@@ -77,9 +77,9 @@ local listener_open_ok, listener_started = pcall(FileCompare.open, 'listener-err
 })
 vim.api.nvim_create_autocmd = saved_create_autocmd
 vim.notify = partial_saved_notify
-assert(listener_open_ok, 'pending listener failure does not escape the public open API')
-assert_eq(listener_started, false, 'pending listener failure reports that no producer started')
-assert_eq(listener_producer_starts, 0, 'listener failure prevents producer startup')
+assert(listener_open_ok, 'pending listener 失败未穿透公开的 open API')
+assert_eq(listener_started, false, 'pending listener 失败报告未启动 producer')
+assert_eq(listener_producer_starts, 0, 'listener 失败阻止 producer 启动')
 vim.wait(50, function() return listener_error_count == 1 end)
 local listener_recovery_ready
 assert(FileCompare.open('listener-recovery', {
@@ -89,7 +89,7 @@ assert(FileCompare.open('listener-recovery', {
 }))
 vim.wait(50, function() return listener_recovery_ready ~= nil end)
 assert(listener_recovery_ready and vim.api.nvim_win_is_valid(listener_recovery_ready.ref_win),
-  'listener setup failure releases active transaction for the next compare')
+  'listener 初始化失败释放下一次 compare 的活动事务')
 local listener_recovery_mapping
 vim.api.nvim_buf_call(vim.api.nvim_win_get_buf(listener_recovery_ready.ref_win), function()
   listener_recovery_mapping = vim.fn.maparg('q', 'n', false, true)
@@ -130,8 +130,8 @@ vim.api.nvim_buf_call(source_buf, function()
   restored_mount_mapping = vim.fn.maparg('q', 'n', false, true)
 end)
 restored_mount_mapping.callback()
-assert_eq(mount_old_mapping_calls, 0, 'pre-BufFilePost mapping snapshot is not restored')
-assert_eq(mount_new_mapping_calls, 1, 'BufFilePost mapping is restored after compare closes')
+assert_eq(mount_old_mapping_calls, 0, 'BufFilePost 之前的映射快照未恢复')
+assert_eq(mount_new_mapping_calls, 1, 'compare 关闭后 BufFilePost 映射已恢复')
 
 -- 内部 diff 建立不会暴露半挂载的 OptionSet 边界
 do
@@ -140,7 +140,7 @@ local mount_option_events = 0
 local previous_state_tab = state.tabpage
 state.tabpage = vim.api.nvim_get_current_tabpage()
 Guard.uninstall()
-assert(Guard.install(), 'mount option test installs the real vv-git open_win guard')
+assert(Guard.install(), 'mount option 测试安装了真实的 vv-git open_win guard')
 local mount_option_group = vim.api.nvim_create_augroup(
   'VVGitFileCompareMountOptionBoundaryTest', { clear = true })
 vim.api.nvim_create_autocmd('OptionSet', {
@@ -159,7 +159,7 @@ assert(FileCompare.open('mount-option-boundary', {
 }))
 vim.wait(50, function() return mount_option_ready ~= nil end)
 assert_eq(mount_option_events, 0,
-  'controlled noautocmd diff setup cannot invoke third-party OptionSet mid-mount')
+  '受控 noautocmd diff 初始化不能在 mount 过程中触发第三方 OptionSet')
 vim.api.nvim_del_augroup_by_id(mount_option_group)
 local mount_option_close
 vim.api.nvim_buf_call(vim.api.nvim_win_get_buf(mount_option_ready.ref_win), function()
@@ -169,7 +169,7 @@ mount_option_close.callback()
 Guard.uninstall()
 state.tabpage = previous_state_tab
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = mount_option_ready.source_win }), '0',
-  'mount option cleanup restores the pre-compare value')
+  'mount 清理后恢复 compare 前的值')
 end
 
 -- ready 阶段的 source option 写入不会被 ref 关闭时的自动 diff 恢复覆盖
@@ -189,9 +189,9 @@ vim.wait(100, function()
       and vim.api.nvim_get_option_value('foldcolumn', { win = ready_option_context.source_win }) == '5'
 end)
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = ready_option_context.source_win }), '5',
-  'ready-time third-party foldcolumn survives direct ref close and scheduled cleanup')
+  'ready-time 时第三方 foldcolumn 在 direct ref close 与计划清理后仍保留')
 assert_eq(#vim.api.nvim_get_autocmds({ event = 'OptionSet' }), option_listeners_before,
-  'direct ref close releases the transaction OptionSet listener')
+  'direct ref close 释放事务 OptionSet 监听')
 
 -- Neovim 自动退出 diff mode 前会采样 non-nested WinEnter 写入
 do
@@ -221,9 +221,9 @@ vim.wait(100, function()
   return vim.w[nonnested_context.source_win].vv_git_file_compare_owner == nil
 end)
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = nonnested_context.source_win }), '6',
-  'cleanup preserves an option write whose OptionSet was suppressed by outer WinEnter')
+  'cleanup 保留了被外层 WinEnter 抑制 OptionSet 的显式写入')
 assert(not vim.api.nvim_get_option_value('wrap', { win = nonnested_context.source_win }),
-  'write identity preserves a non-nested same-value wrap write')
+  'write identity 保留同值非嵌套 wrap 写入')
 end
 
 -- OptionSet dirty identity 会保留第三方显式写入的 A → B → A 最终值
@@ -267,7 +267,7 @@ vim.api.nvim_buf_call(vim.api.nvim_win_get_buf(same_stamp_context.ref_win), func
 end)
 same_stamp_close.callback()
 assert(not vim.api.nvim_get_option_value('wrap', { win = same_stamp_context.source_win }),
-  'source-target OptionSet preserves an explicit same-line same-value write')
+  'source-target OptionSet 保留显式同源同值写入')
 end
 
 -- 后注册的 OptionSet listener 可同步替换首次观察到的值
@@ -302,10 +302,10 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
     end,
   })
   vim.api.nvim_set_option_value('foldcolumn', '5', { win = final_write_context.source_win })
-  assert(final_write_fired, close_kind .. ' executes the later synchronous option writer')
+  assert(final_write_fired, close_kind .. ' 执行后续同步 option 写入者')
   assert_eq(vim.api.nvim_get_option_value('foldcolumn', {
     win = final_write_context.source_win,
-  }), '6', close_kind .. ' reaches the third-party final option before cleanup')
+  }), '6', close_kind .. ' 在 cleanup 前触达第三方最终 option')
 
   if close_kind == 'q' then
     local final_write_close
@@ -327,7 +327,7 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
   end)
   assert_eq(vim.api.nvim_get_option_value('foldcolumn', {
     win = final_write_context.source_win,
-  }), '6', close_kind .. ' preserves the final synchronous option writer')
+  }), '6', close_kind .. ' 保留最终同步 option 写入者')
   pcall(vim.api.nvim_del_augroup_by_id, final_write_group)
 end
 end
@@ -360,7 +360,7 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
       vim.api.nvim_set_option_value('foldcolumn', '6', { win = unwind_context.source_win })
       assert_eq(vim.api.nvim_get_option_value('foldcolumn', {
         win = unwind_context.source_win,
-      }), '6', close_kind .. ' reaches the post-freeze unwind value')
+      }), '6', close_kind .. ' 到达 post-freeze 回滚目标值')
     end,
   })
 
@@ -382,10 +382,10 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
     return not vim.api.nvim_win_is_valid(unwind_context.ref_win)
         and vim.w[unwind_context.source_win].vv_git_file_compare_owner == nil
   end)
-  assert_eq(unwind_fired, 1, close_kind .. ' executes one post-freeze WinClosed writer')
+  assert_eq(unwind_fired, 1, close_kind .. '执行一次 post-freeze WinClosed 写入者')
   assert_eq(vim.api.nvim_get_option_value('foldcolumn', {
     win = unwind_context.source_win,
-  }), '6', close_kind .. ' preserves the post-freeze WinClosed writer')
+  }), '6', close_kind .. '保留 post-freeze WinClosed 写入者')
   pcall(vim.api.nvim_del_augroup_by_id, unwind_group)
 end
 end
@@ -429,9 +429,9 @@ vim.wait(100, function()
   return not vim.api.nvim_win_is_valid(post_freeze_same_context.ref_win)
       and vim.w[post_freeze_same_context.source_win].vv_git_file_compare_owner == nil
 end)
-assert(post_freeze_events > 0, 'post-freeze same-value writer emits a real OptionSet event')
+assert(post_freeze_events > 0, 'post-freeze 同值写入在 emit 真实 OptionSet 事件')
 assert(not vim.api.nvim_get_option_value('wrap', { win = post_freeze_same_context.source_win }),
-  'post-freeze same-value writer survives cleanup')
+  'post-freeze 同值写入在 cleanup 后仍保留')
 vim.api.nvim_del_augroup_by_id(post_freeze_group)
 end
 
@@ -484,11 +484,11 @@ vim.wait(100, function()
   return not vim.api.nvim_win_is_valid(late_enter_context.ref_win)
       and vim.w[late_enter_context.source_win].vv_git_file_compare_owner == nil
 end)
-assert(late_enter_injected, 'test registers the writer after the cleanup capture listener')
-assert_eq(late_enter_fired, 1, 'late WinEnter writer runs after the capture listener')
+assert(late_enter_injected, '测试在 cleanup capture listener 之后注册 writer')
+assert_eq(late_enter_fired, 1, 'late WinEnter writer 在 capture listener 后执行')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', {
   win = late_enter_context.source_win,
-}), '6', 'late WinEnter writer survives final option restoration')
+}), '6', '晚到的 WinEnter writer 在最终 option 恢复后仍生效')
 vim.api.nvim_del_augroup_by_id(late_enter_group)
 end
 
@@ -516,9 +516,9 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
   }))
   vim.wait(50, function() return existing_diff_context ~= nil end)
   assert(vim.api.nvim_get_option_value('diff', { win = existing_source_win }),
-    close_kind .. ' keeps the pre-existing source in diff while mounted')
+    close_kind .. ' 保持挂载期间原有 source 的 diff 状态')
   assert(vim.api.nvim_get_option_value('diff', { win = existing_peer_win }),
-    close_kind .. ' keeps the caller-owned peer in diff while mounted')
+    close_kind .. ' 保持挂载期间 caller-owned peer 的 diff 状态')
 
   if close_kind == 'q' then
     local existing_diff_close
@@ -537,9 +537,9 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
         and vim.w[existing_source_win].vv_git_file_compare_owner == nil
   end)
   assert(vim.api.nvim_get_option_value('diff', { win = existing_source_win }),
-    close_kind .. ' preserves the caller-owned source diff state')
+    close_kind .. '保留 caller-owned source 的 diff 状态')
   assert(vim.api.nvim_get_option_value('diff', { win = existing_peer_win }),
-    close_kind .. ' preserves the caller-owned peer diff state')
+    close_kind .. '保留 caller-owned peer 的 diff 状态')
 
   for _, win in ipairs({ existing_source_win, existing_peer_win }) do
     vim.api.nvim_win_call(win, function() vim.cmd('noautocmd diffoff') end)
@@ -557,7 +557,7 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
   local isolated_source_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_call(isolated_source_win, function() vim.cmd('diffthis') end)
   assert(vim.api.nvim_get_option_value('diff', { win = isolated_source_win }),
-    close_kind .. ' starts from a caller-owned isolated diff state')
+    close_kind .. ' 从 caller-owned 孤立 diff 状态启动')
 
   local isolated_context
   Git.show = function(_, _, _, callback) callback({ close_kind }) end
@@ -585,7 +585,7 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
         and vim.w[isolated_source_win].vv_git_file_compare_owner == nil
   end)
   assert(vim.api.nvim_get_option_value('diff', { win = isolated_source_win }),
-    close_kind .. ' restores the caller-owned isolated diff state')
+    close_kind .. '恢复 caller-owned 孤立 diff 状态')
   vim.api.nvim_win_call(isolated_source_win, function() vim.cmd('noautocmd diffoff') end)
 end
 end
@@ -634,9 +634,9 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
     return not vim.api.nvim_win_is_valid(context.ref_win)
         and vim.w[source_win].vv_git_file_compare_owner == nil
   end)
-  assert_eq(writer_calls, 1, close_kind .. ' executes the post-freeze diff writer')
+  assert_eq(writer_calls, 1, close_kind .. '执行 post-freeze diff writer')
   assert_eq(vim.api.nvim_get_option_value('diff', { win = source_win }), false,
-    close_kind .. ' preserves the explicit post-freeze diff=false')
+    close_kind .. '保留显式的 post-freeze diff=false')
   vim.api.nvim_del_augroup_by_id(group)
 end
 end
@@ -659,7 +659,7 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
   vim.wait(50, function() return context ~= nil end)
   vim.api.nvim_set_option_value('diff', false, { win = source_win })
   assert_eq(vim.api.nvim_get_option_value('diff', { win = source_win }), false,
-    close_kind .. ' records explicit diff=false before close')
+    close_kind .. '关闭前记录显式 diff=false')
   if close_kind == 'q' then
     local close
     vim.api.nvim_buf_call(vim.api.nvim_win_get_buf(context.ref_win), function()
@@ -675,7 +675,7 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
         and vim.w[source_win].vv_git_file_compare_owner == nil
   end)
   assert_eq(vim.api.nvim_get_option_value('diff', { win = source_win }), false,
-    close_kind .. ' preserves ready-time explicit diff=false')
+    close_kind .. '保留 ready-time 的显式 diff=false')
 end
 end
 
@@ -724,9 +724,9 @@ for _, close_kind in ipairs({ 'q', 'direct-source', 'direct-ref' }) do
     return not vim.api.nvim_win_is_valid(context.ref_win)
         and vim.w[source_win].vv_git_file_compare_owner == nil
   end)
-  assert_eq(writer_calls, 1, close_kind .. ' executes the earlier WinClosed writer')
+  assert_eq(writer_calls, 1, close_kind .. '执行更早的 WinClosed writer')
   assert_eq(vim.api.nvim_get_option_value('diff', { win = source_win }), false,
-    close_kind .. ' preserves earlier WinClosed explicit diff=false')
+    close_kind .. '保留更早的 WinClosed 显式 diff=false')
   vim.api.nvim_del_augroup_by_id(group)
 end
 end
@@ -775,9 +775,9 @@ vim.wait(100, function()
   return not vim.api.nvim_win_is_valid(explicit_diff_context.ref_win)
       and vim.w[explicit_diff_source_win].vv_git_file_compare_owner == nil
 end)
-assert_eq(explicit_diff_events, 1, 'post-freeze explicit diff writer executes once')
+assert_eq(explicit_diff_events, 1, 'post-freeze 显式 diff writer 仅执行一次')
 assert_eq(vim.api.nvim_get_option_value('diff', { win = explicit_diff_source_win }), false,
-  'post-freeze explicit diff=false overrides the pre-existing source state')
+  'post-freeze 显式 diff=false 覆盖原有 source 状态')
 pcall(vim.api.nvim_win_call, explicit_diff_peer_win, function() vim.cmd('noautocmd diffoff') end)
 vim.api.nvim_win_close(explicit_diff_peer_win, true)
 vim.api.nvim_buf_delete(explicit_diff_peer_buf, { force = true })
@@ -817,11 +817,11 @@ vim.wait(100, function()
       and vim.w[option_replace_context.source_win].vv_git_file_compare_owner == nil
 end)
 assert(vim.api.nvim_buf_is_valid(replacement_buf),
-  'owner recheck does not wipe the caller-owned replacement buffer')
+  '所有权复检不应清空 caller-owned replacement buffer')
 assert_eq(vim.api.nvim_win_get_buf(option_replace_context.source_win), replacement_buf,
-  'owner recheck does not replace the caller-owned buffer')
+  '所有权复检不应替换 caller-owned buffer')
 assert_eq(vim.api.nvim_buf_get_lines(replacement_buf, 0, -1, false)[1], 'unsaved replacement',
-  'owner recheck preserves unsaved replacement contents')
+  '所有权复检保留未保存的 replacement 内容')
 vim.bo[replacement_buf].bufhidden = 'hide'
 vim.api.nvim_win_set_buf(option_replace_context.source_win, source_buf)
 vim.api.nvim_buf_delete(replacement_buf, { force = true })
@@ -874,9 +874,9 @@ for _, case in ipairs({
     return not vim.api.nvim_win_is_valid(early_context.ref_win)
         and vim.w[early_source_win].vv_git_file_compare_owner == nil
   end)
-  assert_eq(early_fired, 1, case.name .. ' executes the earlier replacement handler')
+  assert_eq(early_fired, 1, case.name .. '执行更早的 replacement handler')
   assert(not vim.api.nvim_win_is_valid(early_context.ref_win),
-    case.name .. ' closes stale ref UI after the scheduled exact-owner check')
+    case.name .. '计划的 exact-owner 检查后关闭过时 ref UI')
   assert(vim.api.nvim_buf_is_valid(early_replacement),
     case.name .. ' preserves the caller-owned wipe buffer')
   assert_eq(vim.api.nvim_win_get_buf(early_source_win), early_replacement,
@@ -888,7 +888,7 @@ for _, case in ipairs({
   vim.api.nvim_win_set_buf(early_source_win, source_buf)
   if case.expected ~= nil then
     assert_eq(vim.api.nvim_get_option_value(case.option, { win = early_source_win }), case.expected,
-      case.name .. ' restores the explicit source option when the source returns')
+      case.name .. ' 在 source 返回时恢复显式 source 选项')
   end
   vim.api.nvim_buf_delete(early_replacement, { force = true })
   vim.api.nvim_del_augroup_by_id(early_group)
@@ -932,7 +932,7 @@ vim.wait(50, function() return unrelated_context ~= nil end)
 unrelated_armed = true
 vim.api.nvim_set_option_value('foldcolumn', '9', { win = unrelated_win })
 unrelated_armed = false
-assert_eq(unrelated_switched, 1, 'earlier unrelated handler switches current window once')
+assert_eq(unrelated_switched, 1, '更早的 unrelated 处理器仅切回当前窗口一次')
 
 local unrelated_close
 vim.api.nvim_buf_call(vim.api.nvim_win_get_buf(unrelated_context.ref_win), function()
@@ -944,9 +944,9 @@ vim.wait(100, function()
       and vim.w[unrelated_source_win].vv_git_file_compare_owner == nil
 end)
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = unrelated_source_win }), '0',
-  'unrelated event cannot claim the FileCompare source snapshot')
+  'unrelated 事件不能接管 FileCompare source 快照')
 assert_eq(vim.api.nvim_get_option_value('foldcolumn', { win = unrelated_win }), '9',
-  'unrelated window retains its own option value')
+  'unrelated 窗口保留自身选项值')
 vim.api.nvim_del_augroup_by_id(unrelated_group)
 vim.api.nvim_win_close(unrelated_win, true)
 vim.api.nvim_buf_delete(unrelated_buf, { force = true })
@@ -955,4 +955,4 @@ end
 Git.show = original_show
 UGit.root = original_root
 State.clear()
-print('vv-git request scopes file compare options: PASS')
+print('PASS: vv-git request scopes 文件比较选项')

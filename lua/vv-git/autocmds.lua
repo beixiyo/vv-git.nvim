@@ -11,6 +11,7 @@ local State = require('vv-git.state')
 local RightView = require('vv-git.right.view')
 local Guard = require('vv-git.guard')
 local Async = require('vv-utils.async')
+local Discard = require('vv-git.left.discard')
 
 local M = {}
 local setup_scope = Async.scope({ cancel_previous = true })
@@ -134,6 +135,7 @@ function M.setup(handlers, config)
         end
         -- 还原全局 nvim_open_win；此后第三方浮窗在任何 tab 都不再经过我们
         pcall(Guard.uninstall)
+        Discard.cancel()
         handlers.on_closed(state)
         State.clear()
       end
@@ -170,10 +172,12 @@ function M.setup(handlers, config)
       local view = state.view
       if not view then return end
       if state.tabpage ~= vim.api.nvim_get_current_tabpage() then return end
+
       local win = vim.api.nvim_get_current_win()
       local function stale(w, expected_buf)
         return w and vim.api.nvim_win_is_valid(w) and w == win and expected_buf ~= args.buf
       end
+
       if stale(view.b_win, view.b_buf) or stale(view.a_win, view.a_buf) then
         RightView.close(state)
         -- view 没了，若 panel 也藏着（<leader>b）则 tab 无用途 → 回收

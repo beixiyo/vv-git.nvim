@@ -1,4 +1,4 @@
--- vv-git panel width state integration
+-- vv-git 面板宽度状态集成
 -- Run: nvim --headless -u NONE -l tests/test_panel_state.lua
 
 local source = debug.getinfo(1, 'S').source:sub(2)
@@ -33,17 +33,17 @@ git.setup({
   keymap_toggle_panel = false,
 })
 
-assert(git.open({ root = tmp }), 'vv-git should open in a temporary repository')
-assert(vim.api.nvim_win_get_width(0) == 31, 'invalid persisted width should fall back to config')
+assert(git.open({ root = tmp }), 'vv-git 应在临时仓库打开')
+assert(vim.api.nvim_win_get_width(0) == 31, '无效的持久化宽度应回退到配置值')
 
 vim.cmd('vertical resize 43')
 vim.api.nvim_exec_autocmds('WinResized', {})
 vim.wait(250, function() return values.width == 43 end)
-assert(values.width == 43, 'real :vertical resize should persist after debounce')
+assert(values.width == 43, ':vertical resize 应在防抖后持久化')
 
 vim.cmd('tabclose')
 vim.wait(100, function() return not git.is_open() end)
-assert(values.width == 43, 'direct :tabclose should flush the latest panel width')
+assert(values.width == 43, '直接 :tabclose 应刷新最近一次面板宽度')
 
 vim.fn.delete(tmp, 'rf')
-print('vv-git panel state: PASS')
+print('PASS: vv-git 面板状态')

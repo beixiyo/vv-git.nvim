@@ -56,20 +56,20 @@ assert(Plugin.open({
   on_ready = function() ready = true end,
   on_error = function(err) open_error = err end,
 }))
-assert(vim.wait(3000, function() return ready end), open_error or 'repository did not open')
+assert(vim.wait(3000, function() return ready end), open_error or '仓库未打开')
 
 local state = State.get()
 local first = Tree.leaf_at(state.tree.staged, 'a.txt')
-assert(first, 'staged a.txt node is missing')
+assert(first, '未找到 staged a.txt 节点')
 RightView.show(state, first, 'staged', false, state.git_root)
 assert(vim.wait(3000, function()
   return state.view and state.view.path == 'a.txt'
-end), 'a.txt diff did not open')
+end), 'a.txt diff 未打开')
 
 local first_win = state.view.a_win or state.view.b_win
 local first_buf = vim.api.nvim_win_get_buf(first_win)
 vim.api.nvim_set_current_win(first_win)
-local rapid_toggle = assert(mapping(first_buf, '-'), 'diff buffer has no stage mapping')
+local rapid_toggle = assert(mapping(first_buf, '-'), 'diff 缓冲区未设置 stage 映射')
 local unstage_calls = {}
 local original_unstage = Git.unstage
 Git.unstage = function(root_arg, paths, callback, opts)
@@ -89,20 +89,20 @@ Git.unstage = original_unstage
 assert(
   unstage_calls[1] and unstage_calls[1][1] == 'a.txt'
     and unstage_calls[2] and unstage_calls[2][1] == 'b.txt',
-  'rapid toggles must capture a.txt then b.txt: ' .. vim.inspect(unstage_calls)
+  '快速连续操作应先捕获 a.txt 再捕获 b.txt: ' .. vim.inspect(unstage_calls)
 )
-assert(rapid_done, 'rapid toggles did not unstage both files:\n' .. git({ 'status', '--short' }))
+assert(rapid_done, '快速连续操作未将两个文件都设置为 unstaged:\n' .. git({ 'status', '--short' }))
 
 assert(vim.wait(3000, function()
   return state.view and state.view.path == 'b.txt' and state.view.section == 'unstaged'
-end), 'rapid toggles settle on the last captured file')
+end), '快速连续操作应停留在最后捕获文件')
 
 local status = git({ 'status', '--short' })
 assert(
   status:find(' M a.txt', 1, true) and status:find(' M b.txt', 1, true),
-  'both files must be unstaged after two toggles:\n' .. status
+  '两次切换后都应为 unstaged:\n' .. status
 )
 
 Plugin.close()
 vim.fn.delete(repo, 'rf')
-print('vv-git right toggle stage: PASS')
+print('PASS: vv-git 右侧快速切换 stage 回归')

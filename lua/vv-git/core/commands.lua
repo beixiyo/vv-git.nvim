@@ -9,16 +9,18 @@ local Editor = require('vv-utils.editor')
 local Async = require('vv-utils.async')
 local Keymaps = require('vv-git.core.keymaps')
 local FilePolicy = require('vv-git.file_policy')
+local Subrepo = require('vv-git.subrepo')
+local Discard = require('vv-git.left.discard')
 
 local L = {}
 
 -- commit / push / pull 是单仓库操作：路由到 panel 光标所在节点的所属仓库
 -- （「对你正看着的仓库下手」，可预测）；光标不在任何节点上则回退父仓库根
 ---@param state table
----@return string root
+---@return string? root
 local function cursor_root(state)
   local id = Keymaps.id_under_cursor(state)
-  return (id and id.root) or state.git_root
+  return Subrepo.current_root(state, id and id.root)
 end
 
 ---@param deps { controller:table, config:fun():table }
@@ -30,14 +32,31 @@ function L.new(deps)
   local function config() return deps.config() end
   local function binary(path) return FilePolicy.is_binary(path, config().binary) end
 
+  ---@param state table
+  ---@return boolean
+  local function panel_is_alive(state)
+    if not state.panel then return true end
+    return state.panel.buf
+        and vim.api.nvim_buf_is_valid(state.panel.buf)
+        and state.panel.win
+        and vim.api.nvim_win_is_valid(state.panel.win)
+  end
+
   ---@param request vv-utils.async.Request
   ---@param state table
   ---@param owner_root string
+  ---@param owner_generation integer
   ---@return boolean
-  local function owns_context(request, state, owner_root)
-    return request:is_current()
-        and State.is_current(state)
+  local function owns_state(state, owner_root, owner_generation)
+    return State.is_current(state)
+        and not state._closing
         and state.git_root == owner_root
+        and State.root_generation(state) == owner_generation
+        and panel_is_alive(state)
+  end
+
+  local function owns_context(request, state, owner_root, owner_generation)
+    return request:is_current() and owns_state(state, owner_root, owner_generation)
   end
 
   local function new_cancel_bag()
@@ -178,11 +197,12 @@ function L.new(deps)
       -- tcd 成功后再废弃旧 root 的在途请求并提交上下文切换
       if controller._cancel_root_requests then controller._cancel_root_requests() end
       M._cancel_command_requests()
+      Discard.cancel()
 
       RightView.close(state)
       require('vv-git.compare').stop(state)
 
-      state.git_root = target
+      State.set_root(state, target)
       state.cur_path = nil
       state.selection = {}
       state.folds = {}
@@ -195,24 +215,33 @@ function L.new(deps)
 
   M._commit = State.guarded(function(state)
     if not state.git_root then return end
+
     local owner_root = state.git_root
+    local owner_generation = State.root_generation(state)
     local root = cursor_root(state)
+
+    if not root then return end
     local request = request_scope:begin({ key = 'commit' })
 
     Git.has_staged(root, function(has)
-      if not owns_context(request, state, owner_root) then return end
+      if not owns_context(request, state, owner_root, owner_generation) then return end
 
       local function open_prompt()
-        if not owns_context(request, state, owner_root) then return end
+        if not owns_context(request, state, owner_root, owner_generation) then return end
 
         local dispose_prompt = Prompt.open({
           git_root = root,
           has_staged = has,
           is_current = function()
-            return owns_context(request, state, owner_root)
+            return owns_context(request, state, owner_root, owner_generation)
           end,
           on_success = function()
-            if not request:finish() or not State.is_current(state) or state.git_root ~= owner_root then return end
+            if not request:finish()
+                or not State.is_current(state)
+                or state.git_root ~= owner_root
+                or State.root_generation(state) ~= owner_generation then
+              return
+            end
             state._block_hint = root
             controller.refresh()
           end,
@@ -230,7 +259,7 @@ function L.new(deps)
         vim.ui.select({ 'Commit ALL working tree', 'Cancel' }, {
           prompt = 'No staged changes. Commit all working tree changes instead?',
         }, function(choice)
-          if not owns_context(request, state, owner_root) then return end
+          if not owns_context(request, state, owner_root, owner_generation) then return end
           if choice == 'Commit ALL working tree' then
             open_prompt()
           else
@@ -245,17 +274,27 @@ function L.new(deps)
     if not state.git_root then return end
 
     local owner_root = state.git_root
+    local owner_generation = State.root_generation(state)
     local root = cursor_root(state)
+
+    if not root then return end
+
     local request = request_scope:begin({ key = 'net:' .. action })
     local fn = Git[action]
 
     vim.notify('[vv-git] ' .. action .. '...', vim.log.levels.INFO)
+
     local cancel = fn(root, function(ok, out)
-      if not request:finish() or not State.is_current(state) or state.git_root ~= owner_root then return end
+      local refresh = request:finish() and owns_state(state, owner_root, owner_generation)
+      local reason = request:reason()
+
+      if reason ~= 'finished' and reason ~= 'invalidated' and reason ~= 'owner-invalidated' then return end
+
       local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
       local prefix = ok and ('[vv-git] ' .. action .. ' succeeded') or ('[vv-git] ' .. action .. ' failed')
+
       vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
-      if ok then controller.refresh() end
+      if ok and refresh then controller.refresh() end
     end)
     if type(cancel) == 'function' then request:set_cancel(cancel) end
   end)
@@ -265,14 +304,19 @@ function L.new(deps)
 
   M._publish = State.guarded(function(state)
     if not state.git_root then return end
+
     local owner_root = state.git_root
+    local owner_generation = State.root_generation(state)
     local root = cursor_root(state)
+
+    if not root then return end
+
     local request = request_scope:begin({ key = 'publish' })
     local add_cancel, cancel_all = new_cancel_bag()
     request:set_cancel(cancel_all)
 
     local function current()
-      return owns_context(request, state, owner_root)
+      return owns_context(request, state, owner_root, owner_generation)
     end
 
     local function stop()
@@ -308,13 +352,21 @@ function L.new(deps)
       local function publish_to(remote, remote_added)
         if not current() then return end
         vim.notify('[vv-git] Publishing ' .. info.branch_name .. ' to ' .. remote .. '...', vim.log.levels.INFO)
+
         add_cancel(Git.publish(root, remote, function(ok, out)
-          if not request:finish() or not State.is_current(state) or state.git_root ~= owner_root then return end
+          if not request:finish()
+              or not State.is_current(state)
+              or state.git_root ~= owner_root
+              or State.root_generation(state) ~= owner_generation then
+            return
+          end
+
           local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
           local prefix = ok
               and ('[vv-git] Published ' .. info.branch_name .. ' to ' .. remote)
               or ('[vv-git] Publish failed' .. (remote_added and ' (origin was added)' or ''))
           vim.notify(prefix .. (out and ('\n' .. out) or ''), level)
+
           if ok or remote_added then
             state._block_hint = root
             controller.refresh()
@@ -345,8 +397,10 @@ function L.new(deps)
 
       vim.ui.input({ prompt = 'Remote URL for origin: ' }, function(url)
         if not current() then return end
+
         url = url and vim.trim(url) or ''
         if url == '' then stop(); return end
+
         add_cancel(Git.add_remote(root, 'origin', url, function(ok, out)
           if not current() then return end
           if not ok then
@@ -354,6 +408,7 @@ function L.new(deps)
             vim.notify('[vv-git] Add origin failed' .. (out and ('\n' .. out) or ''), vim.log.levels.ERROR)
             return
           end
+
           publish_to('origin', true)
         end))
       end)
@@ -370,14 +425,20 @@ function L.new(deps)
       -- 目录属性视图没有可跳转的文件，别把 `:edit` 指到一个目录上
       if view.node and view.node.is_dir then return end
 
-      abspath = (view.root or state.git_root) .. '/' .. view.path
+      local root = Subrepo.current_root(state, view.root)
+      if not root then return end
+
+      abspath = root .. '/' .. view.path
       if view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
         row = vim.api.nvim_win_get_cursor(view.b_win)[1]
       end
     else
       local id = Keymaps.id_under_cursor(state)
       if not id or not id.node or id.node.is_dir then return end
-      abspath = (id.root or state.git_root) .. '/' .. id.node.relpath
+
+      local root = Subrepo.current_root(state, id.root)
+      if not root then return end
+      abspath = root .. '/' .. id.node.relpath
     end
 
     if binary(abspath) then
@@ -408,6 +469,7 @@ function L.new(deps)
 
   M._yank_abs_path = State.guarded(function(state)
     if not state.git_root then return end
+
     local cur_win = vim.api.nvim_get_current_win()
     local view = state.view
     local relpath, root
@@ -420,37 +482,79 @@ function L.new(deps)
       local id = Keymaps.id_under_cursor(state)
       if not id or not id.node then return end
       relpath = id.node.relpath
-      root = id.root
+      root = Subrepo.current_root(state, id.root)
+      if not root then return end
     end
 
-    local abs = vim.fs.normalize((root or state.git_root) .. '/' .. relpath)
+    root = Subrepo.current_root(state, root)
+    if not root then return end
+    local abs = vim.fs.normalize(root .. '/' .. relpath)
     Editor.copy_path({ path = abs, title = 'vv-git' })
   end)
 
   M._system_open = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id or not id.node then return end
-    local abspath = vim.fs.normalize((id.root or state.git_root) .. '/' .. id.node.relpath)
+
+    local root = Subrepo.current_root(state, id.root)
+    if not root then return end
+
+    local abspath = vim.fs.normalize(root .. '/' .. id.node.relpath)
     require('vv-utils.sys').open_default(abspath)
   end)
 
   M._execute = State.guarded(function(state)
     local id = Keymaps.id_under_cursor(state)
     if not id or not id.node or id.node.is_dir then return end
-    local abspath = vim.fs.normalize((id.root or state.git_root) .. '/' .. id.node.relpath)
 
+    local root = Subrepo.current_root(state, id.root)
+    if not root then return end
+
+    local abspath = vim.fs.normalize(root .. '/' .. id.node.relpath)
     local plan, err = require('vv-utils.exec').resolve(abspath)
+
     if not plan then
       vim.notify('vv-git: ' .. (err or ('cannot run ' .. abspath)), vim.log.levels.WARN)
       return
     end
 
-    local prompt = 'vv-git execute?\n  ' .. table.concat(plan.cmd, ' ')
-    if vim.fn.confirm(prompt, '&Yes\n&No', 2) ~= 1 then return end
+    local owner_root = state.git_root
+    local owner_generation = State.root_generation(state)
+    local request = request_scope:begin({ key = 'execute' })
+    local confirm_handle
 
-    vim.cmd('botright 15new')
-    vim.fn.jobstart(plan.cmd, { term = true, cwd = vim.fs.dirname(abspath) })
-    vim.cmd('startinsert')
+    local function current()
+      return owns_context(request, state, owner_root, owner_generation)
+          and Subrepo.current_root(state, root) == root
+    end
+
+    local function cancel()
+      request:dispose()
+    end
+
+    confirm_handle = require('vv-utils.exec').confirm.open({
+      path = abspath,
+      cwd = plan.cwd or vim.fs.dirname(abspath),
+      cmd = plan.cmd,
+      target = plan.target,
+      notify_prefix = 'vv-git',
+
+      on_confirm = function()
+        if not current() then
+          request:dispose()
+          return
+        end
+        if not request:finish() then return end
+        vim.cmd('botright 15new')
+        vim.fn.jobstart(plan.cmd, { term = true, cwd = plan.cwd or vim.fs.dirname(abspath) })
+        vim.cmd('startinsert')
+      end,
+      on_cancel = cancel,
+    })
+
+    if type(confirm_handle) == 'table' and type(confirm_handle.close) == 'function' then
+      request:set_disposer(confirm_handle.close)
+    end
   end)
 
   return M
