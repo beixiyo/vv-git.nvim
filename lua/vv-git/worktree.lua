@@ -1,15 +1,21 @@
 -- worktree.lua — 管理当前仓库的 git worktree：创建、切换、删除与刷新
 
 local Git = require('vv-git.git')
+local Keys = require('vv-utils.keys')
+local Async = require('vv-utils.async')
+local State = require('vv-git.state')
+local Create = require('vv-git.worktree.create')
+local Remove = require('vv-git.worktree.remove')
 
 local git_icons = require('vv-icons').raw.git
 local BRANCH_ICON = (git_icons.git_branches or {}).glyph or ''
 local BRANCH_ICON_HL = (git_icons.git_branches or {}).hl or 'VVGitPanelBranch'
 local CUR_MARK = '●'
 local DESC = 'vv-git-worktree: '
-local FOOTER_TEXT = ' ↵ switch  a add  d remove  r refresh  ? help '
+local SWITCH_KEY = Keys.display('<CR>')
+local FOOTER_TEXT = ' ' .. SWITCH_KEY .. ' switch  a add  d remove  r refresh  ? help '
 local FOOTER = {
-  { ' ↵ ', 'VVGitWorktreeFooterKey' },
+  { ' ' .. SWITCH_KEY .. ' ', 'VVGitWorktreeFooterKey' },
   { 'switch  ', 'VVGitWorktreeFooterText' },
   { 'a ', 'VVGitWorktreeFooterKey' },
   { 'add  ', 'VVGitWorktreeFooterText' },
@@ -63,150 +69,6 @@ local function render_line(wt, is_current, ref_w)
   return line, segs
 end
 
-local function default_path(root, branch, config)
-  local resolver = config and config.path
-  if type(resolver) ~= 'function' then
-    local short = branch:match('/([^/]+)$') or branch
-    return vim.fs.joinpath(root, '.worktrees', short)
-  end
-  local ok, path = pcall(resolver, root, branch)
-  if ok and type(path) == 'string' and path ~= '' then return vim.fs.normalize(path) end
-  vim.notify('[vv-git] worktree.path must return a non-empty path; using the default', vim.log.levels.WARN)
-  local short = branch:match('/([^/]+)$') or branch
-  return vim.fs.joinpath(root, '.worktrees', short)
-end
-
-local function input(opts, cb)
-  vim.ui.input(opts, function(value)
-    value = value and vim.trim(value) or ''
-    if value ~= '' then cb(value) end
-  end)
-end
-
-local function create_worktree(root, layout_root, refresh, config)
-  vim.ui.select({ 'Existing branch', 'New branch' }, { prompt = 'Create worktree:' }, function(kind)
-    if not kind then return end
-    Git.branches(root, function(branches, err)
-      if not branches then
-        vim.notify('[vv-git] ' .. (err or 'No branches found'), vim.log.levels.ERROR)
-        return
-      end
-
-      local function add(path, base, branch)
-        Git.worktree_add(root, { path = vim.fs.normalize(path), base = base, branch = branch }, function(ok, add_err)
-          if not ok then
-            vim.notify('[vv-git] ' .. (add_err or 'Could not create worktree'), vim.log.levels.ERROR)
-            return
-          end
-          vim.notify('[vv-git] Created worktree at ' .. path, vim.log.levels.INFO)
-          refresh()
-        end)
-      end
-
-      if kind == 'Existing branch' then
-        Git.worktree_list(root, function(worktrees, list_err)
-          if not worktrees then
-            vim.notify('[vv-git] ' .. (list_err or 'Could not list worktrees'), vim.log.levels.ERROR)
-            return
-          end
-          local occupied = {}
-          for _, wt in ipairs(worktrees) do if wt.branch then occupied[wt.branch] = true end end
-          local available = vim.tbl_filter(function(branch) return not occupied[branch] end, branches)
-          if #available == 0 then
-            vim.notify('[vv-git] Every local branch already has a worktree', vim.log.levels.INFO)
-            return
-          end
-          vim.ui.select(available, { prompt = 'Branch for new worktree:' }, function(branch)
-            if not branch then return end
-            input({ prompt = 'Worktree path: ', default = default_path(layout_root, branch, config), completion = 'dir' }, function(path)
-              add(path, branch)
-            end)
-          end)
-        end)
-        return
-      end
-
-      input({ prompt = 'New branch: ' }, function(branch)
-        vim.ui.select(branches, { prompt = 'Base ref:' }, function(base)
-          if not base then return end
-          input({ prompt = 'Worktree path: ', default = default_path(layout_root, branch, config), completion = 'dir' }, function(path)
-            add(path, base, branch)
-          end)
-        end)
-      end)
-    end, kind == 'Existing branch' and { local_only = true } or nil)
-  end)
-end
-
-local function remove_worktree(root, wt, refresh)
-  if wt.is_main then
-    vim.notify('[vv-git] The main worktree cannot be removed', vim.log.levels.WARN)
-    return
-  end
-  if vim.fs.normalize(wt.path) == vim.fs.normalize(root) then
-    vim.notify('[vv-git] Switch to another worktree before removing the current one', vim.log.levels.WARN)
-    return
-  end
-  if wt.locked then
-    vim.notify('[vv-git] Locked worktrees must be unlocked explicitly before removal', vim.log.levels.WARN)
-    return
-  end
-
-  if vim.fn.confirm('Remove worktree ' .. wt.path .. '?', '&Yes\n&No', 2) ~= 1 then return end
-
-  Git.worktree_remove(root, wt.path, nil, function(ok, err)
-    if ok then
-      vim.notify('[vv-git] Removed worktree ' .. wt.path, vim.log.levels.INFO)
-      refresh()
-      return
-    end
-
-    -- 列表可能已被外部进程改变；重新检查 locked/dirty 后才决定是否允许 force
-    Git.worktree_list(root, function(worktrees, list_err)
-      if not worktrees then
-        vim.notify('[vv-git] ' .. (list_err or err or 'Could not inspect worktree'), vim.log.levels.ERROR)
-        return
-      end
-
-      local target
-      local normalized = vim.fs.normalize(wt.path)
-
-      for _, current in ipairs(worktrees) do
-        if vim.fs.normalize(current.path) == normalized then target = current; break end
-      end
-
-      if not target then
-        vim.notify('[vv-git] ' .. (err or 'Worktree no longer exists'), vim.log.levels.ERROR)
-        refresh()
-        return
-      end
-
-      if target.locked then
-        vim.notify('[vv-git] Locked worktrees must be unlocked explicitly before removal', vim.log.levels.WARN)
-        refresh()
-        return
-      end
-
-      Git.worktree_dirty(target.path, function(dirty, status_err)
-        if dirty ~= true then
-          vim.notify('[vv-git] ' .. (status_err or err or 'Git refused to remove the worktree'), vim.log.levels.ERROR)
-          return
-        end
-        local force_prompt = (err or 'Git refused to remove the dirty worktree') .. '\nForce removal?'
-        if vim.fn.confirm(force_prompt, '&Yes\n&No', 2) ~= 1 then return end
-        Git.worktree_remove(root, target.path, { force = true }, function(forced, force_err)
-          if not forced then
-            vim.notify('[vv-git] ' .. (force_err or 'Could not remove worktree'), vim.log.levels.ERROR)
-            return
-          end
-          vim.notify('[vv-git] Force removed worktree ' .. target.path, vim.log.levels.WARN)
-          refresh()
-        end)
-      end)
-    end)
-  end)
-end
-
 ---@param state table
 ---@param on_select fun(wt: VVGitWorktree)
 function M.open_manager(state, on_select, config)
@@ -221,22 +83,56 @@ function M.open_manager(state, on_select, config)
   local list = {}
   local layout_root = root
   local refresh_id = 0
+  local action_scope = Async.scope({ cancel_previous = true })
+  local manager_closed = false
+  local owner_generation = State.root_generation(state)
+  local lifecycle_ids = {}
+
+  local function is_active()
+    if manager_closed then return false end
+    if state.git_root ~= root or state._closing then return false end
+    if State.root_generation(state) ~= owner_generation then return false end
+    -- 测试和外部调用方可能只提供 `{ git_root = ... }`；仅完整打开的 vv-git state 强制单例身份。
+    if state.tabpage and State.has() and not State.is_current(state) then return false end
+    return vim.api.nvim_buf_is_valid(buf)
+        and (not win or vim.api.nvim_win_is_valid(win))
+  end
+
   local function close()
-    if win and vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+    if manager_closed then return end
+    manager_closed = true
+    action_scope:cancel()
+    for _, id in ipairs(lifecycle_ids) do pcall(vim.api.nvim_del_autocmd, id) end
+    lifecycle_ids = {}
+    if win and vim.api.nvim_win_is_valid(win) then pcall(vim.api.nvim_win_close, win, true) end
+  end
+
+  lifecycle_ids[#lifecycle_ids + 1] = vim.api.nvim_create_autocmd('BufWipeout', {
+    buffer = buf,
+    once = true,
+    callback = close,
+  })
+  if state.tabpage then
+    lifecycle_ids[#lifecycle_ids + 1] = vim.api.nvim_create_autocmd('TabClosed', {
+      callback = function()
+        if not vim.api.nvim_tabpage_is_valid(state.tabpage) then close() end
+      end,
+    })
   end
 
   local render
   local function refresh()
+    if manager_closed then return end
     refresh_id = refresh_id + 1
     local request = refresh_id
     Git.worktree_list(root, function(next_list, err)
-      if request ~= refresh_id then return end
+      if request ~= refresh_id or not is_active() then return end
       render(next_list, err)
     end)
   end
 
   render = function(next_list, err)
-    if not vim.api.nvim_buf_is_valid(buf) then return end
+    if not is_active() then return end
     if not next_list or #next_list == 0 then
       vim.notify('[vv-git] ' .. (err or 'No worktrees'), vim.log.levels.WARN)
       close()
@@ -316,7 +212,7 @@ function M.open_manager(state, on_select, config)
 
   local function choose()
     local wt = selected()
-    if not wt then return end
+    if not wt or not is_active() then return end
     close()
     on_select(wt)
   end
@@ -327,11 +223,21 @@ function M.open_manager(state, on_select, config)
   map('<CR>', choose, 'switch')
   map('l', choose, 'switch')
   map('<Right>', choose, 'switch')
-  map('a', function() create_worktree(root, layout_root, refresh, config) end, 'add')
+  map('a', function()
+    Create.run(root, layout_root, refresh, config, {
+      is_active = is_active,
+      begin = function() return action_scope:begin({ key = 'action' }) end,
+    })
+  end, 'add')
 
   map('d', function()
     local wt = selected()
-    if wt then remove_worktree(root, wt, refresh) end
+    if wt then
+      Remove.run(root, wt, refresh, {
+        is_active = is_active,
+        begin = function() return action_scope:begin({ key = 'action' }) end,
+      })
+    end
   end, 'remove')
 
   map('r', refresh, 'refresh')
