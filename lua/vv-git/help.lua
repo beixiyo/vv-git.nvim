@@ -2,42 +2,55 @@
 -- action 分类/图标、title 等 vv-git 特有的数据在这里维护
 
 local HelpPanel = require('vv-utils.help_panel')
+local VVIcons = require('vv-icons')
+local RawIcons = VVIcons.raw
+
+local RawUI = RawIcons.ui
+local RawGit = RawIcons.git
+
+local function shared(cat, entry)
+  return { cat = cat, icon = entry.glyph, icon_hl = entry.hl }
+end
+
+local function custom(cat, icon, icon_hl)
+  return { cat = cat, icon = icon, icon_hl = icon_hl }
+end
 
 local M = {}
 
 local ACTIONS = {
-  next_item     = { cat = 'Navigate', icon = '' },
-  prev_item     = { cat = 'Navigate', icon = '' },
-  first_file    = { cat = 'Navigate', icon = '' },
-  last_file     = { cat = 'Navigate', icon = '' },
-  open          = { cat = 'Navigate', icon = '' },
-  expand        = { cat = 'Navigate', icon = '' },
-  close_node    = { cat = 'Navigate', icon = '' },
-  click_toggle  = { cat = 'Navigate', icon = '' },
-  goto_file     = { cat = 'Navigate', icon = '' },
-  system_open   = { cat = 'Open as',  icon = '' },
-  execute       = { cat = 'Open as',  icon = '󰐊' },
-  toggle_select = { cat = 'Select',   icon = '󰒆' },
-  toggle_stage  = { cat = 'Git',      icon = '' },
-  discard       = { cat = 'Git',      icon = '' },
-  commit        = { cat = 'Git',      icon = '' },
-  commit_show   = { cat = 'Git',      icon = '' },
-  compare_pick  = { cat = 'Git',      icon = '' },
-  worktree_pick = { cat = 'Git',      icon = '󰘬' },
-  accept_ours   = { cat = 'Conflict', icon = '󰅁' },
-  accept_theirs = { cat = 'Conflict', icon = '󰅂' },
-  push          = { cat = 'Remote',   icon = '' },
-  pull          = { cat = 'Remote',   icon = '' },
-  publish       = { cat = 'Remote',   icon = '' },
-  yank_abs_path = { cat = 'Yank',     icon = '' },
-  scroll_diff_down = { cat = 'View',  icon = '' },
-  scroll_diff_up   = { cat = 'View',  icon = '' },
-  next_chunk    = { cat = 'View',     icon = '' },
-  prev_chunk    = { cat = 'View',     icon = '' },
-  refresh       = { cat = 'View',     icon = '' },
-  toggle_diff_folds = { cat = 'View', icon = '' },
-  help          = { cat = 'View',     icon = '' },
-  __close       = { cat = 'View',     icon = '' },
+  next_item     = shared('Navigate', RawUI.move_down),
+  prev_item     = shared('Navigate', RawUI.move_up),
+  first_file    = shared('Navigate', RawUI.arrow_up),
+  last_file     = shared('Navigate', RawUI.arrow_down),
+  open          = shared('Navigate', RawUI.arrow_right),
+  expand        = shared('Navigate', RawUI.fold_open),
+  close_node    = shared('Navigate', RawUI.fold_closed),
+  click_toggle  = shared('Navigate', RawUI.cursor),
+  goto_file     = shared('Navigate', RawUI.find_file),
+  system_open   = shared('Open as', RawUI.window),
+  execute       = custom('Open as', '󰐊', 'MiniIconsGreen'),
+  toggle_select = shared('Select', RawUI.list),
+  toggle_stage  = shared('Git', RawGit.git_added),
+  discard       = shared('Git', RawGit.git_removed),
+  commit        = shared('Git', RawUI.save),
+  commit_show   = shared('Git', RawGit.git_log),
+  compare_pick  = shared('Git', RawGit.git_diff),
+  worktree_pick = shared('Git', RawGit.git_branches),
+  accept_ours   = custom('Conflict', '󰅁', 'DiagnosticWarn'),
+  accept_theirs = custom('Conflict', '󰅂', 'DiagnosticWarn'),
+  push          = custom('Remote', '󰁝', 'MiniIconsGreen'),
+  pull          = custom('Remote', '󰁅', 'MiniIconsBlue'),
+  publish       = custom('Remote', '󰁝', 'MiniIconsOrange'),
+  yank_abs_path = shared('Yank', RawUI.copy),
+  scroll_diff_down = shared('View', RawUI.move_down),
+  scroll_diff_up   = shared('View', RawUI.move_up),
+  next_chunk    = shared('View', RawUI.arrow_down),
+  prev_chunk    = shared('View', RawUI.arrow_up),
+  refresh       = custom('View', '󰑐', 'MiniIconsCyan'),
+  toggle_diff_folds = shared('View', RawUI.fold_open),
+  help          = shared('View', RawUI.keymaps),
+  __close       = shared('View', RawUI.quit),
 }
 
 local CATEGORIES = { 'Navigate', 'Open as', 'Select', 'Git', 'Conflict', 'Remote', 'Yank', 'View' }
@@ -51,7 +64,8 @@ function M.open(state)
     actions     = ACTIONS,
     categories  = CATEGORIES,
     title       = 'vv-git keymaps',
-    title_icon  = '',
+    title_icon  = RawGit.git_status.glyph,
+    title_icon_hl = RawGit.git_status.hl,
     filetype    = 'vv-git-help',
   })
 end

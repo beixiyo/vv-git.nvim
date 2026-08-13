@@ -7,10 +7,22 @@ local State = require('vv-git.state')
 local Create = require('vv-git.worktree.create')
 local Remove = require('vv-git.worktree.remove')
 
-local git_icons = require('vv-icons').raw.git
-local BRANCH_ICON = (git_icons.git_branches or {}).glyph or ''
-local BRANCH_ICON_HL = (git_icons.git_branches or {}).hl or 'VVGitPanelBranch'
+local VVIcons = require('vv-icons')
+local RawIcons = VVIcons.raw
+local RawUI = RawIcons.ui
+local RawGit = RawIcons.git
+
+local BRANCH_ENTRY = RawGit.git_branches or {}
+local BRANCH_ICON = BRANCH_ENTRY.glyph or ''
+local BRANCH_ICON_HL = BRANCH_ENTRY.hl or 'VVGitPanelBranch'
+
+local ADD_ENTRY = RawUI.new_file or {}
+local REMOVE_ENTRY = RawGit.git_removed or {}
+local HELP_ENTRY = RawUI.keymaps or {}
+local CLOSE_ENTRY = RawUI.quit or {}
+local REFRESH_ICON = '󰑐'
 local CUR_MARK = '●'
+
 local DESC = 'vv-git-worktree: '
 local SWITCH_KEY = Keys.display('<CR>')
 local FOOTER_TEXT = ' ' .. SWITCH_KEY .. ' switch  a add  d remove  r refresh  ? help '
@@ -246,12 +258,15 @@ function M.open_manager(state, on_select, config)
     require('vv-utils.help_panel').open({
       source_buf = buf, desc_prefix = DESC,
       actions = {
-        switch = { cat = 'Worktree', icon = BRANCH_ICON }, add = { cat = 'Worktree', icon = '+' },
-        remove = { cat = 'Worktree', icon = '-' }, refresh = { cat = 'View', icon = '' },
-        help = { cat = 'View', icon = '' }, close = { cat = 'View', icon = '' },
+        switch = { cat = 'Worktree', icon = BRANCH_ENTRY.glyph or '', icon_hl = BRANCH_ENTRY.hl },
+        add = { cat = 'Worktree', icon = ADD_ENTRY.glyph or '', icon_hl = ADD_ENTRY.hl },
+        remove = { cat = 'Worktree', icon = REMOVE_ENTRY.glyph or '', icon_hl = REMOVE_ENTRY.hl },
+        refresh = { cat = 'View', icon = REFRESH_ICON, icon_hl = 'MiniIconsCyan' },
+        help = { cat = 'View', icon = HELP_ENTRY.glyph or '', icon_hl = HELP_ENTRY.hl },
+        close = { cat = 'View', icon = CLOSE_ENTRY.glyph or '', icon_hl = CLOSE_ENTRY.hl },
       },
       categories = { 'Worktree', 'View' }, title = 'worktree keymaps',
-      title_icon = BRANCH_ICON, filetype = 'vv-git-worktree-help',
+      title_icon = BRANCH_ICON, title_icon_hl = BRANCH_ICON_HL, filetype = 'vv-git-worktree-help',
     })
   end, 'help')
   map('q', close, 'close')
