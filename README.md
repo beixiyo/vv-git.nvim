@@ -2,6 +2,8 @@
   <h1>vv-git.nvim</h1>
   <p>English | <a href="./README.zh-CN.md">中文</a></p>
   <img src="https://github.com/beixiyo/vv-git.nvim/releases/download/assets-2026-07-25/vv-git.png" alt="vv-git demo" width="900" />
+  <img src="https://github.com/beixiyo/vv-git.nvim/releases/download/assets-2026-07-25/vv-git-conflict.png" alt="Conflict resolution" width="900" />
+  <img src="https://github.com/beixiyo/vv-git.nvim/releases/download/assets-2026-07-25/vv-git-help.png" alt="Keymap help" width="900" />
   <p>Want my Neovim configuration? See <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>A VS Code-style two-column Git diff view with dedicated tab isolation and automatic folding of unchanged code</em>
   <p>
@@ -243,10 +245,14 @@ git.get_node_dir()
   on_ready = function(context) end,  -- panel / revision data is ready
   on_error = function(message) end,
   on_close = function(context) end,  -- the entire vv-git tab has closed
+  on_goto_file = function(context) end, -- optional: override gf; by default vv-git closes and edits the file
 }
 ```
 
 `get_context()` and callbacks receive a stable snapshot containing `root`, `path`, `mode`, `layout`, `panel_visible`, `from_ref`, and `to_ref`.
+
+The `on_goto_file` context contains `root`, `path`, `abspath`, and optional `row`. When this callback is
+provided, `gf` keeps vv-git open and delegates file opening and return navigation to the caller.
 
 `compare_file` opens a native vertical diff for the current buffer or worktree file and includes unsaved lines. It additionally accepts `bufnr`; callback contexts include `root`, `path`, `ref`, `bufnr`, `source_win`, and `ref_win`.
 

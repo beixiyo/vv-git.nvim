@@ -2,6 +2,8 @@
   <h1>vv-git.nvim</h1>
   <p><a href="./README.md">English</a> | 中文</p>
   <img src="https://github.com/beixiyo/vv-git.nvim/releases/download/assets-2026-07-25/vv-git.png" alt="vv-git 演示" width="900" />
+  <img src="https://github.com/beixiyo/vv-git.nvim/releases/download/assets-2026-07-25/vv-git-conflict.png" alt="冲突解决" width="900" />
+  <img src="https://github.com/beixiyo/vv-git.nvim/releases/download/assets-2026-07-25/vv-git-help.png" alt="快捷键帮助" width="900" />
   <p>想要我的 Neovim 配置？查看 <a href="https://github.com/beixiyo/dotfiles">dotfiles</a></p>
   <em>VSCode 风格 git diff 双栏视图 — 专属 tab 隔离、自动折叠未改动代码</em>
   <p>
@@ -244,10 +246,14 @@ git.get_node_dir()
   on_ready = function(context) end,  -- 面板 / revision 数据就绪
   on_error = function(message) end,
   on_close = function(context) end,  -- 整个 vv-git tab 关闭时触发
+  on_goto_file = function(context) end, -- 可选：接管 gf；省略时关闭 vv-git 并编辑文件
 }
 ```
 
 `get_context()` 与回调中的 `context` 是稳定快照，包含 `root`、`path`、`mode`、`layout`、`panel_visible`、`from_ref`、`to_ref`。
+
+`on_goto_file` 的 context 包含 `root`、`path`、`abspath` 与可选 `row`。传入回调后，
+`gf` 不会自动关闭 vv-git；调用方负责打开文件和设计返回路径。未传时保持原有行为。
 
 `compare_file` 在当前 tab 的原生垂直分屏中对比当前 buffer 或 worktree 文件与指定 ref 中的同一文件，并包含未保存内容。它额外接受 `bufnr`，回调 context 提供 `root`、`path`、`ref`、`bufnr`、`source_win`、`ref_win`。
 
