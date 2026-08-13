@@ -418,17 +418,18 @@ function L.new(deps)
   M._goto_file = State.guarded(function(state)
     local cur_win = vim.api.nvim_get_current_win()
     local view = state.view
-    local abspath, row = nil, nil
+    local abspath, root, relpath, row = nil, nil, nil, nil
 
     if view and view.path
         and (cur_win == view.a_win or cur_win == view.b_win) then
       -- 目录属性视图没有可跳转的文件，别把 `:edit` 指到一个目录上
       if view.node and view.node.is_dir then return end
 
-      local root = Subrepo.current_root(state, view.root)
+      root = Subrepo.current_root(state, view.root)
       if not root then return end
 
-      abspath = root .. '/' .. view.path
+      relpath = view.path
+      abspath = root .. '/' .. relpath
       if view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
         row = vim.api.nvim_win_get_cursor(view.b_win)[1]
       end
@@ -436,13 +437,24 @@ function L.new(deps)
       local id = Keymaps.id_under_cursor(state)
       if not id or not id.node or id.node.is_dir then return end
 
-      local root = Subrepo.current_root(state, id.root)
+      root = Subrepo.current_root(state, id.root)
       if not root then return end
-      abspath = root .. '/' .. id.node.relpath
+      relpath = id.node.relpath
+      abspath = root .. '/' .. relpath
     end
 
     if binary(abspath) then
       require('vv-utils.sys').open_default(abspath)
+      return
+    end
+
+    if type(state._on_goto_file) == 'function' then
+      controller._invoke_callback(state._on_goto_file, {
+        root = root,
+        path = relpath,
+        abspath = abspath,
+        row = row,
+      })
       return
     end
 

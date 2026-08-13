@@ -161,6 +161,7 @@ function L.new(deps)
 
         if root == s.git_root then
           controller._register_on_close(s, opts.on_close)
+          controller._set_on_goto_file(s, opts.on_goto_file)
           vim.api.nvim_set_current_tabpage(s.tabpage)
           if relpath then
             s.cur_path = relpath
@@ -248,6 +249,7 @@ function L.new(deps)
     }
     state._panel_width = config().width
     controller._register_on_close(state, opts.on_close)
+    controller._set_on_goto_file(state, opts.on_goto_file)
 
     -- 先注销上一轮残留的注册，保证全局至多一个 WinResized 监听
     if resize_autocmd_id then

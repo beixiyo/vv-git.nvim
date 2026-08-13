@@ -69,6 +69,13 @@ local M = {}
 ---@field on_ready? fun(context:VVGitContext)
 ---@field on_error? fun(message:string)
 ---@field on_close? fun(context:VVGitContext)
+---@field on_goto_file? fun(context:VVGitGotoFileContext) 自定义 gf 跳转策略；省略时关闭 vv-git 并在原 tab 编辑文件
+
+---@class VVGitGotoFileContext
+---@field root string
+---@field path string 仓库内相对路径
+---@field abspath string
+---@field row? integer diff 右侧光标行；调用方应按目标文件实际行数截断
 
 ---@class VVGitOpenOpts: VVGitCallbacks
 ---@field root? string Git 仓库或仓库内目录；省略时从当前 cwd 探测
@@ -350,6 +357,12 @@ function M._register_on_close(state, on_close)
 end
 
 ---@param state table
+---@param on_goto_file function?
+function M._set_on_goto_file(state, on_goto_file)
+  state._on_goto_file = type(on_goto_file) == 'function' and on_goto_file or nil
+end
+
+---@param state table
 function M._emit_closed(state)
   local callbacks = state._on_close or {}
   state._on_close = nil
@@ -386,14 +399,18 @@ function M.show_commit(ref, opts)
     M._invoke_callback(opts.on_error, 'ref is required')
     return false
   end
+
   local opened = M.open({
     root = opts.root,
     path = opts.path,
     on_close = opts.on_close,
+    on_goto_file = opts.on_goto_file,
     on_error = opts.on_error,
   })
+
   if not opened then return false end
   M._commit_show(ref, opts.on_ready, opts.on_error)
+
   return true
 end
 
@@ -412,18 +429,23 @@ end
 ---@return boolean started
 function M.compare_refs(from_ref, to_ref, opts)
   opts = opts or {}
+
   if not from_ref or from_ref == '' or not to_ref or to_ref == '' then
     M._invoke_callback(opts.on_error, 'from_ref and to_ref are required')
     return false
   end
+
   local opened = M.open({
     root = opts.root,
     path = opts.path,
     on_close = opts.on_close,
+    on_goto_file = opts.on_goto_file,
     on_error = opts.on_error,
   })
+
   if not opened then return false end
   M._compare_refs(from_ref, to_ref, opts.on_ready, opts.on_error)
+
   return true
 end
 

@@ -1079,13 +1079,14 @@ local function test_public_api_contract()
   vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'initial' })
   vim.fn.writefile({ 'changed' }, tmpdir .. '/sample.txt')
 
-  local ready_context, close_context, open_error
+  local ready_context, close_context, goto_context, open_error
   local opened = Plugin.open({
     root = tmpdir,
     path = 'sample.txt',
     on_ready = function(context) ready_context = context end,
     on_error = function(message) open_error = message end,
     on_close = function(context) close_context = context end,
+    on_goto_file = function(context) goto_context = context end,
   })
   assert_true(opened, 'root-aware open 启动显式仓库')
   assert_eq(before_open_calls, 1, '首次 open 只触发一次')
@@ -1096,6 +1097,20 @@ local function test_public_api_contract()
   assert_eq(ready_context.root, vim.uv.fs_realpath(tmpdir), 'open context 携带标准化 root')
   assert_eq(ready_context.path, 'sample.txt', 'open context 携带请求路径')
   assert_eq(ready_context.mode, 'workspace', 'open context 报告 workspace 模式')
+
+  local panel_buf = State.get().panel.buf
+  local goto_map
+  for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(panel_buf, 'n')) do
+    if mapping.lhs == 'gf' then goto_map = mapping; break end
+  end
+  assert_true(goto_map and type(goto_map.callback) == 'function', 'panel 安装 gf 跳转回调')
+  goto_map.callback()
+  assert_true(vim.wait(1000, function() return goto_context ~= nil end), '自定义 gf 策略收到文件上下文')
+  assert_eq(goto_context.root, vim.uv.fs_realpath(tmpdir), 'gf context 携带仓库 root')
+  assert_eq(goto_context.path, 'sample.txt', 'gf context 携带仓库相对路径')
+  assert_eq(goto_context.abspath, vim.uv.fs_realpath(tmpdir) .. '/sample.txt', 'gf context 携带绝对路径')
+  assert_true(Plugin.is_open(), '自定义 gf 策略保留 vv-git tab')
+  assert_true(close_context == nil, '自定义 gf 策略不触发 close 回调')
 
   Plugin.toggle_panel()
   assert_true(Plugin.is_open(), '隐藏面板后 vv-git tab 保持打开')

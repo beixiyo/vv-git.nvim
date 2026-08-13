@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.12 - 2026-08-13
+
+### Added
+
+- **自定义文件跳转**：`open`、`show_commit` 与 revision 对比 API 新增可选 `on_goto_file(context)` 回调
+
 ## 0.3.11 - 2026-08-10
 
 ### Changed
