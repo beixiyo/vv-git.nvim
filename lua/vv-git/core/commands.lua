@@ -418,7 +418,7 @@ function L.new(deps)
   M._goto_file = State.guarded(function(state)
     local cur_win = vim.api.nvim_get_current_win()
     local view = state.view
-    local abspath, root, relpath, row = nil, nil, nil, nil
+    local abspath, root, relpath, row, col = nil, nil, nil, nil, nil
 
     if view and view.path
         and (cur_win == view.a_win or cur_win == view.b_win) then
@@ -430,8 +430,10 @@ function L.new(deps)
 
       relpath = view.path
       abspath = root .. '/' .. relpath
-      if view.b_win and vim.api.nvim_win_is_valid(view.b_win) then
-        row = vim.api.nvim_win_get_cursor(view.b_win)[1]
+      if vim.api.nvim_win_is_valid(cur_win) then
+        local cursor = vim.api.nvim_win_get_cursor(cur_win)
+        row = cursor[1]
+        col = cursor[2]
       end
     else
       local id = Keymaps.id_under_cursor(state)
@@ -454,6 +456,7 @@ function L.new(deps)
         path = relpath,
         abspath = abspath,
         row = row,
+        col = col,
       })
       return
     end
@@ -474,7 +477,8 @@ function L.new(deps)
     if row then
       -- rev/compare 视图行数可能多于工作区文件，clamp 防越界（否则 set_cursor 静默失效，光标落第 1 行）
       row = math.min(row, vim.api.nvim_buf_line_count(0))
-      pcall(vim.api.nvim_win_set_cursor, 0, { row, 0 })
+      local target_line = vim.api.nvim_buf_get_lines(0, row - 1, row, false)[1] or ''
+      pcall(vim.api.nvim_win_set_cursor, 0, { row, math.min(col or 0, #target_line) })
       pcall(vim.cmd, 'normal! zz')
     end
   end)

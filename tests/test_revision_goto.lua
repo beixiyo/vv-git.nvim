@@ -33,16 +33,27 @@ assert(vim.wait(3000, function()
 end), 'show_commit 应将 gf 策略传入 revision state')
 
 local state = assert(State.current())
+vim.api.nvim_set_current_win(state.panel.win)
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<CR>', true, false, true), 'x', false)
+
+assert(vim.wait(1000, function()
+  return state.view and state.view.b_win and vim.api.nvim_win_is_valid(state.view.b_win)
+end), 'revision 应创建可跳转的 diff 窗口')
+
+vim.api.nvim_set_current_win(state.view.b_win)
+vim.api.nvim_win_set_cursor(state.view.b_win, { 1, 3 })
 local goto_map
-for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(state.panel.buf, 'n')) do
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(vim.api.nvim_win_get_buf(state.view.b_win), 'n')) do
   if mapping.lhs == 'gf' then goto_map = mapping; break end
 end
-assert(goto_map and type(goto_map.callback) == 'function', 'revision panel 应安装 gf 回调')
+assert(goto_map and type(goto_map.callback) == 'function', 'revision diff 窗口应安装 gf 回调')
 goto_map.callback()
 
 assert(vim.wait(1000, function() return goto_context ~= nil end), 'gf 应调用自定义跳转策略')
 assert(goto_context.root == vim.uv.fs_realpath(tmpdir), 'gf context 应包含仓库 root')
 assert(goto_context.path == 'sample.txt', 'gf context 应包含相对路径')
+assert(goto_context.row == 1, 'gf context 应包含当前 diff 行')
+assert(goto_context.col == 3, 'gf context 应包含当前 diff 列')
 assert(Plugin.is_open(), '自定义 gf 策略应保留 vv-git tab')
 assert(close_count == 0, '自定义 gf 策略不应触发 close 回调')
 

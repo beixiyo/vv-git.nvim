@@ -75,7 +75,8 @@ local M = {}
 ---@field root string
 ---@field path string 仓库内相对路径
 ---@field abspath string
----@field row? integer diff 右侧光标行；调用方应按目标文件实际行数截断
+---@field row? integer diff 窗口光标行；调用方应按目标文件实际行数截断
+---@field col? integer diff 窗口光标列（0-based byte index）；调用方应按目标行实际字节长度截断
 
 ---@class VVGitOpenOpts: VVGitCallbacks
 ---@field root? string Git 仓库或仓库内目录；省略时从当前 cwd 探测
