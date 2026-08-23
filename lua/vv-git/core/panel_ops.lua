@@ -160,7 +160,7 @@ end
   end
 
   -- 从右侧 buffer 切换左栏中的上/下一个文件。只移动 panel 光标，不把焦点
-  -- 切到 panel；RightView 的 restore 机制会在异步 show 完成后回到触发窗口。
+  -- 切到 panel；RightView 的 restore 机制会在异步 show 完成后回到触发窗口
   M._navigate_view_file = State.guarded(function(state, direction)
     local panel = state.panel
     if not panel or not panel.win or not vim.api.nvim_win_is_valid(panel.win) then return end
@@ -396,18 +396,36 @@ end
     end
   end)
 
-  -- 右侧 diff buffer 的 `-`：以当前 view 为事实来源，不依赖左栏残留的光标行
-  -- 完成 stage/unstage 后，同一文件会移动到另一 section，重新查新树节点并刷新 diff；
-  -- reshow 复用既有焦点恢复机制，操作前后都留在用户按键的 diff 窗口
+  -- 右侧 diff buffer 的 `-`：只操作当前 diff buffer 里可见的那个文件，绝不代用户
+  -- 推进到看不见的邻居。完成 stage/unstage 后，同一文件会移动到另一 section，
+  -- 重新查新树节点并刷新 diff；reshow 复用既有焦点恢复机制，操作前后都留在用户按键的 diff 窗口
   M._toggle_view_stage = State.guarded(function(state)
     if state.compare then return end
-    local view = state._queued_view_stage or state.view
+    local view = state.view
     if not view or not view.node then return end
     if view.section ~= 'staged' and view.section ~= 'unstaged' then return end
+
+    -- `-` 是按 buffer 安装的共享映射（right/keymaps 无 per-view 闭包），已被顶掉的旧
+    -- diff buffer 在 wipe 前仍会响应；只接受当前 view 自己的 buffer，避免误操作
+    local cur_buf = vim.api.nvim_get_current_buf()
+    if cur_buf ~= view.a_buf and cur_buf ~= view.b_buf then return end
 
     local root = view.root or state.git_root
     local relpath = view.node.relpath
     local target_section = view.section == 'staged' and 'unstaged' or 'staged'
+
+    -- 同一目标的 toggle 仍在飞行中时忽略后续按键，避免重复下发 git 命令
+    -- 释放挂在 Actions.toggle_stage 的 settled（Git 回调生命周期），不经过可被
+    -- latest-wins 取消的 reload after，否则一次被覆盖的 reload 会永久卡死这个键
+    local inflight = state._view_stage_inflight
+    if not inflight then
+      inflight = {}
+      state._view_stage_inflight = inflight
+    end
+    local inflight_key = table.concat({ root, view.section, relpath }, '\0')
+    if inflight[inflight_key] then return end
+    inflight[inflight_key] = true
+
     local restore_win = vim.api.nvim_get_current_win()
     local id = {
       root = root,
@@ -435,20 +453,6 @@ end
         prev_path = prev_path,
       }
     end
-
-    -- 右侧 buffer 在 Git 完成前不会切换 view；用独立的语义游标同步推进，
-    -- 让无等待连续 `-` 依次捕获 a、b、c，而不是重复把 a 入队
-    local queued_view
-    local repo = Subrepo.repo_of(state, root)
-    for _, candidate in ipairs({ next_path, prev_path }) do
-      local side = candidate and repo and repo.tree and repo.tree[view.section]
-      local found = side and Tree.leaf_at(side, candidate)
-      if found then
-        queued_view = { root = root, section = view.section, node = found }
-        break
-      end
-    end
-    state._queued_view_stage = queued_view
 
     Actions.toggle_stage(state, id, function()
       if not State.is_current(state) then return end
@@ -479,7 +483,7 @@ end
       end
       RightView.show(state, node, section, narrow(), root)
     end, function()
-      state._queued_view_stage = nil
+      inflight[inflight_key] = nil
     end)
   end)
 

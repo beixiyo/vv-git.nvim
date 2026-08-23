@@ -164,10 +164,15 @@ end
 ---@param state table
 ---@param id table
 ---@param after fun()?
----@param settled fun(ok:boolean)?
+---@param settled fun(ok:boolean)?  action 生命周期回调：恰好执行一次，且不依赖 reload
+---  是否成功——reload 走 latest-wins，被新请求覆盖时 after 整个不执行，队列/飞行标记
+---  若挂在 after 上就会永久残留
 function M.toggle_stage(state, id, after, settled)
   local side, paths, root = collect(state, id)
-  if not paths or #paths == 0 then return end
+  if not paths or #paths == 0 then
+    if settled then settled(false) end
+    return
+  end
 
   local owner_root = state.git_root
   local owner_generation = State.root_generation(state)
@@ -176,6 +181,10 @@ function M.toggle_stage(state, id, after, settled)
   local hint = state._action_hint
 
   fn(root, paths, function(ok, err, idle)
+    -- Git 回调必然执行一次（IndexQueue.complete 有 completed 去重，start 抛错也会 complete），
+    -- 故 settled 放在所有早退分支之前，保证调用方的飞行标记一定被释放
+    if settled then settled(ok) end
+
     if not State.is_current(state)
         or state._closing
         or state.git_root ~= owner_root
@@ -193,7 +202,6 @@ function M.toggle_stage(state, id, after, settled)
     if idle ~= false then
       refresh(state, function()
         if ok and after then after() end
-        if settled then settled(ok) end
       end)
     end
   end, current_write_opts(state))

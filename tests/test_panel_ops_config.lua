@@ -139,6 +139,7 @@ state.view = {
   node = node,
   section = 'unstaged',
   root = state.git_root,
+  b_buf = vim.api.nvim_get_current_buf(), -- 右侧 `-` 只接受当前 view 自己的 buffer
 }
 operations._toggle_view_stage()
 assert(toggled_id and toggled_id.node == node, '右侧缓冲区 stage 应使用当前视图 node')
@@ -171,6 +172,7 @@ state.view = {
   node = node,
   section = 'unstaged',
   root = state.git_root,
+  b_buf = vim.api.nvim_get_current_buf(), -- 右侧 `-` 只接受当前 view 自己的 buffer
 }
 last_show = nil
 operations._toggle_view_stage()
