@@ -31,6 +31,7 @@ local M = {}
 ---@class VVGitConfig
 ---@field width integer @default 30
 ---@field state VVStateHandle? 左侧面板持久状态容器；默认注册 `vv-git/panel`
+---@field parent_repository 'prompt'|'always'|'never'  隐式打开子目录时如何处理工作区之外的祖先仓库：提示选择、直接打开或忽略并允许在当前目录初始化 @default 'prompt'
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
 ---@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用 @default '<leader>b'
 ---@field fold_unchanged boolean  -- diff 视图是否允许折叠代码；true 时默认折叠未改动代码 @default true
@@ -57,7 +58,8 @@ local M = {}
 ---@field worktree VVGitWorktreeConfig  worktree 管理器策略 @default 见 VVGitWorktreeConfig
 
 ---@class VVGitContext
----@field root string
+---@field root string 仓库根；初始化空状态下为待初始化的 cwd
+---@field parent_root? string 隐式打开命中祖先仓库且等待用户选择时的候选仓库根
 ---@field path? string
 ---@field mode 'workspace'|'compare'
 ---@field layout? 'staged'|'diff2'|'single'|'conflict3'
@@ -89,6 +91,7 @@ local M = {}
 local defaults = {
   width = 30,
   state = nil,
+  parent_repository = 'prompt',
   single_col_threshold = 120,
   keymap_toggle_panel = '<leader>b',
   keymap_select = '<Tab>',
@@ -189,6 +192,11 @@ function M.setup(opts)
   local configured_state = opts and opts.state
   ---@type VVGitConfig
   local configured = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
+  if configured.parent_repository ~= 'prompt'
+      and configured.parent_repository ~= 'always'
+      and configured.parent_repository ~= 'never' then
+    error("vv-git: parent_repository must be 'prompt', 'always', or 'never'")
+  end
   M._config = configured
   local panel_state = configured_state or require('vv-utils.state').register('vv-git', 'panel')
   M._config.state = panel_state
@@ -334,7 +342,8 @@ function M._context(state)
   local compare = state.compare
   local view = state.view
   return {
-    root = state.git_root,
+    root = state.git_root or state.init_root,
+    parent_root = state.parent_root,
     path = state.cur_path,
     mode = compare and 'compare' or 'workspace',
     layout = view and view.mode or nil,

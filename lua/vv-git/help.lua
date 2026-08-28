@@ -32,6 +32,7 @@ local ACTIONS = {
   execute       = custom('Open as', '󰐊', 'MiniIconsGreen'),
   toggle_select = shared('Select', RawUI.list),
   toggle_stage  = shared('Git', RawGit.git_added),
+  init_repository = shared('Git', RawGit.git_status),
   discard       = shared('Git', RawGit.git_removed),
   commit        = shared('Git', RawUI.save),
   commit_show   = shared('Git', RawGit.git_log),

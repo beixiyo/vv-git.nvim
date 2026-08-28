@@ -87,6 +87,69 @@ end
 
 ---@param state table
 ---@param M table
+---@param enabled boolean
+function L.set_init_enabled(state, M, enabled)
+  local buf = state.panel and state.panel.buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  pcall(vim.keymap.del, 'n', 'i', { buffer = buf })
+  if enabled then
+    vim.keymap.set('n', 'i', function() M._init_repository() end, {
+      buffer = buf,
+      silent = true,
+      nowait = true,
+      desc = 'vv-git: init_repository',
+    })
+  else
+    local custom = M._config and M._config.mappings and M._config.mappings.i
+    if type(custom) == 'function' then
+      vim.keymap.set('n', 'i', function() custom(state) end, {
+        buffer = buf, silent = true, nowait = true, desc = 'vv-git: custom: i',
+      })
+    else
+      vim.keymap.set('n', 'i', '<Nop>', { buffer = buf, nowait = true })
+    end
+  end
+end
+
+---@param state table
+---@param M table
+---@param enabled boolean
+function L.set_parent_enabled(state, M, enabled)
+  local buf = state.panel and state.panel.buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  pcall(vim.keymap.del, 'n', 'p', { buffer = buf })
+  if enabled then
+    vim.keymap.set('n', 'p', function() M._open_parent_repository() end, {
+      buffer = buf,
+      silent = true,
+      nowait = true,
+      desc = 'vv-git: open_parent_repository',
+    })
+  else
+    local custom = M._config and M._config.mappings and M._config.mappings.p
+    if type(custom) == 'function' then
+      vim.keymap.set('n', 'p', function() custom(state) end, {
+        buffer = buf, silent = true, nowait = true, desc = 'vv-git: custom: p',
+      })
+    else
+      vim.keymap.set('n', 'p', function() M._push() end, {
+        buffer = buf, silent = true, nowait = true, desc = 'vv-git: push',
+      })
+    end
+  end
+end
+
+---@param state table
+---@param M table
+function L.set_repository_setup(state, M)
+  L.set_init_enabled(state, M, state.init_root ~= nil)
+  L.set_parent_enabled(state, M, state.parent_root ~= nil)
+end
+
+---@param state table
+---@param M table
 function L.install(state, M)
   local buf = state.panel.buf
   local function map(lhs, fn, action)
@@ -171,7 +234,7 @@ function L.install(state, M)
   map('gw',            function() M._worktree_pick() end,           'worktree_pick')
   map('g?',            function() Help.open(state) end,            'help')
 
-  for _, key in ipairs({ 'i', 'I', 'a', 'A', 'O', 'S', 'C' }) do
+  for _, key in ipairs({ 'I', 'a', 'A', 'O', 'S', 'C' }) do
     vim.keymap.set('n', key, '<Nop>', { buffer = buf, nowait = true })
   end
   for _, key in ipairs({ 'v', 'V', '<C-v>' }) do
@@ -183,6 +246,9 @@ function L.install(state, M)
       map(lhs, function() action(state) end, 'custom: ' .. lhs)
     end
   end
+  -- 初始化/祖先仓库决策页的提示必须与实际按键一致，因此在自定义映射之后覆盖 i/p；
+  -- 进入正常仓库时 set_repository_setup 会恢复用户自定义映射或内置 push/Nop
+  L.set_repository_setup(state, M)
 
   vim.api.nvim_create_autocmd('CursorMoved', {
     buffer = buf,

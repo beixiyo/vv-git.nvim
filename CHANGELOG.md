@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.13 - 2026-08-28
+
+### Added
+
+- **非仓库初始化**：添加初始化快捷键 i
+- **祖先仓库策略**：新增 `parent_repository = 'prompt' | 'always' | 'never'`
+
+### Changed
+
+- **模块职责拆分**：commands、panel operations、Git 操作与左栏渲染按职责拆为目录模块，并由 `init.lua` 统一导出；公开 API 保持不变
+
+### Fixed
+
+- **右侧暂存目标**：diff buffer 中的 `-` 永远只操作当前可见文件；同一文件的飞行中重复按键会被忽略，刷新被 latest-wins 取消也能正常释放状态
+- **当前文件初始定位**：`VVGitToggle` 隐式打开仓库时重新保留触发打开的当前 buffer，并自动定位和显示它的 diff，而不是退回变更列表第一个文件
+- **文件跳转光标**：从 diff 执行 `gf` 时保留行号与 0-based byte 列，并在目标文件中安全截断，避免跳回行首或越界
+
 ## 0.3.12 - 2026-08-13
 
 ### Added

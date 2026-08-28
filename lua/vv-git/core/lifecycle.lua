@@ -48,12 +48,15 @@ local function resolve_relpath(root, path)
   return absolute:sub(#root + 2)
 end
 
--- vv-explorer 最近一次切根（`]`/`[`）广播过来的目录，见 L.attach 里的 M._follow_external_root。
+-- vv-explorer 最近一次切根（`]`/`[`）广播过来的目录，见 L.attach 里的 M._follow_external_root
 -- 面板关着时 open() 无从得知用户在 explorer 里已经换了仓库（它只会问 getcwd()），
 -- 故在这里记一份，作为「无显式目标」时的首选候选根
 local external_root = nil
+-- 用户在祖先仓库决策页明确选择过的映射，仅存活于当前 Neovim 进程
+-- state 会随 panel close 清除，不能承担「本会话记住选择」的职责
+local accepted_parent_roots = {}
 
--- 目录还在、且能解析出仓库根时才当候选；否则返回 nil 让调用方回退 getcwd()
+-- 目录还在才当候选；仓库探测与父仓库策略由 resolve_open_context 统一处理
 ---@return string?
 local function external_candidate()
   if not external_root then return nil end
@@ -64,34 +67,76 @@ local function external_candidate()
   return external_root
 end
 
+---@param dir string
+---@return string
+local function canonical_dir(dir)
+  return vim.uv.fs_realpath(dir) or vim.fs.normalize(dir)
+end
+
+---@param root string
+---@param target_dir string
+---@return boolean
+local function ignored_by_parent(root, target_dir)
+  vim.fn.system({ 'git', '-C', root, 'check-ignore', '-q', '--', target_dir })
+  return vim.v.shell_error == 0
+end
+
+---@param root string
+---@return VVGitOpenResolution
+local function implicit_repository(root)
+  return { root = root, relpath = get_current_relpath(root) }
+end
+
+---@class VVGitOpenResolution
+---@field root? string
+---@field relpath? string
+---@field init_root? string
+---@field parent_root? string
+---@field parent_ignored? boolean
+
 ---@param opts VVGitOpenOpts
----@return string? root, string? relpath, string? err
-local function resolve_open_context(opts)
+---@param parent_policy? 'prompt'|'always'|'never'
+---@return VVGitOpenResolution? resolution, string? err
+local function resolve_open_context(opts, parent_policy)
   local candidate = opts.root
   if not candidate and opts.path and opts.path:sub(1, 1) == '/' then
     candidate = vim.fs.dirname(vim.fs.normalize(opts.path))
   end
 
-  -- 显式 root/path 优先；都没有才跟随 explorer 切根
-  local from_explorer = nil
-  if not candidate and not opts.path then
-    from_explorer = external_candidate()
-    candidate = from_explorer
+  local explicit = candidate ~= nil or opts.path ~= nil
+  if explicit then
+    local root = UGit.root(candidate)
+    if not root then
+      return nil, 'not a Git repository' .. (candidate and (': ' .. candidate) or '')
+    end
+
+    local relpath, err = resolve_relpath(root, opts.path)
+    if err then return nil, err end
+    return { root = root, relpath = relpath }
   end
 
-  local root = UGit.root(candidate)
-  -- explorer 停在非仓库目录（~/Downloads 之类）时不该报错，回退原来的 getcwd() 语义
-  if not root and from_explorer then
-    candidate = nil
-    root = UGit.root(nil)
-  end
-  if not root then
-    return nil, nil, 'not a Git repository' .. (candidate and (': ' .. candidate) or '')
-  end
+  -- 隐式打开时，explorer 最近切到的目录就是工作区边界；没有才使用当前 cwd
+  -- target_dir 与 repo_root 必须分别保留：前者决定在哪里 init，后者只是祖先仓库候选
+  local target_dir = canonical_dir(external_candidate() or vim.fn.getcwd())
+  local root = UGit.root(target_dir)
+  if not root then return { init_root = target_dir } end
 
-  local relpath, err = resolve_relpath(root, opts.path)
-  if err then return nil, nil, err end
-  return root, relpath
+  root = canonical_dir(root)
+  if root == target_dir then return implicit_repository(root) end
+
+  local policy = parent_policy or 'prompt'
+  if policy == 'always' then return implicit_repository(root) end
+  if policy == 'never' then return { init_root = target_dir } end
+
+  local accepted_root = accepted_parent_roots[target_dir]
+  if accepted_root == root then return implicit_repository(root) end
+  if accepted_root then accepted_parent_roots[target_dir] = nil end
+
+  return {
+    init_root = target_dir,
+    parent_root = root,
+    parent_ignored = ignored_by_parent(root, target_dir),
+  }
 end
 
 local function ensure_unfolded(state, relpath)
@@ -139,6 +184,14 @@ function L.new(deps)
     state = state or (State.has() and State.get())
     if state then Loader.cancel_reload(state) end
   end
+
+  --- 记住用户对当前工作区边界的父仓库选择，生命周期仅限本次 Neovim 会话
+  ---@param target_dir string
+  ---@param parent_root string
+  function M._remember_parent_repository(target_dir, parent_root)
+    accepted_parent_roots[canonical_dir(target_dir)] = canonical_dir(parent_root)
+  end
+
   ---@param opts? VVGitOpenOpts
   ---@return boolean opened, string? err
   function M.open(opts)
@@ -147,9 +200,23 @@ function L.new(deps)
     if State.has() then
       local s = State.get()
       if s.tabpage and vim.api.nvim_tabpage_is_valid(s.tabpage) then
+        if s.init_root and not opts.root and not opts.path then
+          controller._register_on_close(s, opts.on_close)
+          controller._set_on_goto_file(s, opts.on_goto_file)
+          vim.api.nvim_set_current_tabpage(s.tabpage)
+          if s.panel and s.panel.win and vim.api.nvim_win_is_valid(s.panel.win) then
+            vim.api.nvim_set_current_win(s.panel.win)
+          end
+          controller._invoke_callback(opts.on_ready, controller._context(s))
+          return true
+        end
+
         local root, relpath, err
         if opts.root or opts.path then
-          root, relpath, err = resolve_open_context(opts)
+          local resolution
+          resolution, err = resolve_open_context(opts, config().parent_repository)
+          root = resolution and resolution.root or nil
+          relpath = resolution and resolution.relpath or nil
         else
           root, relpath = s.git_root, get_current_relpath(s.git_root)
         end
@@ -186,12 +253,14 @@ function L.new(deps)
       State.clear()
     end
 
-    local root, rel_path, err = resolve_open_context(opts)
-    if not root then
+    local resolution, err = resolve_open_context(opts, config().parent_repository)
+    if not resolution then
       vim.notify('[vv-git] ' .. err, vim.log.levels.WARN)
       controller._invoke_callback(opts.on_error, err)
       return false, err
     end
+    local root = resolution.root
+    local rel_path = resolution.relpath
 
     local resume_after_close
     if config().before_open then
@@ -221,7 +290,13 @@ function L.new(deps)
     local state = State.create()
     state.tabpage = tabpage
     state.prev_tab = prev_tab
-    State.set_root(state, root)
+    if root then
+      State.set_root(state, root)
+    else
+      state.init_root = resolution.init_root
+      state.parent_root = resolution.parent_root
+      state.parent_ignored = resolution.parent_ignored
+    end
     state.cur_path = rel_path
     state._resume_after_close = resume_after_close
     -- 把子仓库扫描深度/配置以闭包注入 state，避免数据层 loader 反向 require 顶层 init
@@ -236,7 +311,7 @@ function L.new(deps)
     -- （仅此一层，section_id 用裸 'staged'；子仓库块的 staged 不受影响）。只在这条
     -- fresh-open 路径一次性写入 section_folds，用户之后可正常展开/折叠；重开面板（state
     -- 被 clear 后重建）才再次套用默认。toggle_panel / 复用已开面板都不会重置
-    if config().fold_staged then
+    if root and config().fold_staged then
       state.section_folds = state.section_folds or {}
       state.section_folds[Subrepo.section_id(state.git_root, state.git_root, 'staged')] = true
       state._fold_staged_pending = true
@@ -272,9 +347,14 @@ function L.new(deps)
 
     Keymaps.install(state, controller)
     Guard.install()
-    Loader.reload_index(state, function()
+    if root then
+      Loader.reload_index(state, function()
+        controller._invoke_callback(opts.on_ready, controller._context(state))
+      end)
+    else
+      LeftRender.render(state)
       controller._invoke_callback(opts.on_ready, controller._context(state))
-    end)
+    end
     controller._apply_layout()
     return true
   end
@@ -385,7 +465,7 @@ function L.new(deps)
   --   * 面板关着：只记住目录，下次 open() 用它当候选根（见 resolve_open_context）
   --   * 面板开着：解析出仓库根，与当前 git_root 不同才切——同一仓库内部换目录不用动，
   --     status 本来就是整仓库范围的，重载只会白闪一次
-  -- 切换语义与 _worktree_pick 对齐：清掉随旧 root 失效的瞬态（选中/比较/折叠/右视图）。
+  -- 切换语义与 _worktree_pick 对齐：清掉随旧 root 失效的瞬态（选中/比较/折叠/右视图）
   -- 不 tcd：事件是在 explorer 所在 tab 触发的，tcd 会改错 tab 的目录
   ---@param dir string
   function M._follow_external_root(dir)

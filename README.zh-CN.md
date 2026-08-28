@@ -35,6 +35,7 @@
   ---@type VVGitConfig
   opts = {
     width = 30,                        -- 左栏宽度
+    parent_repository = 'prompt',      -- cwd 位于祖先仓库内时提示选择（always/never）
     single_col_threshold = 120,        -- 窗口列数 < 此值时降级为单栏 + inline diff
     keymap_toggle_panel = '<leader>b', -- 全局切换左栏的映射（false 禁用）
     keymap_select = '<Tab>',           -- 切换当前文件选中状态（多选）
@@ -56,44 +57,39 @@
 
 | 选项 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `width` | `integer` | `30` | 左栏初始宽度；手动 resize 后通过 `vv-utils.state` 跨会话持久化 |
-| `state` | `VVStateHandle?` | `nil` | 可选状态容器，用于隔离/测试；默认注册 `vv-git/panel` |
-| `single_col_threshold` | `integer` | `120` | 窗口列数低于此值时降级为单栏（仅 b 侧 + inline diff），≥ 此值双栏；resize 自动迁移 |
-| `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 全局切换左栏可见性的映射；`false` 禁用 |
-| `fold_unchanged` | `boolean` | `true` | 是否允许代码折叠；启用时默认折叠未改动代码（dual: `foldmethod=diff`；single: manual fold） |
-| `fold_staged` | `boolean` | `false` | 自动把父仓库的 `Staged Changes` section 折成标题行（仅此一层，子仓库块不受影响） |
-| `diff_fill` | `string` | `' '` | diff 空行填充符，映射到 `fillchars` 的 `diff:X` |
-| `preview` | `boolean` | `true` | 光标在左栏移动时自动刷新右侧 diff，无需手动 `<CR>` |
-| `directory_preview` | `boolean` | `true` | 光标停在目录行时，右侧显示该目录下的变更文件数与状态分布（依赖 `preview`）；目录只是变更树的聚合节点，预览它不会改变「当前文件」 |
-| `inline_diff_max_lines` | `integer` | `10000` | 单栏模式下 `vim.diff` 最大支持行数，超过只显示文本不画高亮 |
-| `right_click` | `string \| false` | `'toggle_stage'` | 右键触发的 action 名（如 `'yank_abs_path'`），`false` 禁用 |
-| `diff_ratio` | `integer[]` | 无（50:50） | 双栏模式下 a_win（旧版本）与 b_win（工作区）的宽度比例，如 `{4, 6}` 表示左窄右宽；不填则等宽 |
-| `conflict_result_ratio` | `number` | `0.5` | 三栏冲突视图中底部 result/worktree 窗口的高度比例，范围 `0.1`~`0.9` |
-| `diff_nowrap` | `boolean` | `false` | 默认保持折行；置为 `true` 则 diff 视图强制关闭折行——`wrap` 在双栏模式下因两侧行高不一致会造成视觉错位，属于上游已知限制（[neovim/neovim#29518](https://github.com/neovim/neovim/issues/29518)、[diffview.nvim#198](https://github.com/sindrets/diffview.nvim/issues/198)） |
-| `highlights` | `table` | 无 | 覆盖任意 `VVGit*` 高亮组，叠加在自动计算值之上，切换主题后仍生效（见下方「自定义配色」）|
+| `width` | `integer` | `30` | 左栏宽度；手动调整后跨会话持久化 |
+| `state` | `VVStateHandle?` | `nil` | 可选状态容器；默认注册 `vv-git/panel` |
+| `parent_repository` | `'prompt' \| 'always' \| 'never'` | `'prompt'` | 隐式打开时如何处理 cwd/explorer 目录之外的祖先仓库；`prompt` 的选择在当前 Neovim 会话中按目录记忆 |
+| `single_col_threshold` | `integer` | `120` | 低于此窗口宽度时使用单栏 diff |
+| `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 全局切换左栏；`false` 禁用 |
+| `fold_unchanged` | `boolean` | `true` | 默认折叠未改动代码 |
+| `fold_staged` | `boolean` | `false` | 打开时折叠父仓库的 Staged Changes |
+| `diff_fill` | `string` | `' '` | diff 空行填充符 |
+| `preview` | `boolean` | `true` | 移动左栏光标时刷新 diff |
+| `directory_preview` | `boolean` | `true` | 预览目录的变更统计；依赖 `preview` |
+| `auto_refresh` | `boolean` | `true` | BufEnter / FocusGained 时刷新 Git 状态 |
+| `preview_debounce_ms` | `integer` | `150` | 预览防抖毫秒数；`0` 禁用防抖 |
+| `inline_diff_max_lines` | `integer` | `10000` | 单栏 inline diff 的最大行数 |
+| `right_click` | `string \| false` | `'toggle_stage'` | 右键 action；`false` 禁用 |
+| `diff_ratio` | `number[]` | `{ 5, 5 }` | 双栏 a_win:b_win 宽度比例 |
+| `conflict_result_ratio` | `number` | `0.5` | 冲突视图 result 窗口高度比例（`0.1`~`0.9`） |
+| `diff_nowrap` | `boolean` | `false` | diff 视图强制关闭折行 |
+| `highlights` | `table` | `nil` | 覆盖任意 `VVGit*` 高亮组 |
+| `before_open` | `fun(): fun()?` | `nil` | 打开前执行；可返回关闭后的恢复函数 |
 | `keymap_select` | `string` | `'<Tab>'` | 切换当前行选中状态（多选）；目录节点忽略 |
-| `keymap_next_file` | `string \| false` | `'<C-j>'` | diff buffer 内切换到左栏的下一个文件；`false` 禁用 |
-| `keymap_prev_file` | `string \| false` | `'<C-k>'` | diff buffer 内切换到左栏的上一个文件；`false` 禁用 |
-| `select_move_down` | `boolean` | `true` | `<Tab>` 切换选中后自动将光标下移一行 |
-| `binary.intercept` | `boolean` | `true` | 按内容与扩展名检测二进制文件：右栏显示文件属性，`<CR>`/`gf` 改用系统默认程序打开；`false` 禁用拦截 |
-| `binary.extensions` | `table<string, boolean>` | 见下方 | 二进制检测的扩展名覆盖（小写 key）；`vim.tbl_deep_extend` 合并，只需写要覆盖的 key |
-| `subrepo.depth` | `integer` | `0` | 扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；`0` = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） |
+| `keymap_next_file` | `string \| false` | `'<C-j>'` | diff 中切换到下一个文件 |
+| `keymap_prev_file` | `string \| false` | `'<C-k>'` | diff 中切换到上一个文件 |
+| `select_move_down` | `boolean` | `true` | 切换选中后下移光标 |
+| `mappings` | `table<string, fun(state)>` | `{}` | 新增或覆盖左栏映射 |
+| `binary.intercept` | `boolean` | `true` | 拦截二进制文件并使用系统程序打开 |
+| `binary.extensions` | `table<string, boolean>` | 内置列表 | 二进制扩展名覆盖；使用合并语义 |
+| `subrepo.depth` | `integer` | `0` | 子仓库扫描深度；`0` 禁用 |
 | `subrepo.respect_gitignore` | `boolean` | `false` | 发现时是否跳过被父仓库 `.gitignore` 的目录 |
-| `subrepo.prune` | `string[]` | 见下方 | 发现子仓库时**不进入扫描**的目录名列表。**覆盖**语义：传了就整体替换默认列表（不合并）；默认含 `node_modules` / `.cache` / `.local` / `.cargo` / `.rustup` / `.bun` 等缓存目录，`.git` 始终跳过 |
-| `subrepo.scan_worktrees` | `boolean` | `false` | 是否把 linked worktree 也当子仓库扫描。默认 `false` |
-| `worktree.path` | `fun(root, branch): string` | `<root>/.worktrees/<branch-short>` | 创建 worktree 时的默认目录；`root` 始终为 main worktree 路径，`feature/new-ui` 的简写为 `new-ui` |
+| `subrepo.prune` | `string[]` | 内置列表 | 不扫描的目录名；使用覆盖语义 |
+| `subrepo.scan_worktrees` | `boolean` | `false` | 是否将 linked worktree 作为子仓库扫描 |
+| `worktree.path` | `fun(root, branch): string` | `<root>/.worktrees/<branch-short>` | 新建 worktree 的路径策略 |
 
-## vv-scrollbar 集成
-
-同时安装 `vv-scrollbar.nvim` 时，双栏 diff 的左侧基准窗口会自动禁用滚动条，
-右侧则将 marker 轨道保持常驻；staged 右侧会把 index 对 HEAD 的行级改动投影为 Git marker。
-单栏和冲突结果窗口保持正常，无需额外配置
-
-同时安装 `vv-statuscol.nvim` 时，所有 diff / result 窗口会隐藏 statuscol 的 Git 双轨，
-避免与滚动条 marker 和 diff 染色重复；该控制是 window-local，同一文件在普通编辑窗口中的
-staged / unstaged 双轨仍然显示
-
-## 子仓库扫描
+## 配置示例
 
 ```lua
 opts = {
@@ -104,81 +100,44 @@ opts = {
     -- .local / .cargo 等缓存目录）。想在默认基础上加目录，需把默认项一并列出
     prune = { 'node_modules', '.cache', '.local', '.cargo', 'my_huge_dir' },
   },
-}
-```
-
-**按子仓库正确路由**：每个块里文件的 diff、stage / unstage / discard、冲突 accept 都会落到其**所属仓库**（内部用 `git -C <子仓库根>` + 仓库相对路径），各仓库互不串状态
-
-- **`c` 提交 / `p` push / `P` pull**：作用于**光标所在节点的所属仓库**
-- **gitignore 目录默认照扫**：`respect_gitignore=false`（默认）下，被 `.gitignore` 的**目录**仍会被扫描，可手动配置 `respect_gitignore`
-- **worktree 默认不当子仓库**：可配置 `scan_worktrees=true`
-
-## Worktree 管理
-
-面板内按 `gw`（或 `:VVGitWorktree`）打开管理浮窗。即使当前只有 main worktree，窗口也会正常打开，以便创建第一个 linked worktree：
-
-- **当前所在**的 worktree 以 `●` 标记并高亮，光标默认停在它上面
-- 每行显示：分支名（detached 时为 `(detached <短 hash>)`）+ 工作目录路径，失效 / 锁定的 worktree 末尾标 `(prunable)` / `(locked)`；纯 bare 仓库不在支持范围内
-- `<CR>` / `l`：切到选中 worktree 看它的 diff
-- `a`：使用现有本地分支，或从指定 base ref 创建新分支和 worktree
-- `d`：删除选中 worktree；main、当前和 locked worktree 禁止删除，dirty worktree 只在 Git 拒绝后显式询问是否 force
-- `r`：刷新列表，`?`：显示窗口内帮助，`q` / `<Esc>`：关闭
-
-切换是一次干净的上下文切换：把 `state.git_root` 指向选中的 worktree 并 `tcd` 过去（仅作用于 vv-git 专属 tab，不污染你来时的 tab），随后 reload——之后的 diff / stage / unstage / commit / push 全部落到该 worktree
-
-> worktree 与子仓库是两回事：worktree 是同一份历史的多个 checkout（共享 `.git`），故做成「切过去」而非并排成块；子仓库是独立仓库，并排渲染成块
-
-## 二进制文件拦截
-
-```lua
--- 放行某类扩展名（未来 nvim 支持图片预览时）
-opts = {
   binary = {
     extensions = { png = false, jpg = false, jpeg = false },
   },
-}
-
--- 完全关闭拦截
-opts = { binary = { intercept = false } }
-
--- 追加自定义扩展名
-opts = { binary = { extensions = { sketch = true, fig = true } } }
-```
-
-`binary.extensions` 走 `vim.tbl_deep_extend`，只需写要覆盖的 key，不必重写整张表
-
-## 自定义配色
-
-`highlights` 字段接受任意 `VVGit*` 高亮组的覆盖，叠加在按 Normal 背景自动计算的默认色之上，切换 colorscheme 后依然生效，包括左栏、diff、commit 浮窗和 worktree manager：
-
-```lua
-opts = {
   highlights = {
-    -- b 侧新增行（整行 / 词级）
-    VVGitDiffAdd          = { bg = '#1a3a1a' },
-    VVGitDiffChange       = { bg = '#152818' },
-    VVGitDiffText         = { bg = '#2a6a2a' },
-    -- a 侧对应填充行 / 删除行
-    VVGitDiffDeleteDim    = { fg = '#636b78', bg = '#1e1e2e' },
-    VVGitDiffAddAsDelete  = { bg = '#4a1a1a' },
-    VVGitDiffChangeDelete = { bg = '#2a1010' },
-    VVGitDiffTextDelete   = { bg = '#4a1a1a' },
+    VVGitDiffAdd = { bg = '#1a3a1a' },
+    VVGitDiffAddAsDelete = { bg = '#4a1a1a' },
+  },
+  worktree = {
+    path = function(root, branch)
+      return vim.fs.joinpath(root, '.worktrees', branch)
+    end,
   },
 }
 ```
 
+`subrepo.prune` 使用覆盖语义；`binary.extensions` 和 `highlights` 使用合并语义
+
+## 插件集成
+
+- `vv-scrollbar.nvim`：diff 窗口自动调整 scrollbar 与 Git marker
+- `vv-statuscol.nvim`：diff/result 窗口自动隐藏重复的 Git 双轨
+
 ## 快捷键
+
+当 `:VVGit` 从不属于任何 Git 仓库的 cwd 打开时，面板会进入初始化空状态。若 cwd 只属于工作区之外的祖先仓库，默认的 `parent_repository='prompt'` 会同时显示 `p` 打开祖先仓库和 `i` 在当前目录初始化；被祖先仓库忽略时默认光标落在 `i`，否则落在 `p`。两项均可用对应快捷键或 `<CR>` 执行，并在同一个 tab 中进入正常仓库视图。选择 `p` 后会按 cwd 记住本次 Neovim 会话，关闭再打开不重复询问；重启 Neovim 后恢复提示。显式传入的无效 `root`/`path` 仍会被拒绝
 
 左栏面板内生效：
 
 | 键 | 说明 |
 |------|------|
+| `i` | 将当前 cwd 初始化为 Git 仓库（非仓库或祖先仓库决策页） |
+| `p` | 打开工作区之外的祖先 Git 仓库（仅在祖先仓库决策页；正常仓库中仍为 push） |
 | `gf` | 跳转到文件 |
 | `Y` | 复制文件绝对路径 |
 | `<Tab>` | 切换当前文件选中（多选；目录忽略，可配置 `keymap_select`） |
 | `<Esc>` | 选中非空时清空选中；否则关闭面板 |
 | `j` / `k` / `↓` / `↑` | 跳到下/上一个可选项（`<C-n>`/`<C-p>` 同义；方向键等同 `j`/`k`） |
-| `<CR>` / `l` / `→` | 文件：打开 diff；目录/**section 标题**：展开/折叠（`→` 同 `l`） |
+| `<CR>` / `l` / `→` | 决策页：执行当前选项；文件：打开 diff；目录/**section 标题**：展开/折叠（`→` 同 `l`） |
 | `o` | 系统工具打开：文件→默认程序，目录→文件管理器 |
 | `X` | 按文件类型执行：解析运行器后确认，在底部分屏终端运行（仅文件节点） |
 | `h` / `←` | 折叠当前节点；子文件折到父目录；**最外层文件 / section 标题**上则折叠整个 section（Staged / Changes / Merge Conflicts）并归位标题行（`←` 同 `h`） |
@@ -250,18 +209,11 @@ git.get_node_dir()
 }
 ```
 
-`get_context()` 与回调中的 `context` 是稳定快照，包含 `root`、`path`、`mode`、`layout`、`panel_visible`、`from_ref`、`to_ref`。
+`get_context()` 与回调返回稳定快照。传入 `on_goto_file` 后，由调用方负责打开文件；`compare_file` 还接受 `bufnr`
 
-`on_goto_file` 的 context 包含 `root`、`path`、`abspath` 与可选 `row`。传入回调后，
-`gf` 不会自动关闭 vv-git；调用方负责打开文件和设计返回路径。未传时保持原有行为。
-
-`compare_file` 在当前 tab 的原生垂直分屏中对比当前 buffer 或 worktree 文件与指定 ref 中的同一文件，并包含未保存内容。它额外接受 `bufnr`，回调 context 提供 `root`、`path`、`ref`、`bufnr`、`source_win`、`ref_win`。
-
-所有 `_` 开头的字段和方法都是内部实现，不属于公开 API，外部调用方不应依赖。
+所有 `_` 开头的字段和方法都是内部实现，不属于公开 API，外部调用方不应依赖
 
 ### 外部事件
-
-每次仓库索引刷新完成后触发：
 
 ```lua
 vim.api.nvim_create_autocmd('User', {
@@ -272,7 +224,7 @@ vim.api.nvim_create_autocmd('User', {
 })
 ```
 
-同时**监听** `User VVExplorerRootChanged`（[vv-explorer](https://github.com/beixiyo/vv-explorer.nvim) 切根时广播）。任意文件树都可以发它来让面板跟随：
+仓库索引刷新后触发 `User VVGitStatusChanged`。vv-git 也监听 `User VVExplorerRootChanged`：
 
 ```lua
 vim.api.nvim_exec_autocmds('User', {
@@ -280,5 +232,3 @@ vim.api.nvim_exec_autocmds('User', {
   data = { root = '/path/to/dir' },
 })
 ```
-
-面板开着时，只有该目录解析出的仓库根与当前不同才切换；面板关着时记住该目录，作为下次 `open()` 的默认根。

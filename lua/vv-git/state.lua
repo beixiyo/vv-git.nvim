@@ -5,6 +5,9 @@
 -- state.panel     = 左栏 panel 表（{ buf, win, main_win }）
 -- state.view      = 右栏 diff 视图表（{ a_win, b_win, a_buf, b_buf, path, mode='diff2'|'single' }）
 -- state.git_root  = 父仓库根绝对路径
+-- state.init_root = 当前 cwd 尚非仓库时待执行 git init 的绝对目录；初始化成功后清空
+-- state.parent_root = init_root 位于祖先 Git 仓库时的候选根；仅 prompt 决策页存在
+-- state.parent_ignored = init_root 是否被 parent_root 忽略；用于选择页默认落点
 -- state.index     = 父仓库 index 视图：{ status_map, rename_map }（形状与子仓库一致）
 -- state.branch    = 父仓库当前分支名（detached 时为短 hash）；header 行显示 󰘬 <branch>
 -- state.repo_info = 父仓库分支 / remote / upstream / ahead-behind 状态
@@ -42,6 +45,9 @@ function M.create()
       panel = nil,
       view = nil,
       git_root = nil,
+      init_root = nil,
+      parent_root = nil,
+      parent_ignored = nil,
       _root_generation = 0,
       index = nil,
       repo_info = nil,
