@@ -54,8 +54,14 @@ local M = {}
 ---@field keymap_prev_file string|false  -- diff buffer 内切换到上一个文件；false 禁用 @default '<C-k>'
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
 ---@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
+---@field revision_mappings table<string, fun(context:VVGitRevisionMappingContext)>?  revision/index scratch buffer 内的自定义键位；真实 worktree buffer 不安装，避免覆盖其 buffer-local 映射 @default {}
 ---@field subrepo VVGitSubrepoConfig  嵌套子仓库扫描
 ---@field worktree VVGitWorktreeConfig  worktree 管理器策略 @default 见 VVGitWorktreeConfig
+
+---@class VVGitRevisionMappingContext
+---@field bufnr integer 当前 revision/index scratch buffer
+---@field winid integer 触发映射的 diff 窗口
+---@field source_path string 对应 worktree 文件的绝对路径
 
 ---@class VVGitContext
 ---@field root string 仓库根；初始化空状态下为待初始化的 cwd
@@ -98,6 +104,7 @@ local defaults = {
   keymap_next_file = '<C-j>',
   keymap_prev_file = '<C-k>',
   select_move_down = true,
+  revision_mappings = {},
   fold_unchanged = true,
   fold_staged = false,
   diff_ratio = { 5, 5 },

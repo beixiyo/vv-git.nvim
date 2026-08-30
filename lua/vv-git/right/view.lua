@@ -69,6 +69,7 @@ local function configure_runtime()
     },
     next_file_key = config.keymap_next_file or false,
     prev_file_key = config.keymap_prev_file or false,
+    revision_mappings = config.revision_mappings or {},
   })
   right_options = RightOptions.new({
     fold_unchanged = config.fold_unchanged ~= false,

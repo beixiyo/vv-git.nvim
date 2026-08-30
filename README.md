@@ -81,6 +81,7 @@
 | `keymap_prev_file` | `string \| false` | `'<C-k>'` | Open the previous file from a diff buffer |
 | `select_move_down` | `boolean` | `true` | Move down after toggling selection |
 | `mappings` | `table<string, fun(state)>` | `{}` | Add or override left-panel mappings |
+| `revision_mappings` | `table<string, fun(context)>` | `{}` | Add or override mappings in revision/index scratch buffers; context contains `bufnr`, `winid`, and `source_path` |
 | `binary.intercept` | `boolean` | `true` | Intercept binary files and open them with the system application |
 | `binary.extensions` | `table<string, boolean>` | Built-in list | Binary extension overrides; merged with defaults |
 | `subrepo.depth` | `integer` | `0` | Nested-repository scan depth; `0` disables scanning |

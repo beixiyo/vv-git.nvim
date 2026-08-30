@@ -17,14 +17,15 @@ local M = {}
 ---@field callbacks VVGitRightKeymapCallbacks
 ---@field next_file_key string|false
 ---@field prev_file_key string|false
+---@field revision_mappings table<string, fun(context:VVGitRevisionMappingContext)>
 
 -- fold 键全部包成 buffer-local 原生命令，绕过用户的全局 ufo 映射：
 -- ufo.openAllFolds 只执行 `:%foldopen!`，不会更新 foldlevel；而 diff 窗口把
 -- foldlevel 锁在 0，后续重绘、滚动或第三方 WinScrolled 回调重新计算 fold 时，
--- 这些 fold 会再次塌回去。原生 `zR` 会同步抬高 foldlevel，不会发生回弹。
+-- 这些 fold 会再次塌回去。原生 `zR` 会同步抬高 foldlevel，不会发生回弹
 --
 -- 必须完整列出 za/zA/zo/zc/zR/...：任何漏掉的 fold 命令仍可能落入 ufo 的全局
--- mapping，重新引入相同的 snap-back。这里是维护契约，不应简化为只覆盖 zR/zM。
+-- mapping，重新引入相同的 snap-back。这里是维护契约，不应简化为只覆盖 zR/zM
 local FOLD_CMDS = {
   'za', 'zA', 'ze', 'zE', 'zo', 'zc', 'zO', 'zC',
   'zr', 'zm', 'zR', 'zM', 'zv', 'zx', 'zX', 'zn', 'zN', 'zi',
@@ -112,6 +113,28 @@ function M.new(opts)
         desc = 'vv-git: ' .. spec[3],
       })
       installed[#installed + 1] = spec[1]
+    end
+
+    -- worktree buffer 可能已有 LspAttach 等来源的 buffer-local 映射。自定义右栏
+    -- 行为只补到 vv-git 自建的 revision/index scratch，避免关闭视图时误删原映射
+    if vim.b[buf].vv_git_scratch then
+      for lhs, action in pairs(opts.revision_mappings or {}) do
+        if type(action) == 'function' then
+          vim.keymap.set('n', lhs, function()
+            action({
+              bufnr = buf,
+              winid = api.nvim_get_current_win(),
+              source_path = vim.b[buf].vv_git_source_path,
+            })
+          end, {
+            buffer = buf,
+            silent = true,
+            nowait = true,
+            desc = 'vv-git: revision custom: ' .. lhs,
+          })
+          installed[#installed + 1] = lhs
+        end
+      end
     end
     vim.b[buf].vv_git_right_keys = installed
   end

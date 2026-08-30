@@ -16,6 +16,7 @@
 - **右侧暂存目标**：diff buffer 中的 `-` 永远只操作当前可见文件；同一文件的飞行中重复按键会被忽略，刷新被 latest-wins 取消也能正常释放状态
 - **当前文件初始定位**：`VVGitToggle` 隐式打开仓库时重新保留触发打开的当前 buffer，并自动定位和显示它的 diff，而不是退回变更列表第一个文件
 - **文件跳转光标**：从 diff 执行 `gf` 时保留行号与 0-based byte 列，并在目标文件中安全截断，避免跳回行首或越界
+- **Revision LSP hover**：允许配置层为 revision/index scratch 注入键位；当前配置中的 `K` 会按 diff 光标位置向对应 worktree 文件请求 LSP 文档，同时保留真实 buffer 原有的 `K`
 
 ## 0.3.12 - 2026-08-13
 
