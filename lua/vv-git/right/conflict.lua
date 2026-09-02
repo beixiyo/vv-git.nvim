@@ -178,18 +178,24 @@ local function accept_hunk(state, side)
   local hunks, lines = find_hunks(result_buf)
   if #hunks == 0 then return end
 
-  -- 只对 Result 光标所在的冲突块生效；光标在块外时把光标移到最近的块并提示，
-  -- 不做任何文本改写，避免从 ours/theirs 窗口按键时意外替换看不见的块
+  -- 在 Result 窗口按键时光标由用户控制：只对光标所在的块生效，块外先跳到最近的块
+  -- 并提示，不改写文本。从 ours/theirs 窗口按键时 Result 光标被 cursorbind 绑定为
+  -- 同一行号、每次按键都会被重置，块内判定永远不成立，故沿用最近块语义
   local hunk = hunk_at(hunks, cursor_line)
   if not hunk then
     local target = nearest_hunk(hunks, cursor_line)
-    if target and result_win and api.nvim_win_is_valid(result_win) then
-      pcall(api.nvim_win_set_cursor, result_win, { target.start_line, 0 })
+    if api.nvim_get_current_win() ~= result_win then
+      hunk = target
+    else
+      if target and result_win and api.nvim_win_is_valid(result_win) then
+        pcall(api.nvim_win_set_cursor, result_win, { target.start_line, 0 })
+      end
+      vim.notify('[vv-git] Result cursor moved to the nearest conflict; press again to accept',
+        vim.log.levels.INFO)
+      return
     end
-    vim.notify('[vv-git] Result cursor moved to the nearest conflict; press again to accept',
-      vim.log.levels.INFO)
-    return
   end
+  if not hunk then return end
 
   local was_last = #hunks == 1
   resolve_hunk(result_buf, hunk, side, lines)

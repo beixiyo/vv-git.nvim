@@ -516,16 +516,24 @@ local function test_conflict_hunks_stage_after_last_resolution()
   end
   assert(accept_ours and accept_both, '冲突 buffer 缺少 accept_ours_hunk / accept_both_hunk 映射')
 
+  -- 从 ours/theirs 窗口按键：Result 光标被 cursorbind 重置，块外也要作用于最近的块
+  vim.cmd('vsplit')
+  local side_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_cursor(win, { 1, 0 })
+  accept_ours()
+  assert_eq(vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1], 'ordinary ours',
+    '从其它窗口按键时作用于离 Result 光标最近的冲突块')
+  assert_eq(#stage_calls, 0, '接受非最终冲突块时不会暂存')
+  vim.api.nvim_win_close(side_win, true)
+  vim.api.nvim_set_current_win(win)
+
+  -- 在 Result 窗口按键：块外不改写文本，只把光标移到最近的块
   local before = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   vim.api.nvim_win_set_cursor(win, { 1, 0 })
   accept_ours()
   assert_eq(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n'),
-    table.concat(before, '\n'), '光标在冲突块外时不改写任何文本')
-  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 2, '光标在冲突块外时移动到最近冲突块首行')
-
-  vim.api.nvim_win_set_cursor(win, { 3, 0 })
-  accept_ours()
-  assert_eq(#stage_calls, 0, '接受非最终冲突块时不会暂存')
+    table.concat(before, '\n'), 'Result 窗口内光标在冲突块外时不改写任何文本')
+  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 4, 'Result 窗口内光标在冲突块外时移动到最近冲突块首行')
 
   -- 最后一块用 both：ours 段接 theirs 段，diff3 的 base 段不保留
   vim.api.nvim_win_set_cursor(win, { 5, 0 })

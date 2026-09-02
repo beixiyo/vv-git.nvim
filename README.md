@@ -169,7 +169,7 @@ These mappings are active inside the right-hand diff windows (regular diff, ours
 | `]c` / `[c` | Jump to the next/previous chunk and center it |
 | `<C-j>` / `<C-k>` | Move to the next/previous file in the left panel (`keymap_next_file` / `keymap_prev_file`) |
 | `z*` | Native fold commands pass through (`za`, `zR`, `zM`, ...) |
-| `<` / `>` | **Conflict view**: accept ours / theirs for the conflict block under the Result cursor; when the cursor is outside a block it first moves to the nearest one. Every accept writes the file, and resolving the last block runs `git add` automatically |
+| `<` / `>` | **Conflict view**: in the Result window, accept the block under the cursor, or move the cursor to the nearest block first when it is outside one; in the ours / theirs windows, accept the block nearest to the Result cursor. Every accept writes the file, and resolving the last block runs `git add` automatically |
 | `=` | **Conflict view**: keep both sides, ours first then theirs, equivalent to `git merge-file --union`. Good when both sides appended independent content; when both changed the same statement it leaves duplicate lines to clean up by hand |
 | `g?` | Show the keymaps of the current buffer; the Conflict category comes first in a conflict view |
 
