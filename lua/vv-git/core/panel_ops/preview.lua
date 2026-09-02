@@ -93,6 +93,16 @@ function L.new(context)
     RightView.show(state, target.id.node, target.id.base, narrow(), root)
   end)
 
+  -- 右侧 buffer 的 g?：读取当前 buffer 的键位，冲突视图把 Conflict 分类提到最前
+  M._view_help = State.guarded(function(state)
+    local view = state.view
+    local mode = view and view.section == 'conflicts' and 'conflict' or 'diff'
+    require('vv-git.help').open(state, {
+      source_buf = vim.api.nvim_get_current_buf(),
+      mode = mode,
+    })
+  end)
+
   return M
 end
 

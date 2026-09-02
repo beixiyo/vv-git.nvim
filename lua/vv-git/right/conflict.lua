@@ -2,6 +2,7 @@
 
 local api = vim.api
 local Git = require('vv-git.git')
+local UtilsGit = require('vv-utils.git')
 
 local M = {}
 
@@ -107,57 +108,30 @@ function M.reset(state)
   state._conflict_info_cache = nil
 end
 
--- 解析 diff3/zdiff3 或普通格式的冲突 hunk，坐标均为 1-based。
 ---@param buf integer
----@return table[] hunks, string[] lines
+---@return vv-utils.git.ConflictHunk[] hunks, string[] lines
 local function find_hunks(buf)
-  local hunks = {}
   local lines = api.nvim_buf_get_lines(buf, 0, -1, false)
-  local index = 1
-
-  while index <= #lines do
-    if lines[index]:match('^<<<<<<< ') or lines[index] == '<<<<<<<' then
-      local hunk = { start1 = index }
-      index = index + 1
-      while index <= #lines and not lines[index]:match('^=======') do
-        if not hunk.base1
-            and (lines[index]:match('^||||||| ') or lines[index] == '|||||||') then
-          hunk.base1 = index
-        end
-        index = index + 1
-      end
-      if index > #lines then break end
-
-      hunk.sep1 = index
-      index = index + 1
-      while index <= #lines
-          and not (lines[index]:match('^>>>>>>> ') or lines[index] == '>>>>>>>') do
-        index = index + 1
-      end
-      if index > #lines then break end
-
-      hunk.finish1 = index
-      hunks[#hunks + 1] = hunk
-      index = index + 1
-    else
-      index = index + 1
-    end
-  end
-
-  return hunks, lines
+  return UtilsGit.parse_conflict_hunks(lines), lines
 end
 
----@param hunks table[]
+---@param hunks vv-utils.git.ConflictHunk[]
 ---@param cursor_line integer
----@return table?
-local function nearest_hunk(hunks, cursor_line)
+---@return vv-utils.git.ConflictHunk?
+local function hunk_at(hunks, cursor_line)
   for _, hunk in ipairs(hunks) do
-    if cursor_line >= hunk.start1 and cursor_line <= hunk.finish1 then return hunk end
+    if cursor_line >= hunk.start_line and cursor_line <= hunk.end_line then return hunk end
   end
+  return nil
+end
 
+---@param hunks vv-utils.git.ConflictHunk[]
+---@param cursor_line integer
+---@return vv-utils.git.ConflictHunk?
+local function nearest_hunk(hunks, cursor_line)
   local best, best_distance = hunks[1], math.huge
   for _, hunk in ipairs(hunks) do
-    local distance = math.abs(hunk.start1 - cursor_line)
+    local distance = math.abs(hunk.start_line - cursor_line)
     if distance < best_distance then
       best = hunk
       best_distance = distance
@@ -166,28 +140,30 @@ local function nearest_hunk(hunks, cursor_line)
   return best
 end
 
+---@alias VVGitConflictSide 'ours'|'theirs'|'both'
+
 ---@param buf integer
----@param hunk table
----@param side 'ours'|'theirs'
+---@param hunk vv-utils.git.ConflictHunk
+---@param side VVGitConflictSide  both = ours 段接 theirs 段，等价于 `git merge-file --union`
 ---@param lines string[]
 local function resolve_hunk(buf, hunk, side, lines)
   local replacement = {}
-  if side == 'ours' then
-    -- diff3 的 base 段不属于 ours；普通格式则仍截取到分隔线之前。
-    local ours_end = (hunk.base1 or hunk.sep1) - 1
-    for index = hunk.start1 + 1, ours_end do
-      replacement[#replacement + 1] = lines[index]
-    end
-  else
-    for index = hunk.sep1 + 1, hunk.finish1 - 1 do
-      replacement[#replacement + 1] = lines[index]
-    end
+  local function append(first, last)
+    for index = first, last do replacement[#replacement + 1] = lines[index] end
   end
-  api.nvim_buf_set_lines(buf, hunk.start1 - 1, hunk.finish1, false, replacement)
+
+  if side ~= 'theirs' then
+    -- diff3 / zdiff3 的 base 段不属于任何一侧；普通格式则截取到分隔线之前
+    append(hunk.start_line + 1, (hunk.base_line or hunk.separator_line) - 1)
+  end
+  if side ~= 'ours' then
+    append(hunk.separator_line + 1, hunk.end_line - 1)
+  end
+  api.nvim_buf_set_lines(buf, hunk.start_line - 1, hunk.end_line, false, replacement)
 end
 
 ---@param state table
----@param side 'ours'|'theirs'
+---@param side VVGitConflictSide
 local function accept_hunk(state, side)
   local view = state.view
   if not (view and view.section == 'conflicts') then return end
@@ -202,9 +178,20 @@ local function accept_hunk(state, side)
   local hunks, lines = find_hunks(result_buf)
   if #hunks == 0 then return end
 
+  -- 只对 Result 光标所在的冲突块生效；光标在块外时把光标移到最近的块并提示，
+  -- 不做任何文本改写，避免从 ours/theirs 窗口按键时意外替换看不见的块
+  local hunk = hunk_at(hunks, cursor_line)
+  if not hunk then
+    local target = nearest_hunk(hunks, cursor_line)
+    if target and result_win and api.nvim_win_is_valid(result_win) then
+      pcall(api.nvim_win_set_cursor, result_win, { target.start_line, 0 })
+    end
+    vim.notify('[vv-git] Result cursor moved to the nearest conflict; press again to accept',
+      vim.log.levels.INFO)
+    return
+  end
+
   local was_last = #hunks == 1
-  local hunk = nearest_hunk(hunks, cursor_line)
-  if not hunk then return end
   resolve_hunk(result_buf, hunk, side, lines)
   pcall(api.nvim_buf_call, result_buf, function() vim.cmd('silent! write') end)
 
@@ -228,29 +215,34 @@ local function accept_hunk(state, side)
   })
 end
 
+-- `<` `>` `=` 在 normal 模式本是缩进 / 格式化操作符，冲突 buffer 内统一覆盖为接受动作；
+-- `=` 对应分隔线 `=======`，表示两侧都保留
+local ACCEPT_KEYS = {
+  { lhs = '<', side = 'ours',   action = 'accept_ours_hunk' },
+  { lhs = '>', side = 'theirs', action = 'accept_theirs_hunk' },
+  { lhs = '=', side = 'both',   action = 'accept_both_hunk' },
+}
+
 ---@param buf integer?
 ---@param state table
 function M.install_keymaps(buf, state)
   if not buf or not api.nvim_buf_is_valid(buf) then return end
-  vim.keymap.set('n', '<', function() accept_hunk(state, 'ours') end, {
-    buffer = buf,
-    silent = true,
-    nowait = true,
-    desc = 'vv-git: accept_ours',
-  })
-  vim.keymap.set('n', '>', function() accept_hunk(state, 'theirs') end, {
-    buffer = buf,
-    silent = true,
-    nowait = true,
-    desc = 'vv-git: accept_theirs',
-  })
+  for _, key in ipairs(ACCEPT_KEYS) do
+    vim.keymap.set('n', key.lhs, function() accept_hunk(state, key.side) end, {
+      buffer = buf,
+      silent = true,
+      nowait = true,
+      desc = 'vv-git: ' .. key.action,
+    })
+  end
 end
 
 ---@param buf integer?
 function M.remove_keymaps(buf)
   if not buf or not api.nvim_buf_is_valid(buf) then return end
-  pcall(vim.keymap.del, 'n', '<', { buffer = buf })
-  pcall(vim.keymap.del, 'n', '>', { buffer = buf })
+  for _, key in ipairs(ACCEPT_KEYS) do
+    pcall(vim.keymap.del, 'n', key.lhs, { buffer = buf })
+  end
 end
 
 return M

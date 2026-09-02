@@ -40,6 +40,12 @@ local ACTIONS = {
   worktree_pick = shared('Git', RawGit.git_branches),
   accept_ours   = custom('Conflict', '󰅁', 'DiagnosticWarn'),
   accept_theirs = custom('Conflict', '󰅂', 'DiagnosticWarn'),
+  accept_ours_hunk   = custom('Conflict', '󰅁', 'DiagnosticWarn'),
+  accept_theirs_hunk = custom('Conflict', '󰅂', 'DiagnosticWarn'),
+  accept_both_hunk   = custom('Conflict', RawGit.git_branches.glyph, 'DiagnosticWarn'),
+  next_file     = shared('Navigate', RawUI.move_down),
+  prev_file     = shared('Navigate', RawUI.move_up),
+  close         = shared('View', RawUI.quit),
   push          = custom('Remote', '󰁝', 'MiniIconsGreen'),
   pull          = custom('Remote', '󰁅', 'MiniIconsBlue'),
   publish       = custom('Remote', '󰁝', 'MiniIconsOrange'),
@@ -56,15 +62,45 @@ local ACTIONS = {
 
 local CATEGORIES = { 'Navigate', 'Open as', 'Select', 'Git', 'Conflict', 'Remote', 'Yank', 'View' }
 
+-- 冲突视图里用户最需要的是接受 hunk 的键位，把 Conflict 提到最前
+local CONFLICT_CATEGORIES = { 'Conflict', 'Navigate', 'View', 'Git', 'Yank', 'Open as', 'Select', 'Remote' }
+
+local FOLD_ROW = { cat = 'View', lhs = 'z*', action = 'native folds', icon = RawUI.fold_open.glyph, icon_hl = RawUI.fold_open.hl }
+
+---@class VVGitHelpOpts
+---@field source_buf? integer 读取键位的 buffer @default state.panel.buf
+---@field mode? 'panel'|'diff'|'conflict' 决定分类顺序、标题与补充说明 @default 'panel'
+
 ---@param state table
-function M.open(state)
-  if not (state and state.panel and state.panel.buf and vim.api.nvim_buf_is_valid(state.panel.buf)) then return end
+---@param opts? VVGitHelpOpts
+function M.open(state, opts)
+  opts = opts or {}
+  local mode = opts.mode or 'panel'
+  local source_buf = opts.source_buf or (state and state.panel and state.panel.buf)
+  if not (source_buf and vim.api.nvim_buf_is_valid(source_buf)) then return end
+
+  local extra_rows = {}
+  if mode ~= 'panel' then extra_rows[#extra_rows + 1] = FOLD_ROW end
+  if mode == 'conflict' then
+    extra_rows[#extra_rows + 1] = {
+      cat = 'Conflict', lhs = 'Result', action = 'edit the bottom window directly, then :w',
+      icon = RawUI.cursor.glyph, icon_hl = RawUI.cursor.hl,
+    }
+    extra_rows[#extra_rows + 1] = {
+      cat = 'Conflict', lhs = 'panel < >', action = 'accept the whole file in the left panel',
+      icon = '󰅁', icon_hl = 'DiagnosticWarn',
+    }
+  end
+
   HelpPanel.open({
-    source_buf  = state.panel.buf,
+    source_buf  = source_buf,
     desc_prefix = 'vv-git: ',
     actions     = ACTIONS,
-    categories  = CATEGORIES,
-    title       = 'vv-git keymaps',
+    categories  = mode == 'conflict' and CONFLICT_CATEGORIES or CATEGORIES,
+    extra_rows  = extra_rows,
+    title       = mode == 'conflict' and 'vv-git conflict keymaps'
+      or mode == 'diff' and 'vv-git diff keymaps'
+      or 'vv-git keymaps',
     title_icon  = RawGit.git_status.glyph,
     title_icon_hl = RawGit.git_status.hl,
     filetype    = 'vv-git-help',

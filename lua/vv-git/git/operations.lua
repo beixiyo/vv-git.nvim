@@ -16,20 +16,13 @@ function M.index(root, cb)
   return utils_git.index(root, cb, { untracked = 'all', ignored = false })
 end
 
-local function is_conflict(xy)
-  if not xy then return false end
-  local first = xy:sub(1, 1)
-  local second = xy:sub(2, 2)
-  return xy == 'AA' or xy == 'DD' or first == 'U' or second == 'U'
-end
-
-M.is_conflict = is_conflict
+M.is_conflict = utils_git.is_conflict
 
 ---@param xy string
 ---@return boolean staged, boolean unstaged
 function M.classify(xy)
   if xy == '??' then return false, true end
-  if is_conflict(xy) then return false, false end
+  if utils_git.is_conflict(xy) then return false, false end
   local x = xy:sub(1, 1)
   local y = xy:sub(2, 2)
   return x ~= ' ', y ~= ' '

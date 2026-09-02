@@ -12,6 +12,7 @@ local M = {}
 ---@field toggle_stage fun()
 ---@field next_file fun()
 ---@field prev_file fun()
+---@field help? fun() 未提供时不安装 g?
 
 ---@class VVGitRightKeymapOpts
 ---@field callbacks VVGitRightKeymapCallbacks
@@ -81,17 +82,23 @@ function M.new(opts)
     { '[c',    function() jump_diff_chunk('[') end, 'prev_chunk' },
   }
 
+  if callbacks.help then
+    specs[#specs + 1] = { 'g?', callbacks.help, 'help' }
+  end
+
   if opts.next_file_key then
     specs[#specs + 1] = { opts.next_file_key, callbacks.next_file, 'next_file' }
   end
   if opts.prev_file_key then
     specs[#specs + 1] = { opts.prev_file_key, callbacks.prev_file, 'prev_file' }
   end
+  -- fold 键使用独立 desc 前缀：它们只是原生命令的透传，不进入 g? 帮助列表
   for _, cmd in ipairs(FOLD_CMDS) do
     specs[#specs + 1] = {
       cmd,
       function() pcall(api.nvim_command, 'normal! ' .. cmd) end,
-      'fold ' .. cmd,
+      cmd,
+      'vv-git fold: ',
     }
   end
 
@@ -110,7 +117,7 @@ function M.new(opts)
         buffer = buf,
         silent = true,
         nowait = true,
-        desc = 'vv-git: ' .. spec[3],
+        desc = (spec[4] or 'vv-git: ') .. spec[3],
       })
       installed[#installed + 1] = spec[1]
     end

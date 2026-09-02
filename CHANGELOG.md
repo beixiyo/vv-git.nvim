@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.14 - 2026-09-02
+
+### Added
+
+- **右侧 g? 帮助**
+- **Result winbar 提示**：冲突窗口显示快捷键提示
+- **两侧都保留**：冲突 buffer 内 `=` 接受所有
+
+### Changed
+
+- **hunk 接受更安全**：`<` / `>` 只作用于 Result 光标所在冲突块
+- **冲突解析**：冲突状态识别与普通、diff3、zdiff3 hunk 解析统一复用 `vv-utils.git`
+- **冲突 scrollbar**：仅在上方右侧 theirs diff 以单轨 `U` 投影 ours-to-theirs 差异
+
 ## 0.3.13 - 2026-08-28
 
 ### Added

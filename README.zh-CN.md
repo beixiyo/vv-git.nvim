@@ -119,7 +119,7 @@ opts = {
 
 ## 插件集成
 
-- `vv-scrollbar.nvim`：diff 窗口自动调整 scrollbar 与 Git marker
+- `vv-scrollbar.nvim`：普通 diff 显示 staged / unstaged 双轨；冲突视图只在上方右侧 theirs diff 显示单轨 `U`，底部 Result 不重复显示
 - `vv-statuscol.nvim`：diff/result 窗口自动隐藏重复的 Git 双轨
 
 ## 快捷键
@@ -155,6 +155,23 @@ opts = {
 | `gw` | Worktree 管理：浮窗内创建、切换、删除和刷新 worktree（`:VVGitWorktree` 等价） |
 | `H` | 与 HEAD 比较：选分支 → 选 commit，展示 `commit..HEAD` 的差异 |
 | `g?` | 显示帮助 |
+
+右侧 diff 窗口内生效（普通 diff、ours、theirs、Result 都会安装）：
+
+| 键 | 说明 |
+|------|------|
+| `q` / `<Esc>` | 关闭右侧视图 |
+| `gf` | 跳转到文件 |
+| `Y` | 复制文件绝对路径 |
+| `-` | 切换当前文件 stage/unstage |
+| `]c` / `[c` | 跳到下/上一个 chunk 并居中 |
+| `<C-j>` / `<C-k>` | 切换到左栏的下/上一个文件（`keymap_next_file` / `keymap_prev_file`） |
+| `z*` | 原生折叠命令透传（`za`、`zR`、`zM` 等） |
+| `<` / `>` | **冲突视图**：接受 Result 光标所在冲突块的 ours / theirs；光标在块外时先移动到最近的块。每次接受都会自动写盘，解决最后一块后自动 `git add` |
+| `=` | **冲突视图**：两侧都保留，ours 段在前、theirs 段在后，等价于 `git merge-file --union`。适合两边各自追加了独立内容的冲突；两边改同一条语句时会留下重复行，需要再手工清理 |
+| `g?` | 显示当前 buffer 的键位帮助；冲突视图中 Conflict 分类排在最前 |
+
+冲突视图中，左栏的 `<` / `>` 是整文件级接受；三窗右下方 Result 是真实工作区文件，也可以直接编辑后 `:w`。窄屏单栏冲突不提供 hunk 级 `<` / `>`，请使用左栏整文件接受
 
 ## 公开接口
 

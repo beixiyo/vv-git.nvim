@@ -121,7 +121,7 @@ opts = {
 
 ## Plugin Integration
 
-- `vv-scrollbar.nvim`: adjusts scrollbars and Git markers in diff windows.
+- `vv-scrollbar.nvim`: shows staged/unstaged lanes in regular diffs; conflict views use one `U` lane on the upper-right theirs diff and omit the duplicate Result scrollbar.
 - `vv-statuscol.nvim`: hides duplicate Git tracks in diff/result windows.
 
 ## Keymaps
@@ -157,6 +157,23 @@ These mappings are active inside the left panel:
 | `gw` | Manage worktrees: create, switch, remove, and refresh them in a floating window (equivalent to `:VVGitWorktree`) |
 | `H` | Compare with HEAD: select a branch, then a commit, and show the `commit..HEAD` difference |
 | `g?` | Show help |
+
+These mappings are active inside the right-hand diff windows (regular diff, ours, theirs, and Result):
+
+| Key | Description |
+|------|------|
+| `q` / `<Esc>` | Close the right-hand view |
+| `gf` | Jump to the file |
+| `Y` | Yank the absolute file path |
+| `-` | Toggle stage/unstage for the current file |
+| `]c` / `[c` | Jump to the next/previous chunk and center it |
+| `<C-j>` / `<C-k>` | Move to the next/previous file in the left panel (`keymap_next_file` / `keymap_prev_file`) |
+| `z*` | Native fold commands pass through (`za`, `zR`, `zM`, ...) |
+| `<` / `>` | **Conflict view**: accept ours / theirs for the conflict block under the Result cursor; when the cursor is outside a block it first moves to the nearest one. Every accept writes the file, and resolving the last block runs `git add` automatically |
+| `=` | **Conflict view**: keep both sides, ours first then theirs, equivalent to `git merge-file --union`. Good when both sides appended independent content; when both changed the same statement it leaves duplicate lines to clean up by hand |
+| `g?` | Show the keymaps of the current buffer; the Conflict category comes first in a conflict view |
+
+In a conflict view, `<` / `>` in the left panel accept the whole file. The bottom Result window is the real worktree file and can be edited directly and saved with `:w`. The narrow single-column conflict view does not offer hunk-level `<` / `>`; use the whole-file accept in the left panel instead.
 
 ## Public Interfaces
 

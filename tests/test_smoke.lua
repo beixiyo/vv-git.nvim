@@ -509,17 +509,26 @@ local function test_conflict_hunks_stage_after_last_resolution()
   }
   Conflict.install_keymaps(buf, state)
 
-  local accept_ours
+  local accept_ours, accept_both
   for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
-    if mapping.desc == 'vv-git: accept_ours' then accept_ours = mapping.callback end
+    if mapping.desc == 'vv-git: accept_ours_hunk' then accept_ours = mapping.callback end
+    if mapping.desc == 'vv-git: accept_both_hunk' then accept_both = mapping.callback end
   end
+
+  local before = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  vim.api.nvim_win_set_cursor(win, { 1, 0 })
+  accept_ours()
+  assert_eq(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n'),
+    table.concat(before, '\n'), '光标在冲突块外时不改写任何文本')
+  assert_eq(vim.api.nvim_win_get_cursor(win)[1], 2, '光标在冲突块外时移动到最近冲突块首行')
 
   vim.api.nvim_win_set_cursor(win, { 3, 0 })
   accept_ours()
   assert_eq(#stage_calls, 0, '接受非最终冲突块时不会暂存')
 
+  -- 最后一块用 both：ours 段接 theirs 段，diff3 的 base 段不保留
   vim.api.nvim_win_set_cursor(win, { 5, 0 })
-  accept_ours()
+  accept_both()
   assert_eq(stage_calls[1] and stage_calls[1].root, '/subrepo',
     'final conflict hunk stages through view root')
   assert_eq(stage_calls[1] and stage_calls[1].path, 'conflicted.txt',
@@ -527,7 +536,7 @@ local function test_conflict_hunks_stage_after_last_resolution()
   assert_eq(reload_calls, 1, '最终冲突解决成功后仅重载一次')
   assert_eq(
     table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n'),
-    table.concat({ 'start', 'ordinary ours', 'middle', 'diff3 ours', 'end' }, '\n'),
+    table.concat({ 'start', 'ordinary ours', 'middle', 'diff3 ours', 'diff3 theirs', 'end' }, '\n'),
     'ordinary and diff3 ours resolution excludes markers and base content'
   )
 
@@ -565,6 +574,8 @@ local function test_right_layout_lifecycle()
     '冲突布局会创建真实的 ours 与结果窗口')
   assert_true(vim.api.nvim_win_get_position(c_win)[1] > vim.api.nvim_win_get_position(conflict_b)[1],
     'conflict result window is below the dual diff')
+  assert_eq(vim.w[c_win].vv_scrollbar_disabled, true,
+    '冲突 Result 编辑窗口不重复显示 scrollbar')
 
   local old_c_buf = vim.api.nvim_create_buf(false, true)
   state.view.a_win, state.view.b_win = conflict_a, conflict_b
@@ -742,6 +753,101 @@ local function test_staged_scrollbar_source()
   local fallback_source = fallback_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
   assert_eq(fallback_source and fallback_source.side, 'old',
     'compare 回退时复用源版本到旧侧显示')
+
+  pcall(RightView.close, state)
+
+  vim.fn.system({ 'git', '-C', tmpdir, 'checkout', '-qb', 'conflict-theirs' })
+  vim.fn.writefile({ 'one', 'theirs', 'staged', 'three' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'theirs' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'checkout', '-qb', 'conflict-ours', 'HEAD^' })
+  vim.fn.writefile({ 'one', 'ours', 'staged', 'three' }, tmpdir .. '/sample.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'sample.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'ours' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'merge', '--no-edit', 'conflict-theirs' })
+
+  RightView.show(state, { is_dir = false, relpath = 'sample.txt', xy = 'UU' },
+    'conflicts', false, tmpdir)
+  local conflict_ready = vim.wait(3000, function()
+    return state.view and state.view.mode == 'conflict3'
+      and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
+      and state.view.c_win and vim.api.nvim_win_is_valid(state.view.c_win)
+  end)
+  assert_true(conflict_ready, '已渲染三窗冲突视图')
+  local conflict_source = conflict_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+  assert_eq(conflict_source and conflict_source.from_index_stage, 2,
+    '冲突上方右侧 diff 来源使用 ours index stage')
+  assert_eq(conflict_source and conflict_source.to_index_stage, 3,
+    '冲突上方右侧 diff 来源使用 theirs index stage')
+  assert_eq(conflict_source and conflict_source.marker_kind, 'U',
+    '冲突上方右侧 diff 来源声明单一 U 状态')
+  assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
+    '冲突上方右侧 diff 持续显示 scrollbar')
+  assert_eq(vim.w[state.view.a_win].vv_scrollbar_disabled, true,
+    '冲突上方左侧 ours 不显示 scrollbar')
+  assert_eq(vim.w[state.view.c_win].vv_scrollbar_disabled, true,
+    '冲突底部 Result 不显示 scrollbar')
+  local result_winbar = vim.api.nvim_get_option_value('winbar', { win = state.view.c_win })
+  assert_true(result_winbar:find('%#VVGitWinbarKey#=%#VVGitWinbarHint# both', 1, true) ~= nil,
+    'Result winbar 的按键使用 VVGitWinbarKey 高亮')
+
+  -- g? 在右侧 buffer 可用；fold 透传键不进入帮助列表；冲突模式下 Conflict 分类最前
+  local function keymap_descs(buf)
+    local descs = {}
+    for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
+      descs[mapping.desc or ''] = true
+    end
+    return descs
+  end
+  local b_descs = keymap_descs(state.view.b_buf)
+  assert_true(b_descs['vv-git: help'], '冲突 theirs buffer 提供 g? 帮助')
+  assert_true(keymap_descs(state.view.c_buf)['vv-git: help'], '冲突 Result buffer 提供 g? 帮助')
+  assert_true(b_descs['vv-git: accept_ours_hunk'], '冲突 buffer 的接受键以 hunk 级动作命名')
+  assert_true(b_descs['vv-git fold: zR'] and not b_descs['vv-git: fold zR'],
+    'fold 透传键使用独立 desc 前缀')
+
+  require('vv-git.help').open(state, { source_buf = state.view.b_buf, mode = 'conflict' })
+  local help_buf
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.bo[buf].filetype == 'vv-git-help' then help_buf = buf end
+  end
+  assert_true(help_buf ~= nil, '冲突视图 g? 打开帮助浮窗')
+  local help_lines = help_buf and vim.api.nvim_buf_get_lines(help_buf, 0, -1, false) or {}
+  local help_text = table.concat(help_lines, '\n')
+  assert_eq(help_lines[3], '  Conflict', '冲突帮助把 Conflict 分类排在最前')
+  assert_true(help_text:find('accept ours hunk', 1, true) ~= nil, '冲突帮助列出 hunk 级接受键')
+  assert_true(help_text:find('accept the whole file', 1, true) ~= nil, '冲突帮助说明左栏整文件接受')
+  assert_true(help_text:find('native folds', 1, true) ~= nil
+      and help_text:find('fold zR', 1, true) == nil,
+    '冲突帮助把 fold 键合并为一行')
+  if help_buf then
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_get_buf(win) == help_buf then pcall(vim.api.nvim_win_close, win, true) end
+    end
+  end
+
+  pcall(RightView.close, state)
+
+  -- DU：ours 删除、theirs 修改 → 只有 stage 1/3，ours stage 2 不存在
+  vim.fn.system({ 'git', '-C', tmpdir, 'merge', '--abort' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'rm', '-q', 'sample.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'ours deletes' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'merge', '--no-edit', 'conflict-theirs' })
+  assert_eq(vim.trim(vim.fn.system({ 'git', '-C', tmpdir, 'status', '--porcelain' })),
+    'DU sample.txt', '已制造 deleted-by-us 冲突')
+
+  RightView.show(state, { is_dir = false, relpath = 'sample.txt', xy = 'DU' },
+    'conflicts', false, tmpdir)
+  local du_ready = vim.wait(3000, function()
+    return state.view and state.view.mode == 'single' and state.view.section == 'conflicts'
+      and state.view.b_buf and vim.api.nvim_buf_is_valid(state.view.b_buf)
+  end)
+  assert_true(du_ready, 'ours stage 缺失时降级为 theirs 单栏')
+  assert_eq(du_ready and vim.b[state.view.b_buf].vv_git_scratch, true,
+    'DU 单栏显示的是 theirs scratch')
+  assert_eq(du_ready and vim.b[state.view.b_buf].vv_git_diff_source, nil,
+    'ours stage 缺失时不声明必然失败的 stage-pair source')
 
   pcall(RightView.close, state)
   vim.fn.delete(tmpdir, 'rf')

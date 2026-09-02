@@ -102,6 +102,7 @@ function M.new(opts)
 
     if a_valid and b_valid and c_valid then
       disable_scrollbar(view.a_win)
+      disable_scrollbar(view.c_win)
       return view.b_win, view.a_win, view.c_win
     end
 
@@ -123,7 +124,7 @@ function M.new(opts)
     local result_height = math.max(8, math.floor(total_height * opts.conflict_result_ratio))
     api.nvim_command('belowright ' .. result_height .. 'split')
     local c_win = api.nvim_get_current_win()
-    vim.w[c_win].vv_statuscol_git_disabled = true
+    disable_scrollbar(c_win)
 
     api.nvim_set_current_win(main)
     api.nvim_command('leftabove vsplit')

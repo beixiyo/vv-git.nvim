@@ -42,6 +42,7 @@ local M = {}
 ---@field on_toggle_stage? fun()
 ---@field on_next_file? fun()
 ---@field on_prev_file? fun()
+---@field on_help? fun()
 local handlers = {
   get_config       = function() return { fold_unchanged = true } end,
   on_close         = function() end,
@@ -50,6 +51,7 @@ local handlers = {
   on_toggle_stage  = function() end,
   on_next_file     = function() end,
   on_prev_file     = function() end,
+  on_help          = function() end,
 }
 
 local right_keymaps
@@ -66,6 +68,7 @@ local function configure_runtime()
       toggle_stage = function() handlers.on_toggle_stage() end,
       next_file = function() handlers.on_next_file() end,
       prev_file = function() handlers.on_prev_file() end,
+      help = function() handlers.on_help() end,
     },
     next_file_key = config.keymap_next_file or false,
     prev_file_key = config.keymap_prev_file or false,
@@ -283,6 +286,15 @@ function M.show(state, node, section, force_single, root)
         to_rev = state.compare.to_rev or 'HEAD',
         side = side,
       }
+    elseif section == 'conflicts' then
+      vim.b[buf].vv_git_diff_source = {
+        root = owner,
+        path = node.relpath,
+        from_index_stage = 2,
+        to_index_stage = 3,
+        side = side,
+        marker_kind = 'U',
+      }
     end
 
     if vim.b[buf].vv_git_diff_source then
@@ -424,6 +436,19 @@ function M.show(state, node, section, force_single, root)
     focus_back_to_panel()
   end
 
+  -- Result winbar 右侧的键位提示：按键用主题高亮色，说明文字降为 Comment
+  local RESULT_HINTS = {
+    { '<', 'ours' }, { '>', 'theirs' }, { '=', 'both' }, { 'g?', 'help' },
+  }
+  local function result_winbar()
+    local parts = {}
+    for _, hint in ipairs(RESULT_HINTS) do
+      parts[#parts + 1] = '%#VVGitWinbarKey#' .. hint[1] .. '%#VVGitWinbarHint# ' .. hint[2]
+    end
+    return '%#Title# Result%* — worktree (edit to resolve)'
+      .. '%=' .. table.concat(parts, '  ') .. ' %*'
+  end
+
   -- 三栏冲突挂载：a=:2:(ours) | b=:3:(theirs)，底部 c=worktree（可编辑，滚动同步）
   local function attach_conflict_triple(a_buf, b_buf, c_buf)
     local b_win, a_win, c_win = right_layout.ensure_conflict(state)
@@ -439,6 +464,7 @@ function M.show(state, node, section, force_single, root)
       node = node, intrinsic_single = intrinsic_single, _show_req_id = req_id,
     }
     right_layout.keep_scrollbar(b_win)
+    set_git_diff_source(b_buf, 'new')
 
     right_options.apply_diff(a_win, a_buf, 'a')
     right_options.apply_diff(b_win, b_buf, 'b')
@@ -447,8 +473,7 @@ function M.show(state, node, section, force_single, root)
 
     -- c_win：可编辑工作区文件，不开 diff 模式，scrollbind 保持滚动粗对齐
     right_options.apply_result(c_win, c_buf)
-    api.nvim_set_option_value('winbar',
-      '%#Title# Result%* — worktree (edit to resolve)', { win = c_win, scope = 'local' })
+    api.nvim_set_option_value('winbar', result_winbar(), { win = c_win, scope = 'local' })
     Buffers.ensure_highlighting(c_buf, node.relpath)
 
     if prev_b_buf and prev_b_buf ~= b_buf then right_keymaps.remove(prev_b_buf) end
@@ -535,13 +560,14 @@ function M.show(state, node, section, force_single, root)
 
   -- 三栏冲突：:2:(ours) / :3:(theirs) 并发 show；worktree c_buf 直接 get
   -- 任一侧缺失时降级：双侧均失败 → 单栏 worktree；a 失败 → 单栏 theirs；b 失败 → 单栏 worktree
+  -- ours（:2:）缺失（UA / DU）时没有 stage 对可比，不再声明必然失败的 stage-pair source
   render_conflict_triple = function(a_rev, b_rev, a_path, b_path)
     local c_buf = Buffers.get_worktree(abspath)
     dual_rev_fetch(a_rev, b_rev, a_path, b_path, function(a_buf, b_buf)
       if not a_buf and not b_buf then
         attach_single(c_buf, nil, 'new')
       elseif not a_buf then
-        attach_single(b_buf, nil, 'new')
+        attach_single(b_buf, nil, nil)
       elseif not b_buf then
         Buffers.wipe_scratch({ a_buf })
         attach_single(c_buf, nil, 'new')
@@ -564,7 +590,10 @@ function M.show(state, node, section, force_single, root)
         render_single_worktree()  -- b 侧拿不到（二进制 / 删了等）→ 整体降级到 worktree
         return
       end
-      attach_single(b_buf, a_lines, 'new')  -- a_lines 拿不到也无妨：nil 时跳过 inline
+      -- a_lines 拿不到也无妨：nil 时跳过 inline。冲突时它意味着 ours stage 不存在，
+      -- stage-pair source 必然失败，此时不声明 source
+      local side = (section == 'conflicts' and not a_lines) and nil or 'new'
+      attach_single(b_buf, a_lines, side)
     end
     Git.show(owner, a_rev, a_path, function(lines)
       a_lines = lines; a_done = true; finalize()

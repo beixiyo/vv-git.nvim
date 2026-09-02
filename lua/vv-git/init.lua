@@ -230,6 +230,7 @@ function M.setup(opts)
     on_toggle_stage   = function() M._toggle_view_stage() end,
     on_next_file      = function() M._navigate_view_file(1) end,
     on_prev_file      = function() M._navigate_view_file(-1) end,
+    on_help           = function() M._view_help() end,
   })
 
   local function ucmd(name, fn, cfg)

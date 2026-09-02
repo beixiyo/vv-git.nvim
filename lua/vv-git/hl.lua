@@ -56,6 +56,9 @@ local function build_specs()
     -- 冲突 diff winbar：branch badge 颜色与 a/b 侧色系对应
     VVGitWinbarOurs     = { fg = '#c74e39', bold = true },  -- 红系，对应 a_win
     VVGitWinbarTheirs   = { fg = '#73c991', bold = true },  -- 绿系，对应 b_win
+    -- Result winbar 的键位提示：按键与左栏 VVGitPanelKey 同色，说明文字走 Comment
+    VVGitWinbarKey      = { link = 'Special' },
+    VVGitWinbarHint     = { link = 'Comment' },
   }
 end
 
