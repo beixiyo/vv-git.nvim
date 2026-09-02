@@ -514,6 +514,7 @@ local function test_conflict_hunks_stage_after_last_resolution()
     if mapping.desc == 'vv-git: accept_ours_hunk' then accept_ours = mapping.callback end
     if mapping.desc == 'vv-git: accept_both_hunk' then accept_both = mapping.callback end
   end
+  assert(accept_ours and accept_both, '冲突 buffer 缺少 accept_ours_hunk / accept_both_hunk 映射')
 
   local before = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   vim.api.nvim_win_set_cursor(win, { 1, 0 })
@@ -630,6 +631,59 @@ local function test_resize_restores_diff_ratio()
   assert_eq(vim.api.nvim_win_get_width(a_win) + vim.api.nvim_win_get_width(b_win), before_total,
     '恢复 diff_ratio 不改变 diff 区域总宽度')
   vim.cmd('tabclose')
+end
+
+-- 挂载后的第一次面板驱动滚动必须让另一侧跟随：:syncbind 会让 Neovim 吞掉下一次
+-- scrollbind 检查，修复前首次 nvim_win_call + normal! 滚动只动 b_win
+local function test_diff_scroll_follows_first_drive()
+  local RightView = require('vv-git.right.view')
+  local tmpdir = vim.fn.tempname()
+  vim.fn.mkdir(tmpdir, 'p')
+  local lines = {}
+  for index = 1, 200 do lines[index] = 'line ' .. index end
+  vim.fn.writefile(lines, tmpdir .. '/long.txt')
+  vim.fn.system({ 'git', '-C', tmpdir, 'init', '-q' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.name', 'vv-git test' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'config', 'user.email', 'test@example.com' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'add', 'long.txt' })
+  vim.fn.system({ 'git', '-C', tmpdir, 'commit', '-qm', 'initial' })
+  lines[100] = 'changed 100'
+  vim.fn.writefile(lines, tmpdir .. '/long.txt')
+
+  vim.cmd('tabnew')
+  local main_win = vim.api.nvim_get_current_win()
+  vim.cmd('topleft 20vsplit')
+  local panel_win = vim.api.nvim_get_current_win()
+  local state = {
+    tabpage = vim.api.nvim_get_current_tabpage(),
+    git_root = tmpdir,
+    panel = { win = panel_win, main_win = main_win },
+  }
+  RightView.show(state, { is_dir = false, relpath = 'long.txt', xy = ' M' }, 'unstaged', false, tmpdir)
+  local ready = vim.wait(3000, function()
+    return state.view and state.view.mode == 'diff2'
+      and state.view.a_win and vim.api.nvim_win_is_valid(state.view.a_win)
+      and state.view.b_win and vim.api.nvim_win_is_valid(state.view.b_win)
+  end)
+  assert_true(ready, '已渲染 unstaged 双栏 diff')
+
+  local a_win, b_win = state.view.a_win, state.view.b_win
+  local function top(win)
+    return vim.api.nvim_win_call(win, function() return vim.fn.line('w0') end)
+  end
+  assert_true(vim.wait(1000, function() return top(a_win) == top(b_win) end),
+    '挂载后的延迟 syncbind 已对齐两侧')
+
+  vim.api.nvim_set_current_win(panel_win)
+  vim.cmd('normal! j')
+  local before = top(b_win)
+  vim.api.nvim_win_call(b_win, function() vim.cmd('normal! 5\5') end)
+  assert_true(top(b_win) ~= before, '面板驱动的 <C-e> 滚动了 b 侧')
+  assert_eq(top(a_win), top(b_win), '挂载后的第一次面板驱动滚动 a 侧即跟随')
+
+  pcall(RightView.close, state)
+  vim.cmd('tabclose')
+  vim.fn.delete(tmpdir, 'rf')
 end
 
 local function test_staged_scrollbar_source()
@@ -1273,6 +1327,7 @@ test_binary_info_preview()
 test_conflict_winbar_rejects_stale_callback()
 test_conflict_hunks_stage_after_last_resolution()
 test_right_layout_lifecycle()
+test_diff_scroll_follows_first_drive()
 test_resize_restores_diff_ratio()
 test_staged_scrollbar_source()
 test_compare_tag_with_head()

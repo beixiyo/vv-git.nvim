@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.15 - 2026-09-02
+
+### Fixed
+
+- **首次滚动不同步**：挂载 diff 后的 `:syncbind` 会让 Neovim 吞掉下一次 scrollbind 检查，面板驱动的 `<C-e>` / `<C-y>` 和 scrollbar 点击首次只滚动一侧、第二次才补齐。现在 syncbind 后立刻消费该标志，第一次滚动另一侧即跟随
+
 ## 0.3.14 - 2026-09-02
 
 ### Added

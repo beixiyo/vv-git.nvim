@@ -102,6 +102,8 @@ end
 
 configure_runtime()
 
+local IGNORE_KEY = api.nvim_replace_termcodes('<Ignore>', true, false, true)
+
 local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
   vim.schedule(function()
     pcall(vim.cmd, 'diffupdate')
@@ -139,7 +141,15 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
     if first then
       api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
     end
-    api.nvim_win_call(b_win, function() pcall(vim.cmd, 'syncbind') end)
+
+    api.nvim_win_call(b_win, function()
+      pcall(vim.cmd, 'syncbind')
+      -- :syncbind 会置位 Neovim 内部的 did_syncbind，之后第一次在 scrollbind 窗口里
+      -- 发生的滚动检查只重置标志、不做同步。面板驱动的 <C-e>/<C-y> 和 scrollbar 点击
+      -- 都是 nvim_win_call + normal! 滚动，首次会被吞掉、另一侧不跟随，第二次才靠
+      -- scrollopt=jump 补齐。这里立刻执行一个空操作 normal 命令把标志消费掉
+      pcall(vim.cmd, 'normal! ' .. IGNORE_KEY)
+    end)
   end)
 end
 
