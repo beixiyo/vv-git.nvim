@@ -83,6 +83,8 @@ function M.set_root(state, root)
   if state.git_root == root then return false end
   state.git_root = root
   state._root_generation = M.root_generation(state) + 1
+  -- 换仓库后旧快照描述的是另一个仓库，必须作废，否则新根的首次刷新可能被误判为「无变化」
+  state._index_snapshot = nil
   if state.panel then state.panel.id_by_line = {} end
   return true
 end

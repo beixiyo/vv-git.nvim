@@ -348,6 +348,10 @@ function L.new(deps)
     Keymaps.install(state, controller)
     Guard.install()
     if root then
+      -- 先把骨架画出来再等 git：大仓库的首个 `git status` 要几十到几百毫秒，
+      -- 在此之前 panel buffer 是全空的，看起来像按键没生效。builder 在 state.tree
+      -- 为空时会渲染仓库标题 + "(Waiting for git status...)"
+      LeftRender.render(state)
       Loader.reload_index(state, function()
         controller._invoke_callback(opts.on_ready, controller._context(state))
       end)

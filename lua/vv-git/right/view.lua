@@ -117,16 +117,26 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
     -- 可能已被换走/wipe（旧 schedule 回调晚于新 set_buf 执行）→ 校验后再读，
     -- 与下方 c_buf 分支的 nvim_buf_is_valid 写法对齐，避免 "Invalid buffer id"
     if not (api.nvim_buf_is_valid(a_buf) and api.nvim_buf_is_valid(b_buf)) then return end
-    local b_lines = api.nvim_buf_get_lines(b_buf, 0, -1, false)
-    local a_lines = api.nvim_buf_get_lines(a_buf, 0, -1, false)
-    -- 仅用于定位首个 hunk 的光标行，却会跑一遍最重的 myers+linematch 全量 diff
-    -- 与 inline 单栏路径一致用 inline_diff_max_lines 设上限：超限直接跳过，
-    -- 让光标停留在当前行（原生 diff-mode 高亮/折叠不受影响）
-    local cfg = handlers.get_config()
-    local max = cfg.inline_diff_max_lines or 10000
-    local first = (#a_lines <= max and #b_lines <= max)
-        and InlineDiff.first_hunk_b_line(a_lines, b_lines)
-        or nil
+
+    -- 定位首个 hunk 直接问原生 diff：窗口此刻已是 diff 模式，Neovim 内部刚算过一遍
+    -- 旧实现把两侧全文取出来再跑一次 vim.diff（myers + linematch:60）纯属重复劳动，
+    -- 大文件上是切换 diff 时最贵的一步，还得靠 inline_diff_max_lines 设限才不卡；
+    -- `]c` 是 O(1) 的跳转，因此也不再需要那道行数上限
+    local first
+    api.nvim_win_call(b_win, function()
+      local before = api.nvim_win_get_cursor(b_win)
+      pcall(vim.cmd, 'normal! gg')
+      -- 第 1 行本身就在 hunk 里时 `]c` 会跳过它去找下一个，故先判断再决定跳不跳
+      if vim.fn.diff_hlID(1, 1) <= 0 then pcall(vim.cmd, 'normal! ]c') end
+      local lnum = api.nvim_win_get_cursor(b_win)[1]
+      -- 没有任何 hunk 时 `]c` 原地不动：此时不要把光标钉在第 1 行，还原原位
+      if lnum > 1 or vim.fn.diff_hlID(1, 1) > 0 then
+        first = lnum
+      else
+        pcall(api.nvim_win_set_cursor, b_win, before)
+      end
+    end)
+
     local row = first or api.nvim_win_get_cursor(b_win)[1]
     local b_max = api.nvim_buf_line_count(b_buf)
     local a_max = api.nvim_buf_line_count(a_buf)

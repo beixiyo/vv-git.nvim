@@ -16,6 +16,22 @@ local Discard = require('vv-git.left.discard')
 local M = {}
 local setup_scope = Async.scope({ cancel_previous = true })
 
+-- panel / diff 三窗都是 vv-git 自己挂上去的 buffer。预览结束时 RightView 会把焦点
+-- 还给 panel（focus_back_to_panel），这会发一个 BufEnter；若把它当成「外部 git 变化」，
+-- 每次 j/k 都会触发一次全量 reload_index（两次 git status + 一次 git remote + 重建整棵树
+-- 重画左栏），文件一多就变成按一下卡一下的跑步机。外部变化仍由 BufWritePost、
+-- FocusGained、TermClose/TermLeave 和进入任意其它 buffer 捕获
+---@param state table
+---@param buf integer?
+---@return boolean
+local function is_own_buffer(state, buf)
+  if not buf or buf <= 0 then return false end
+  if state.panel and state.panel.buf == buf then return true end
+  local view = state.view
+  if view and (view.a_buf == buf or view.b_buf == buf or view.c_buf == buf) then return true end
+  return false
+end
+
 ---@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun(), on_closed:fun(state:table), on_external_root:fun(dir:string) }
 ---@param config table?  vv-git 合并后的配置（读取 auto_refresh 等）
 function M.setup(handlers, config)
@@ -103,6 +119,17 @@ function M.setup(handlers, config)
     setup_request:set_disposer(cancel_refresh)
 
     vim.api.nvim_create_autocmd({ 'BufEnter', 'FocusGained' }, {
+      group = aug,
+      callback = State.guarded(function(state, args)
+        if args and args.event == 'BufEnter' and is_own_buffer(state, args.buf) then return end
+        refresh_debounced()
+      end),
+    })
+
+    -- 内嵌终端里直接跑 git（ClaudeCode / Codex / :terminal）不发 BufWritePost，
+    -- 原本靠「离开终端 buffer 的 BufEnter」兜住；上面按自家 buffer 过滤后这条路径依然成立，
+    -- 但显式监听终端退出更直接，也与 vv-explorer 的触发器保持一致
+    vim.api.nvim_create_autocmd({ 'TermClose', 'TermLeave' }, {
       group = aug,
       callback = State.guarded(function() refresh_debounced() end),
     })

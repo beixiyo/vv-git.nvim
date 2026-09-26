@@ -46,6 +46,82 @@ function M.cancel_reload(state)
   if state and state._reload_scope then state._reload_scope:cancel() end
 end
 
+-- ── 「这次 git 结果和上次渲染时一样吗」──────────────────────────────────
+--
+-- auto_refresh 会被很多与 git 无关的事件带起（切 buffer、切回 nvim、退出终端）
+-- 绝大多数这类刷新的结果与上次逐条相同，却照样要重建两棵 trie、重排几千行、
+-- 重设上万个 extmark。这里用「精确逐条比较」而不是哈希：hash 要遍历每个路径的
+-- 每个字节，本身就比它想省下的重建还贵，而 map 比较只做 O(条目数) 次哈希表查找
+--
+---@param a table<string,string>?
+---@param b table<string,string>?
+---@return boolean
+local function same_status_map(a, b)
+  if a == b then return true end
+  local count = 0
+  for key, value in pairs(a or {}) do
+    if (b or {})[key] ~= value then return false end
+    count = count + 1
+  end
+  for _ in pairs(b or {}) do
+    count = count - 1
+    if count < 0 then return false end
+  end
+  return count == 0
+end
+
+---@param a VVGitRepoInfo?
+---@param b VVGitRepoInfo?
+---@return boolean
+local function same_repo_info(a, b)
+  if a == b then return true end
+  if not a or not b then return false end
+  if a.branch ~= b.branch or a.upstream ~= b.upstream or a.head ~= b.head
+      or a.ahead ~= b.ahead or a.behind ~= b.behind
+      or a.detached ~= b.detached or a.unborn ~= b.unborn then
+    return false
+  end
+  local ra, rb = a.remotes or {}, b.remotes or {}
+  if #ra ~= #rb then return false end
+  for i = 1, #ra do
+    if ra[i] ~= rb[i] then return false end
+  end
+  return true
+end
+
+-- 快照存的是「上一次真正渲染时」的原始 index（strip_subroots 之前），与 roots 顺序绑定
+---@param state table
+---@param roots string[]
+---@param indexes table<string, table>
+---@param infos table<string, VVGitRepoInfo>
+---@return boolean
+local function matches_rendered_snapshot(state, roots, indexes, infos)
+  local snapshot = state._index_snapshot
+  if not snapshot or #snapshot.roots ~= #roots then return false end
+  for i = 1, #roots do
+    local root = roots[i]
+    if snapshot.roots[i] ~= root then return false end
+    if not same_status_map(snapshot.status[root], indexes[root] and indexes[root].status_map) then
+      return false
+    end
+    if not same_repo_info(snapshot.info[root], infos[root]) then return false end
+  end
+  return true
+end
+
+---@param state table
+---@param roots string[]
+---@param indexes table<string, table>
+---@param infos table<string, VVGitRepoInfo>
+local function store_snapshot(state, roots, indexes, infos)
+  local status, info = {}, {}
+  for _, root in ipairs(roots) do
+    status[root] = indexes[root] and indexes[root].status_map or {}
+    info[root] = infos[root]
+  end
+  state._index_snapshot = { roots = vim.deepcopy(roots), status = status, info = info }
+end
+
 -- 由 config.subrepo.prune（数组）构造跳过的目录名集合（.git 始终跳过）
 ---@param cfg table
 ---@return table<string, boolean>
@@ -142,6 +218,7 @@ function M.reload_index(state, after, passive)
   local add_cancel, cancel_all = new_cancel_bag()
   request:set_cancel(cancel_all)
   local done_index = false
+  local skip_render = false
 
   local function active()
     if not State.is_current(state) or state.git_root ~= root then
@@ -154,6 +231,15 @@ function M.reload_index(state, after, passive)
   local function finalize()
     if not active() or not done_index then return end
     local ok, err = xpcall(function()
+      -- 结果与已渲染内容一致：不重画、也不广播状态变更（广播会让 vv-explorer /
+      -- vv-statuscol 各自再跑一轮 git，等于把这次空转扩散给下游）。after 仍要调用，
+      -- 否则 on_ready 之类的一次性回调会永远等不到
+      if skip_render then
+        if after then after() end
+        request:finish()
+        return
+      end
+
       LeftRender.render(state, passive)
       if not active() then return end
       -- 广播 git 状态变更：stage/unstage/discard/commit/push/conflict 等所有变更操作
@@ -199,9 +285,21 @@ function M.reload_index(state, after, passive)
       pending = pending - 1
       if pending > 0 then return end
 
+      -- 被动刷新（auto_refresh / 保存 / gitsigns / R）且结果逐条相同 → 整段跳过
+      -- 带 hint 的渲染不进此分支：它们要靠重画把光标落到动作后的目标行
+      if passive and state.tree
+          and not (state._action_hint or state._section_hint or state._block_hint)
+          and matches_rendered_snapshot(state, roots_to_index, indexes, infos) then
+        skip_render = true
+        done_index = true
+        finalize()
+        return
+      end
+
       build_parent_repo(state, indexes[root], is_subroot, infos[root], root)
       build_subrepos(state, subroots, indexes, is_subroot, infos, root)
       prune_selection(state)
+      store_snapshot(state, roots_to_index, indexes, infos)
 
       done_index = true
       finalize()

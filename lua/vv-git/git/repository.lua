@@ -95,7 +95,10 @@ function M.repo_info(root, cb)
   end
 
   local ok, err = xpcall(function()
-    start({ 'git', '-C', root, 'status', '--porcelain=v2', '--branch' }, function(result)
+    -- 只读 `# branch.*` 头部，用不到文件列表：
+    --   -uno              跳过整棵未跟踪目录树的遍历（大仓库 / 有巨型未忽略目录时是主要成本）
+    --   --no-optional-locks 不为刷新 index 抢写锁，避免与并行的 status/show 互相等待
+    start({ 'git', '--no-optional-locks', '-C', root, 'status', '--porcelain=v2', '--branch', '-uno' }, function(result)
       status_result = result
     end)
     start({ 'git', '-C', root, 'remote' }, function(result)
