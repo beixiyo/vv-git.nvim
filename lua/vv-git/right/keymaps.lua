@@ -2,6 +2,7 @@
 
 local api = vim.api
 local Scroll = require('vv-utils.scroll')
+local RemoteEsc = require('vv-git.remote_esc')
 
 local M = {}
 
@@ -112,14 +113,18 @@ function M.new(opts)
     end
 
     local installed = {}
+    local esc_enabled = RemoteEsc.enabled()
     for _, spec in ipairs(specs) do
-      vim.keymap.set('n', spec[1], spec[2], {
-        buffer = buf,
-        silent = true,
-        nowait = true,
-        desc = (spec[4] or 'vv-git: ') .. spec[3],
-      })
-      installed[#installed + 1] = spec[1]
+      -- 远程会话不绑定 <Esc> 关闭（见 remote_esc.lua），只留 q
+      if spec[1] ~= '<Esc>' or esc_enabled then
+        vim.keymap.set('n', spec[1], spec[2], {
+          buffer = buf,
+          silent = true,
+          nowait = true,
+          desc = (spec[4] or 'vv-git: ') .. spec[3],
+        })
+        installed[#installed + 1] = spec[1]
+      end
     end
 
     -- worktree buffer 可能已有 LspAttach 等来源的 buffer-local 映射。自定义右栏

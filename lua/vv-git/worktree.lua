@@ -269,8 +269,7 @@ function M.open_manager(state, on_select, config)
       title_icon = BRANCH_ICON, title_icon_hl = BRANCH_ICON_HL, filetype = 'vv-git-worktree-help',
     })
   end, 'help')
-  map('q', close, 'close')
-  map('<Esc>', close, 'close')
+  for _, lhs in ipairs(require('vv-git.remote_esc').close_keys()) do map(lhs, close, 'close') end
 
   refresh()
 end

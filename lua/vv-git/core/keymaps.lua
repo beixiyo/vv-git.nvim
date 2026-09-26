@@ -6,6 +6,7 @@ local LeftRender = require('vv-git.left.render')
 local Help = require('vv-git.help')
 local Scroll = require('vv-utils.scroll')
 local Navigation = require('vv-git.core.navigation')
+local RemoteEsc = require('vv-git.remote_esc')
 
 local L = {}
 
@@ -141,6 +142,28 @@ function L.set_parent_enabled(state, M, enabled)
   end
 end
 
+--- 面板 <Esc>：退出 compare → 清空多选 → 关闭 vv-git。远程会话不绑定（见 remote_esc.lua）
+---@param state table
+---@param M table
+function L.set_esc(state, M)
+  local buf = state.panel and state.panel.buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+
+  pcall(vim.keymap.del, 'n', '<Esc>', { buffer = buf })
+  if not RemoteEsc.enabled() then return end
+
+  vim.keymap.set('n', '<Esc>', function()
+    if state.compare then
+      M._compare_stop()
+    elseif next(state.selection) then
+      state.selection = {}
+      LeftRender.render(state)
+    else
+      M.close()
+    end
+  end, { buffer = buf, silent = true, nowait = true, desc = 'vv-git: __close' })
+end
+
 ---@param state table
 ---@param M table
 function L.set_repository_setup(state, M)
@@ -169,16 +192,18 @@ function L.install(state, M)
   map('<Down>',        function() navigate(state, 'j') end,       'next_item')
   map('<Up>',          function() navigate(state, 'k') end,       'prev_item')
   map('q',             function() M.close() end,                   '__close')
-  map('<Esc>',         function()
-    if state.compare then
-      M._compare_stop()
-    elseif next(state.selection) then
-      state.selection = {}
-      LeftRender.render(state)
-    else
-      M.close()
+  L.set_esc(state, M)
+  -- 远程状态在面板存活期间可能变化（本机开的 vv-git 被 SSH attach 复用），跟随重装 / 卸掉 <Esc>
+  if state._esc_unsubscribe then state._esc_unsubscribe() end
+  state._esc_unsubscribe = RemoteEsc.subscribe(function()
+    if not State.is_current(state) then
+      state._esc_unsubscribe()
+      return
     end
-  end,                                                              '__close')
+    L.set_esc(state, M)
+    RightView.refresh_keymaps(state)
+    LeftRender.render(state, true)   -- compare 模式的退出提示随之切换
+  end)
   map('R',             function() M.refresh() end,                 'refresh')
   map('<CR>',          function() M._activate() end,               'open')
   map('o',             function() M._system_open() end,            'system_open')

@@ -4,6 +4,7 @@
 local Tree = require('vv-git.tree')
 local Icons = require('vv-git.icons')
 local Subrepo = require('vv-git.subrepo')
+local RemoteEsc = require('vv-git.remote_esc')
 local ui_icons = require('vv-icons').raw.ui
 local git_icons = require('vv-icons').raw.git
 
@@ -424,7 +425,12 @@ function M.build(state)
     end
 
     push_blank()
-    push_key_hint('<Esc>', 'Exit compare mode', 'Comment')
+    -- 远程会话不绑定 <Esc>（见 remote_esc.lua），提示改为命令
+    if RemoteEsc.enabled() then
+      push_key_hint('<Esc>', 'Exit compare mode', 'Comment')
+    else
+      push_key_hint(':VVGitCompareStop', 'Exit compare mode', 'Comment')
+    end
 
     return lines, extmarks, id_by_line
   end

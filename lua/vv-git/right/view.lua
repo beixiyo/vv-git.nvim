@@ -707,6 +707,18 @@ function M.toggle_all_folds(state)
   return state.view and right_keymaps.toggle_all_folds(state.view) or false
 end
 
+--- 按当前远程状态重装右栏映射（<Esc> 是否绑定随之变化）；只处理已装过映射的 buffer
+---@param state table
+function M.refresh_keymaps(state)
+  local view = state.view
+  if not view or not right_keymaps then return end
+  for _, buf in ipairs({ view.a_buf, view.b_buf }) do
+    if buf and api.nvim_buf_is_valid(buf) and vim.b[buf].vv_git_right_keys ~= nil then
+      right_keymaps.install(buf)
+    end
+  end
+end
+
 ---@param state table
 function M.close(state)
   -- close 也是上下文失效边界：即使当前尚未 attach view，也必须废弃所有在途 show

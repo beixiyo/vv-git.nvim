@@ -2,6 +2,7 @@
 local Winopts = require('vv-git.file_compare.winopts')
 local Resource = require('vv-git.file_compare.resource')
 local Guard = require('vv-git.guard')
+local RemoteEsc = require('vv-git.remote_esc')
 
 local M = {}
 local next_owner_id = 0
@@ -202,7 +203,7 @@ function M.new(opts)
           and vim.api.nvim_buf_is_valid(transaction.source.bufnr)
           and vim.b[transaction.source.bufnr].vv_git_file_compare_owner == transaction.token then
         vim.b[transaction.source.bufnr].vv_git_file_compare_owner = nil
-        for _, lhs in ipairs({ 'q', '<Esc>' }) do
+        for _, lhs in ipairs(transaction.close_keys or {}) do
           local expected = transaction.source_mapping_callbacks[lhs] or transaction.close_callback
           local owns_ok, owned = pcall(
             owns_buf_mapping,
@@ -307,18 +308,20 @@ function M.new(opts)
     Winopts.watch(transaction, function() return opts.is_active(transaction) end)
     local function close() request:dispose() end
     transaction.close_callback = close
+    -- 本次事务接管的关闭键：远程会话不含 <Esc>（见 remote_esc.lua）。保存 / 绑定 / 还原共用这一份
+    transaction.close_keys = RemoteEsc.close_keys()
 
     for _, buf in ipairs({ transaction.ref_buf, source.bufnr }) do
       if buf == source.bufnr then
-        transaction.source_mappings = {
-          q = save_buf_mapping(source.bufnr, 'q'),
-          ['<Esc>'] = save_buf_mapping(source.bufnr, '<Esc>'),
-        }
+        transaction.source_mappings = {}
+        for _, lhs in ipairs(transaction.close_keys) do
+          transaction.source_mappings[lhs] = save_buf_mapping(source.bufnr, lhs)
+        end
         vim.b[source.bufnr].vv_git_file_compare_owner = transaction.token
         transaction.source_mapping_owned = true
         transaction.source_mapping_callbacks = {}
       end
-      for _, lhs in ipairs({ 'q', '<Esc>' }) do
+      for _, lhs in ipairs(transaction.close_keys) do
         vim.keymap.set('n', lhs, close, {
           buffer = buf,
           silent = true,

@@ -19,6 +19,12 @@ package.path = table.concat({
   package.path,
 }, ';')
 
+-- 远程检测取决于运行时环境（有客户端经 SSH attach 到 tmux 即判远程，<Esc> 不绑定），
+-- 固定为本地会话让结果可复现；远程行为由 test_remote_esc.lua 覆盖
+local Sys = require('vv-utils.sys')
+Sys.is_remote = function() return false end
+Sys.is_remote_async = function(callback) callback(false) end
+
 local _passed = 0
 local _failed = 0
 

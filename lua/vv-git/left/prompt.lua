@@ -3,10 +3,11 @@
 --
 -- 按键（浮窗内，normal + insert）：
 --   <C-s>     提交
---   <Esc>/q   取消（normal 模式下 q 才生效）
+--   <Esc>/q   取消（normal 模式下 q 才生效；远程会话不绑定 <Esc>，见 remote_esc.lua）
 
 local api = vim.api
 local Git = require('vv-git.git')
+local RemoteEsc = require('vv-git.remote_esc')
 
 local M = {}
 
@@ -134,7 +135,8 @@ function M.open(opts)
     border = 'rounded',
     title = title,
     title_pos = 'center',
-    footer = ' Commit ^s  Cancel Esc/q ',
+    -- 远程会话不绑定 <Esc> 取消（见 remote_esc.lua）：鼠标点击被 SSH 拆包会误丢已写的提交信息
+    footer = RemoteEsc.enabled() and ' Commit ^s  Cancel Esc/q ' or ' Commit ^s  Cancel q ',
     footer_pos = 'center',
   })
   owner.win = win
@@ -183,8 +185,9 @@ function M.open(opts)
   vim.keymap.set({ 'n', 'i' }, '<C-s>', function()
     submit(owner, opts.git_root, commit_all, opts.on_success, is_current)
   end, kopts)
-  vim.keymap.set('n', '<Esc>', function() close_owner(owner) end, kopts)
-  vim.keymap.set('n', 'q', function() close_owner(owner) end, kopts)
+  for _, lhs in ipairs(RemoteEsc.close_keys()) do
+    vim.keymap.set('n', lhs, function() close_owner(owner) end, kopts)
+  end
 
   vim.cmd('startinsert')
   if cur ~= owner or not is_current() then close_owner(owner) end
