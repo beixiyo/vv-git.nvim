@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.17 - 2026-09-26
+
+### Changed
+
+- **打开时先显示加载骨架**
+- **双栏 diff 定位首个 hunk**：直接用 Neovim 已算好的 diff 跳转，不再取全文重算
+
+### Fixed
+
+- **大量变更时 j/k 卡顿**：预览结束把焦点还给面板时触发的 `BufEnter` 被当成外部 git 变化，每按一次 j/k 就全量刷新一次（两次 `git status` + 重建两棵树 + 重画整个面板）。现在自有 buffer 的 `BufEnter` 不再刷新，被动刷新时状态无变化则不重画、也不广播 `VVGitStatusChanged`；4500 个变更文件时 10 次 j/k 的 git 进程从 22~27 降到 9
+- **内嵌终端里的 git 操作**：退出终端（`TermClose` / `TermLeave`）后面板同样会刷新
+- **SSH 远程下鼠标点击误关 vv-git**：鼠标转义序列被网络拆包时开头的 ESC 会被当成独立 `<Esc>`。远程会话不绑定 esc
+
 ## 0.3.16 - 2026-09-02
 
 ### Fixed
