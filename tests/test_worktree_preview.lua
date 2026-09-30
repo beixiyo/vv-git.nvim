@@ -34,7 +34,7 @@ for i = 1, 60 do base[i] = 'local v' .. i .. ' = ' .. i end
 git({ 'init', '-q' })
 git({ 'config', 'user.name', 'vv-git test' })
 git({ 'config', 'user.email', 'test@example.com' })
-local NAMES = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' }
+local NAMES = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i' }
 for _, name in ipairs(NAMES) do vim.fn.writefile(base, repo .. '/' .. name .. '.lua') end
 git({ 'add', '-A' })
 git({ 'commit', '-qm', 'initial' })
@@ -42,6 +42,11 @@ git({ 'commit', '-qm', 'initial' })
 local changed = vim.deepcopy(base)
 changed[40] = 'local v40 = "changed"'
 for _, name in ipairs(NAMES) do vim.fn.writefile(changed, repo .. '/' .. name .. '.lua') end
+
+local deleted = vim.deepcopy(base)
+table.remove(deleted, 4)
+table.remove(deleted, 1)
+vim.fn.writefile(deleted, repo .. '/i.lua')
 
 local Plugin = require('vv-git')
 local State = require('vv-git.state')
@@ -197,6 +202,28 @@ test('快速连切时途经的文件不会被自动加载', function()
   vim.wait(400)
   assert(state.view.path == 'h.lua' and state.view.b_buf == vim.fn.bufnr(abspath('h.lua')), '替换目标错误')
   assert(vim.fn.bufloaded(abspath('g.lua')) == 0, '途经的 g.lua 被加载了')
+end)
+
+test('顶部纯删除在快照、promote 与重复打开时立即可见', function()
+  use_mode('snapshot')
+  vim.api.nvim_set_current_win(state.panel.win)
+  local samples = {}
+  local function check(tag)
+    local view = state.view
+    local a = vim.api.nvim_win_call(view.a_win, vim.fn.winsaveview)
+    local b = vim.api.nvim_win_call(view.b_win, vim.fn.winsaveview)
+    samples[#samples + 1] = { tag = tag, a = a, b = b }
+    vim.fn.writefile({ vim.inspect(samples) }, '/tmp/vv-git-top-delete-views.log')
+    assert(a.topline == 1 and b.topline == 1 and b.topfill >= 1,
+      tag .. ': 顶部删除行必须立即可见: ' .. vim.inspect({ a = a, b = b }))
+  end
+  show('i.lua')
+  check('snapshot')
+  assert(RightView.promote(state), '快照应可 promote')
+  check('promoted')
+  show('a.lua')
+  show('i.lua')
+  check('reopened')
 end)
 
 pcall(Plugin.close)

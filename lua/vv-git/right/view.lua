@@ -190,27 +190,30 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
     -- 可能已被换走/wipe（旧 schedule 回调晚于新 set_buf 执行）→ 校验后再读，
     -- 与下方 c_buf 分支的 nvim_buf_is_valid 写法对齐，避免 "Invalid buffer id"
     if not (api.nvim_buf_is_valid(a_buf) and api.nvim_buf_is_valid(b_buf)) then return end
+    if api.nvim_win_get_buf(a_win) ~= a_buf or api.nvim_win_get_buf(b_win) ~= b_buf then return end
 
     -- 定位首个 hunk 直接问原生 diff：窗口此刻已是 diff 模式，Neovim 内部刚算过一遍
     -- 旧实现把两侧全文取出来再跑一次 vim.diff（myers + linematch:60）纯属重复劳动，
     -- 大文件上是切换 diff 时最贵的一步，还得靠 inline_diff_max_lines 设限才不卡；
     -- `]c` 是 O(1) 的跳转，因此也不再需要那道行数上限
+    -- 从旧版侧定位，顶部纯删除在新版侧只有 filler，不能用右侧实体行作滚动锚点
+    local anchor = a_win
     local first
-    api.nvim_win_call(b_win, function()
-      local before = api.nvim_win_get_cursor(b_win)
+    api.nvim_win_call(anchor, function()
+      local before = api.nvim_win_get_cursor(anchor)
       pcall(vim.cmd, 'normal! gg')
       -- 第 1 行本身就在 hunk 里时 `]c` 会跳过它去找下一个，故先判断再决定跳不跳
-      if vim.fn.diff_hlID(1, 1) <= 0 then pcall(vim.cmd, 'normal! ]c') end
-      local lnum = api.nvim_win_get_cursor(b_win)[1]
+      if vim.fn.diff_hlID(1, 1) <= 0 and vim.fn.diff_filler(1) == 0 then pcall(vim.cmd, 'normal! ]c') end
+      local lnum = api.nvim_win_get_cursor(anchor)[1]
       -- 没有任何 hunk 时 `]c` 原地不动：此时不要把光标钉在第 1 行，还原原位
-      if lnum > 1 or vim.fn.diff_hlID(1, 1) > 0 then
+      if lnum > 1 or vim.fn.diff_hlID(1, 1) > 0 or vim.fn.diff_filler(1) > 0 then
         first = lnum
       else
-        pcall(api.nvim_win_set_cursor, b_win, before)
+        pcall(api.nvim_win_set_cursor, anchor, before)
       end
     end)
 
-    local row = first or api.nvim_win_get_cursor(b_win)[1]
+    local row = first or api.nvim_win_get_cursor(anchor)[1]
     local b_max = api.nvim_buf_line_count(b_buf)
     local a_max = api.nvim_buf_line_count(a_buf)
     pcall(api.nvim_win_set_cursor, b_win, { math.min(row, b_max), 0 })
@@ -222,10 +225,10 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
       end
     end
     if first then
-      api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
+      api.nvim_win_call(anchor, function() pcall(vim.cmd, 'normal! zz') end)
     end
 
-    api.nvim_win_call(b_win, function()
+    api.nvim_win_call(anchor, function()
       pcall(vim.cmd, 'syncbind')
       -- :syncbind 会置位 Neovim 内部的 did_syncbind，之后第一次在 scrollbind 窗口里
       -- 发生的滚动检查只重置标志、不做同步。面板驱动的 <C-e>/<C-y> 和 scrollbar 点击
