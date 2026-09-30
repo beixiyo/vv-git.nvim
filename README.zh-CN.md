@@ -70,6 +70,8 @@
 | `auto_refresh` | `boolean` | `true` | BufEnter / FocusGained 时刷新 Git 状态 |
 | `preview_debounce_ms` | `integer` | `150` | 预览防抖毫秒数；`0` 禁用防抖 |
 | `inline_diff_max_lines` | `integer` | `10000` | 单栏 inline diff 的最大行数 |
+| `worktree_preview` | `'buffer' \| 'snapshot' \| fun(ctx): ('buffer' \| 'snapshot')` | `'snapshot'` | 预览工作区文件时右侧用什么 buffer，见下方「工作区预览」 |
+| `snapshot_promote_ms` | `integer \| false` | `400` | 快照预览停留该毫秒数后自动换成真实 buffer，焦点留在左栏；`false` 只在进入右侧窗口时替换 |
 | `right_click` | `string \| false` | `'toggle_stage'` | 右键 action；`false` 禁用 |
 | `diff_ratio` | `number[]` | `{ 5, 5 }` | 双栏 a_win:b_win 宽度比例 |
 | `conflict_result_ratio` | `number` | `0.5` | 冲突视图 result 窗口高度比例（`0.1`~`0.9`） |
@@ -116,6 +118,19 @@ opts = {
 ```
 
 `subrepo.prune` 使用覆盖语义；`binary.extensions` 和 `highlights` 使用合并语义
+
+### 工作区预览
+
+- `'buffer'`：右侧直接加载真实文件，LSP 等立即可用，但每次 j/k 都会触发完整加载
+- `'snapshot'`（默认）：浏览时显示只读快照，不挂 LSP；光标进入右侧时换成真实 buffer。已加载的文件、冲突 result 窗口始终用真实 buffer
+- `snapshot_promote_ms`（默认 `400`）：光标停留该时长后自动换成真实 buffer，浏览时也能看到诊断
+- 传函数可按文件决定：
+
+```lua
+worktree_preview = function(ctx) -- { root, path, abspath, section, xy, size? }
+  return (ctx.size or 0) > 200 * 1024 and 'snapshot' or 'buffer'
+end
+```
 
 ## 插件集成
 

@@ -70,6 +70,8 @@
 | `auto_refresh` | `boolean` | `true` | Refresh Git status on BufEnter / FocusGained |
 | `preview_debounce_ms` | `integer` | `150` | Preview debounce in milliseconds; `0` disables it |
 | `inline_diff_max_lines` | `integer` | `10000` | Maximum line count for single-column inline diff |
+| `worktree_preview` | `'buffer' \| 'snapshot' \| fun(ctx): ('buffer' \| 'snapshot')` | `'snapshot'` | Which buffer backs the right side when previewing a worktree file; see "Worktree preview" below |
+| `snapshot_promote_ms` | `integer \| false` | `400` | Swap a snapshot preview for the real buffer after the cursor rests this many milliseconds, keeping focus in the left panel; `false` swaps only when entering the right window |
 | `right_click` | `string \| false` | `'toggle_stage'` | Right-click action; `false` disables it |
 | `diff_ratio` | `number[]` | `{ 5, 5 }` | Width ratio of a_win:b_win |
 | `conflict_result_ratio` | `number` | `0.5` | Conflict result-window height ratio (`0.1`–`0.9`) |
@@ -118,6 +120,19 @@ opts = {
 ```
 
 `subrepo.prune` uses replacement semantics; `binary.extensions` and `highlights` use merge semantics.
+
+### Worktree preview
+
+- `'buffer'`: load the real file on the right; LSP works immediately, but every j/k triggers a full load
+- `'snapshot'` (default): show a read-only snapshot while browsing, without LSP; swapped for the real buffer when the cursor enters the right window. Already loaded files and the conflict result window always use the real buffer
+- `snapshot_promote_ms` (default `400`): swap to the real buffer after the cursor rests this long, so diagnostics show while browsing
+- A function decides per file:
+
+```lua
+worktree_preview = function(ctx) -- { root, path, abspath, section, xy, size? }
+  return (ctx.size or 0) > 200 * 1024 and 'snapshot' or 'buffer'
+end
+```
 
 ## Plugin Integration
 

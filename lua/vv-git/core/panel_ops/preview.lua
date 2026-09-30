@@ -61,9 +61,19 @@ function L.new(context)
     M._preview()
   end, function() return config().preview_debounce_ms or 0 end)
 
-  -- CursorMoved 入口：>0 走防抖（光标停顿后才刷新 diff），0 保持同步直刷
+  -- CursorMoved 入口：按距上次移动的间隔区分单按与按住
+  --   间隔 > preview_debounce_ms：单独一次 j/k，立即预览，不白等防抖
+  --   间隔 ≤ preview_debounce_ms：正在按住连切，交给防抖，停下后只预览最后一个文件
+  -- 前一种情况防抖窗口早已过去，不会有待执行的防抖回调与之重复
+  -- preview_debounce_ms = 0 时始终同步直刷
+  local last_move_ms
   M._preview_on_move = function()
-    if (config().preview_debounce_ms or 0) > 0 then
+    local wait = config().preview_debounce_ms or 0
+    local now = vim.uv.hrtime() / 1e6
+    local idle = last_move_ms == nil or now - last_move_ms > wait
+    last_move_ms = now
+
+    if wait > 0 and not idle then
       preview_debounced()
     else
       M._preview()

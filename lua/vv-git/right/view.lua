@@ -22,6 +22,7 @@ local Conflict = require('vv-git.right.conflict')
 local DirSummary = require('vv-git.right.dir_summary')
 local Layout = require('vv-git.right.layout')
 local Plan = require('vv-git.right.plan')
+local Timer = require('vv-utils.timer')
 
 local M = {}
 
@@ -103,6 +104,78 @@ end
 configure_runtime()
 
 local IGNORE_KEY = api.nvim_replace_termcodes('<Ignore>', true, false, true)
+
+-- attach 期间 layout 会临时切到 b_win（vsplit 等），这些 WinEnter 不是用户进入右侧，
+-- promote 必须忽略；计数而非布尔，嵌套降级（attach 内再 render）也安全
+local attaching = 0
+
+---@generic F: function
+---@param fn F
+---@return F
+local function while_attaching(fn)
+  return function(...)
+    attaching = attaching + 1
+    local ok, err = pcall(fn, ...)
+    attaching = attaching - 1
+    if not ok then error(err, 0) end
+  end
+end
+
+-- snapshot_promote_ms：光标停留后自动把快照换成真实 buffer。单例常驻 debounce，最后一次
+-- 触发生效；回调核对目标仍是当前 view，被新 show 超越或 view 已关闭时直接放弃，无需取消
+---@type { state:table, req:integer }?
+local pending_promote
+local promote_later
+promote_later = Timer.debounce(function()
+  local target = pending_promote
+  pending_promote = nil
+  if not target then return end
+
+  local state, req = target.state, target.req
+  local view = state.view
+  if not view or not view.b_snapshot or view._show_req_id ~= req or state._show_req_id ~= req then return end
+  -- 命令行 / 插入 / 可视等模式下换 buffer 会打断用户操作，回到普通模式后再试
+  if api.nvim_get_mode().mode ~= 'n' then
+    pending_promote = target
+    promote_later()
+    return
+  end
+  M.promote(state)
+end, function() return tonumber(handlers.get_config().snapshot_promote_ms) or 0 end)
+
+---@param state table
+---@param req integer
+local function schedule_promote(state, req)
+  if not handlers.get_config().snapshot_promote_ms then return end
+  pending_promote = { state = state, req = req }
+  promote_later()
+end
+
+-- 解析 worktree_preview：字符串直接用，函数按上下文决定；出错或返回非法值一律回到 'buffer'
+---@param root string
+---@param node table
+---@param section string
+---@param abspath string
+---@return VVGitWorktreePreview
+local function worktree_mode(root, node, section, abspath)
+  local option = handlers.get_config().worktree_preview or 'buffer'
+  if type(option) == 'function' then
+    local stat = vim.uv.fs_stat(abspath)
+    local ok, result = pcall(option, {
+      root = root,
+      path = node.relpath,
+      abspath = abspath,
+      section = section,
+      xy = node.xy or '',
+      size = stat and stat.size or nil,
+    })
+    if not ok then
+      vim.notify('[vv-git] worktree_preview callback failed: ' .. tostring(result), vim.log.levels.WARN)
+    end
+    option = ok and result or 'buffer'
+  end
+  return option == 'snapshot' and 'snapshot' or 'buffer'
+end
 
 local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
   vim.schedule(function()
@@ -229,6 +302,22 @@ function M.show(state, node, section, force_single, root)
     state._reshow_restore_req = req_id
   end
 
+  -- 焦点最终要落在 b_win（在右侧用 ]f 切文件、刷新后回到右侧）时直接用真实 buffer：
+  -- 用户此刻就在可交互的位置，gd / K 等 LSP 键必须立即可用
+  local prev_view = state.view
+  local focus_b = prev_view ~= nil and prev_view.b_win ~= nil
+    and (api.nvim_get_current_win() == prev_view.b_win or reshow_restore_win == prev_view.b_win)
+
+  -- 已加载的 buffer 可能带未保存修改，磁盘快照会与之不一致，且复用它本身没有额外开销
+  local function worktree_buffer()
+    if not focus_b and vim.fn.bufloaded(abspath) == 0
+        and worktree_mode(owner, node, section, abspath) == 'snapshot' then
+      local buf = Buffers.create_snapshot(owner, node.relpath)
+      if buf then return buf end
+    end
+    return Buffers.get_worktree(abspath)
+  end
+
   -- 子仓库：node.relpath 已相对其所属仓库根（每个子仓库各建独立树），故 git show / index
   -- 取数直接 `git -C <owner>` + node.relpath，无需路径换算；owner == 父根时退化为改造前行为
   -- compare 模式是父仓库专属（其文件列表来自父仓 git diff），root 传 nil → owner = 父根
@@ -289,7 +378,8 @@ function M.show(state, node, section, force_single, root)
   ---@param buf integer
   ---@param side 'new'|'old'
   local function set_git_diff_source(buf, side)
-    if not vim.b[buf].vv_git_scratch then return end
+    -- 快照内容是工作区文件，不对应任何 revision / stage，不能借 scratch 身份声明来源
+    if not vim.b[buf].vv_git_scratch or vim.b[buf].vv_git_snapshot then return end
 
     if section == 'staged' then
       vim.b[buf].vv_git_diff_source = {
@@ -329,17 +419,20 @@ function M.show(state, node, section, force_single, root)
   ---@param b_buf integer
   ---@param a_lines string[]?
   ---@param side? 'new'|'old'
-  local function attach_single(b_buf, a_lines, side)
+  local attach_single = while_attaching(function(b_buf, a_lines, side)
     local b_win = right_layout.ensure(state, false)
     if not b_win then
       Buffers.wipe_scratch({ b_buf })
       vim.notify('[vv-git] No main window available', vim.log.levels.ERROR); return
     end
 
+    local snapshot = vim.b[b_buf].vv_git_snapshot == true
     state.view = {
       mode = 'single', section = section, path = node.relpath, root = owner,
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single, _show_req_id = req_id,
+      -- promote 换成真实 buffer 时要用同一份 a 侧内容重挂 live inline diff
+      b_snapshot = snapshot or nil, _inline_a_lines = snapshot and a_lines or nil,
     }
     right_layout.keep_scrollbar(b_win)
 
@@ -403,10 +496,11 @@ function M.show(state, node, section, force_single, root)
     end
 
     focus_back_to_panel()
-  end
+    if state.view.b_snapshot then schedule_promote(state, req_id) end
+  end)
 
   -- 双栏挂载：a_win + b_win，apply diff opts，延迟 zX + syncbind
-  local function attach_dual(a_buf, b_buf)
+  local attach_dual = while_attaching(function(a_buf, b_buf)
     local b_win, a_win = right_layout.ensure(state, true)
     if not a_win or not b_win then
       -- 两侧若是 scratch 则一并 wipe；worktree buf 不能动
@@ -421,6 +515,7 @@ function M.show(state, node, section, force_single, root)
       a_win = a_win, a_buf = a_buf,
       b_win = b_win, b_buf = b_buf,
       node = node, intrinsic_single = intrinsic_single, _show_req_id = req_id,
+      b_snapshot = vim.b[b_buf].vv_git_snapshot == true or nil,
     }
     right_layout.keep_scrollbar(b_win)
 
@@ -454,7 +549,8 @@ function M.show(state, node, section, force_single, root)
 
     schedule_diff_sync(a_win, a_buf, b_win, b_buf)
     focus_back_to_panel()
-  end
+    if state.view.b_snapshot then schedule_promote(state, req_id) end
+  end)
 
   -- Result winbar 右侧的键位提示：按键用主题高亮色，说明文字降为 Comment
   local RESULT_HINTS = {
@@ -470,7 +566,7 @@ function M.show(state, node, section, force_single, root)
   end
 
   -- 三栏冲突挂载：a=:2:(ours) | b=:3:(theirs)，底部 c=worktree（可编辑，滚动同步）
-  local function attach_conflict_triple(a_buf, b_buf, c_buf)
+  local attach_conflict_triple = while_attaching(function(a_buf, b_buf, c_buf)
     local b_win, a_win, c_win = right_layout.ensure_conflict(state)
     if not a_win or not b_win or not c_win then
       Buffers.wipe_scratch({ a_buf, b_buf })
@@ -511,7 +607,7 @@ function M.show(state, node, section, force_single, root)
 
     schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
     focus_back_to_panel()
-  end
+  end)
 
   local function dual_rev_fetch(rev_a, rev_b, a_path, b_path, on_both)
     local a_buf, b_buf, a_done, b_done
@@ -529,7 +625,7 @@ function M.show(state, node, section, force_single, root)
   end
 
   render_single_worktree = function()
-    attach_single(Buffers.get_worktree(abspath), nil, 'new')
+    attach_single(worktree_buffer(), nil, 'new')
   end
 
   -- 降级路径静默：UI 变成单栏就是用户可见的信号，WARN notify 反而打断工作流
@@ -574,7 +670,7 @@ function M.show(state, node, section, force_single, root)
         render_single_worktree()
         return
       end
-      attach_dual(a_buf, Buffers.get_worktree(abspath))
+      attach_dual(a_buf, worktree_buffer())
     end)
   end
 
@@ -638,7 +734,7 @@ function M.show(state, node, section, force_single, root)
   render_single_worktree_with_inline = function(a_rev, a_path)
     Git.show(owner, a_rev, a_path, function(a_lines)
       if not alive({}) then return end
-      attach_single(Buffers.get_worktree(abspath), a_lines, 'new')
+      attach_single(worktree_buffer(), a_lines, 'new')
     end)
   end
 
@@ -687,6 +783,54 @@ function M.show(state, node, section, force_single, root)
       assert(plan.b_path)
     )
   end
+end
+
+---把快照 b 侧原地换成真实工作区 buffer，光标与滚动位置保持不变；换完 LSP / gd / K
+---等真实 buffer 能力随之可用。非快照、attach 进行中或窗口已失效时不做任何事
+---@param state table
+---@return boolean promoted
+function M.promote(state)
+  local view = state.view
+  if attaching > 0 or not view or not view.b_snapshot then return false end
+  local b_win, snapshot = view.b_win, view.b_buf
+  if not (b_win and api.nvim_win_is_valid(b_win)) then return false end
+
+  local ok, real = pcall(Buffers.get_worktree, vim.fs.normalize(view.root .. '/' .. view.path))
+  if not ok then return false end
+  local saved = api.nvim_win_call(b_win, vim.fn.winsaveview)
+
+  -- 先改 view 再换 buffer：BufWinEnter 自检按 view.b_buf 判断 b_win 是否被外部切走
+  view.b_buf, view.b_snapshot = real, nil
+  if view.mode == 'diff2' then
+    right_options.apply_diff(b_win, real, 'b')
+  else
+    local set_ok, err = pcall(api.nvim_win_set_buf, b_win, real)
+    if not set_ok and not tostring(err):find('E828') then error(err) end
+  end
+  Buffers.ensure_highlighting(real, view.path)
+  right_keymaps.remove(snapshot)
+  right_keymaps.install(real)
+
+  if view.mode == 'single' and view._inline_a_lines then
+    local cfg = handlers.get_config()
+    view._inline_cleanup = InlineDiff.attach_live(real, view._inline_a_lines, cfg.inline_diff_max_lines or 10000, {
+      b_win = b_win,
+      fold_unchanged = cfg.fold_unchanged ~= false,
+    })
+    view._inline_a_lines = nil
+  end
+
+  api.nvim_win_call(b_win, function()
+    if view.mode == 'diff2' then pcall(vim.cmd, 'diffupdate') end
+    vim.fn.winrestview(saved)
+    pcall(vim.cmd, 'normal! zv')
+    if view.mode == 'diff2' then
+      pcall(vim.cmd, 'syncbind')
+      pcall(vim.cmd, 'normal! ' .. IGNORE_KEY)
+    end
+  end)
+  Buffers.wipe_scratch({ snapshot })
+  return true
 end
 
 ---当前已挂载 view 是否属于最新 show request

@@ -6,6 +6,7 @@
 --   TabClosed                    专属 tab 被关掉 → 拆 diff 视图 + 清 state（统一清理入口）
 --   WinClosed                    panel / diff 窗口被关 → 同步 state 字段并检查不变式
 --   BufWinEnter                  a_win/b_win 的 buffer 被切走（如 bufferline）→ 拆 diff 视图
+--   WinEnter                     进入快照 b_win → 原地换成真实工作区 buffer（worktree_preview='snapshot'）
 
 local State = require('vv-git.state')
 local RightView = require('vv-git.right.view')
@@ -121,7 +122,13 @@ function M.setup(handlers, config)
     vim.api.nvim_create_autocmd({ 'BufEnter', 'FocusGained' }, {
       group = aug,
       callback = State.guarded(function(state, args)
-        if args and args.event == 'BufEnter' and is_own_buffer(state, args.buf) then return end
+        if args and args.event == 'BufEnter' then
+          if is_own_buffer(state, args.buf) then return end
+          -- bufload 在 autocmd 临时窗口里读文件时也会发 BufEnter。预览 unstaged 文件
+          -- 正是用 bufload 取工作区 buffer，此刻它还没挂进 state.view，会被误当成
+          -- 用户进入了外部 buffer，于是每按一次 j/k 就跑一轮 reload_index
+          if vim.fn.win_gettype() == 'autocmd' then return end
+        end
         refresh_debounced()
       end),
     })
@@ -134,6 +141,19 @@ function M.setup(handlers, config)
       callback = State.guarded(function() refresh_debounced() end),
     })
   end
+
+  -- worktree_preview='snapshot'：光标进入 b_win 即把只读快照换成真实 buffer，保证随后的
+  -- gd / K / 编辑落在挂好 LSP 的真实文件上。同步执行而非 schedule：紧跟的按键可能已在
+  -- typeahead 里，schedule 的回调不保证先于它们执行
+  vim.api.nvim_create_autocmd('WinEnter', {
+    group = aug,
+    callback = State.guarded(function(state)
+      local view = state.view
+      if view and view.b_snapshot and vim.api.nvim_get_current_win() == view.b_win then
+        RightView.promote(state)
+      end
+    end),
+  })
 
   -- 仅当 vv-git tab 是当前 tab 时才重排
   vim.api.nvim_create_autocmd('VimResized', {

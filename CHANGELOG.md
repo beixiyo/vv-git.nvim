@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.18 - 2026-09-30
+
+### Added
+
+- **工作区快照预览**：新增 `worktree_preview = 'buffer' | 'snapshot' | fun(ctx)`。`'snapshot'` 浏览时右侧显示只读快照，不加载真实文件、不挂 LSP；光标进入右侧时原地换成真实 buffer，`gd` / `K` / 编辑照常可用。已加载的文件和冲突 result 窗口始终用真实 buffer
+- **停留自动替换**：新增 `snapshot_promote_ms`，光标停留该时长后自动换成真实 buffer，浏览时也能看到诊断；连续 j/k 途经的文件不会被加载
+
+### Changed
+
+- **默认启用快照预览**：`worktree_preview` 默认 `'snapshot'`、`snapshot_promote_ms` 默认 `400`。需要旧行为设 `worktree_preview = 'buffer'`
+- **单按 j/k 立即预览**：距上次移动超过 `preview_debounce_ms` 时不再等待防抖，只有按住连切才防抖；单按到右侧挂载的中位耗时 211ms → 93ms
+
+### Fixed
+
+- **每次 j/k 仍全量刷新**：预览加载工作区文件时 `bufload` 在临时窗口发出的 `BufEnter` 被当成外部变化，每切一个文件就跑一轮 `git status` + `git remote`
+- **双栏切单栏后被动刷新失效**：关闭 a 窗口时 `WinClosed` 把整个 view 当成被外部关闭，新 view 被标记为过期，之后 GitSigns 等触发的重新渲染全部失效；冲突视图重建布局时同样修复
+
 ## 0.3.17 - 2026-09-26
 
 ### Changed

@@ -46,7 +46,7 @@ function M.new(opts)
     end
   end
 
-  -- 确保 single/dual 布局；从 conflict3 退出时同步释放 result buffer 的专属资源。
+  -- 确保 single/dual 布局；从 conflict3 退出时同步释放 result buffer 的专属资源
   ---@param state table
   ---@param want_dual boolean
   ---@return integer? b_win, integer? a_win
@@ -86,12 +86,18 @@ function M.new(opts)
       return main, a_win
     end
 
-    if a_valid then pcall(api.nvim_win_close, view.a_win, true) end
+    -- 先从 view 摘掉 a_win 再关：WinClosed 若仍在 view 里认出它，会把整个 view
+    -- 当成被外部关闭而 RightView.close，废弃正在 attach 的这次 show
+    if a_valid then
+      local a_win = view.a_win
+      view.a_win, view.a_buf = nil, nil
+      pcall(api.nvim_win_close, a_win, true)
+    end
     if b_valid then return view.b_win, nil end
     return main_window(state), nil
   end
 
-  -- conflict3 先在 b 下方创建横跨 diff 区的 result，再把顶部拆成 a/b。
+  -- conflict3 先在 b 下方创建横跨 diff 区的 result，再把顶部拆成 a/b
   ---@param state table
   ---@return integer? b_win, integer? a_win, integer? c_win
   function instance.ensure_conflict(state)
@@ -106,15 +112,15 @@ function M.new(opts)
       return view.b_win, view.a_win, view.c_win
     end
 
-    -- b_win 是布局锚点，重建时只关闭旧 a/c。
-    if a_valid then pcall(api.nvim_win_close, view.a_win, true) end
-    if c_valid then pcall(api.nvim_win_close, view.c_win, true) end
+    -- b_win 是布局锚点，重建时只关闭旧 a/c；先摘字段再关窗，原因同 ensure
+    local old_a, old_c = view and view.a_win, view and view.c_win
     if view then
       if view.c_buf then opts.on_remove_result_buffer(view.c_buf) end
-      view.a_win = nil
-      view.c_win = nil
-      view.c_buf = nil
+      view.a_win, view.a_buf = nil, nil
+      view.c_win, view.c_buf = nil, nil
     end
+    if a_valid then pcall(api.nvim_win_close, old_a, true) end
+    if c_valid then pcall(api.nvim_win_close, old_c, true) end
 
     local main = (b_valid and view.b_win) or main_window(state)
     if not main then return nil, nil, nil end

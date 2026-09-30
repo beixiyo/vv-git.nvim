@@ -42,6 +42,8 @@ local M = {}
 ---@field auto_refresh boolean  -- BufEnter / FocusGained 时防抖刷新左栏 git 状态，捕获终端 checkout/pull、外部改文件等 @default true
 ---@field preview_debounce_ms integer  -- 预览防抖延迟（毫秒），光标停顿后才刷新右侧 diff，避免快速 j/k 时频繁重算；0 = 不防抖 @default 150
 ---@field inline_diff_max_lines integer  -- 单栏模式下 inline diff 最大支持行数，超过则跳过高亮（避免 vim.diff 大文件卡） @default 10000
+---@field worktree_preview VVGitWorktreePreview|fun(context:VVGitWorktreePreviewContext):VVGitWorktreePreview  -- 预览工作区文件时右侧用什么 buffer：'buffer' 直接加载真实文件（LSP 等立即可用）；'snapshot' 浏览时用只读磁盘快照，不触发 BufRead / LSP attach，光标进入该窗口时原地换成真实 buffer。文件已加载、焦点本就在右侧、冲突 result 窗口始终用真实 buffer；函数返回非法值按 'buffer' @default 'snapshot'
+---@field snapshot_promote_ms integer|false  -- 快照预览在光标停留该毫秒数后自动原地换成真实 buffer（焦点留在左栏），LSP / lint 诊断随之出现；连续 j/k 期间不会触发。false = 只在光标进入右侧窗口时替换 @default 400
 ---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用 @default 'toggle_stage'
 ---@field diff_ratio number[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6 @default { 5, 5 }
 ---@field conflict_result_ratio number  -- 三栏冲突视图中底部 result/worktree 窗口的高度比例，范围 0.1~0.9 @default 0.5
@@ -57,6 +59,16 @@ local M = {}
 ---@field revision_mappings table<string, fun(context:VVGitRevisionMappingContext)>?  revision/index scratch buffer 内的自定义键位；真实 worktree buffer 不安装，避免覆盖其 buffer-local 映射 @default {}
 ---@field subrepo VVGitSubrepoConfig  嵌套子仓库扫描
 ---@field worktree VVGitWorktreeConfig  worktree 管理器策略 @default 见 VVGitWorktreeConfig
+
+---@alias VVGitWorktreePreview 'buffer'|'snapshot'
+
+---@class VVGitWorktreePreviewContext
+---@field root string 文件所属仓库根（子仓库时为子仓库根）
+---@field path string 仓库内相对路径
+---@field abspath string
+---@field section 'staged'|'unstaged'|'compare'|'conflicts'
+---@field xy string git status 两位状态码，如 ' M' / '??'
+---@field size integer? 文件字节数；读取失败为 nil
 
 ---@class VVGitRevisionMappingContext
 ---@field bufnr integer 当前 revision/index scratch buffer
@@ -115,6 +127,8 @@ local defaults = {
   preview_debounce_ms = 150,
   auto_refresh = true,
   inline_diff_max_lines = 10000,
+  worktree_preview = 'snapshot',
+  snapshot_promote_ms = 400,
   right_click = 'toggle_stage',
   diff_nowrap = false,
   subrepo = {
@@ -203,6 +217,16 @@ function M.setup(opts)
       and configured.parent_repository ~= 'always'
       and configured.parent_repository ~= 'never' then
     error("vv-git: parent_repository must be 'prompt', 'always', or 'never'")
+  end
+
+  local worktree_preview = configured.worktree_preview
+  if worktree_preview ~= 'buffer' and worktree_preview ~= 'snapshot' and type(worktree_preview) ~= 'function' then
+    error("vv-git: worktree_preview must be 'buffer', 'snapshot', or a function")
+  end
+
+  local promote_ms = configured.snapshot_promote_ms
+  if promote_ms ~= false and not (type(promote_ms) == 'number' and promote_ms >= 0) then
+    error('vv-git: snapshot_promote_ms must be false or a non-negative number')
   end
   M._config = configured
   local panel_state = configured_state or require('vv-utils.state').register('vv-git', 'panel')
