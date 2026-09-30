@@ -104,7 +104,7 @@ function M.open_manager(state, on_select, config)
     if manager_closed then return false end
     if state.git_root ~= root or state._closing then return false end
     if State.root_generation(state) ~= owner_generation then return false end
-    -- 测试和外部调用方可能只提供 `{ git_root = ... }`；仅完整打开的 vv-git state 强制单例身份。
+    -- 测试和外部调用方可能只提供 `{ git_root = ... }`；仅完整打开的 vv-git state 强制单例身份
     if state.tabpage and State.has() and not State.is_current(state) then return false end
     return vim.api.nvim_buf_is_valid(buf)
         and (not win or vim.api.nvim_win_is_valid(win))
@@ -248,6 +248,30 @@ function M.open_manager(state, on_select, config)
       Remove.run(root, wt, refresh, {
         is_active = is_active,
         begin = function() return action_scope:begin({ key = 'action' }) end,
+        start_loading = function()
+          local ns = vim.api.nvim_create_namespace('vv-git-worktree-loading')
+          local stop = require('vv-utils.loading').ticker({
+            on_frame = function(frame)
+              if not is_active() then return end
+              vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+              for row, item in ipairs(list) do
+                if item.path == wt.path then
+                  local mark = vim.fs.normalize(item.path) == root and CUR_MARK or ' '
+                  local col = #mark + 1 + (BRANCH_ICON ~= '' and #BRANCH_ICON + 1 or 0) + #ref_label(item)
+                  vim.api.nvim_buf_set_extmark(buf, ns, row - 1, col, {
+                    virt_text = { { ' ' .. frame, 'Comment' } },
+                    virt_text_pos = 'inline',
+                  })
+                  break
+                end
+              end
+            end,
+          })
+          return function()
+            stop()
+            if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1) end
+          end
+        end,
       })
     end
   end, 'remove')

@@ -15,7 +15,7 @@ end
 ---@param root string
 ---@param wt VVGitWorktree
 ---@param refresh fun()
----@param context {is_active:fun():boolean, begin:fun():vv-utils.async.Request}
+---@param context {is_active:fun():boolean, begin:fun():vv-utils.async.Request, start_loading?:fun():fun()}
 function M.run(root, wt, refresh, context)
   if wt.is_main or vim.fs.normalize(wt.path) == vim.fs.normalize(root) then
     vim.notify('[vv-git] The current or main worktree cannot be removed', vim.log.levels.WARN)
@@ -34,6 +34,11 @@ function M.run(root, wt, refresh, context)
   }
   local request = context.begin()
   local handle
+  local stop_loading
+
+  local function stop_progress()
+    if stop_loading then stop_loading(); stop_loading = nil end
+  end
 
   local function active() return request:is_current() and context.is_active() end
   local function dispose() request:dispose() end
@@ -72,15 +77,20 @@ function M.run(root, wt, refresh, context)
   end
 
   local function remove(snapshot, force, done)
+    if context.start_loading then stop_loading = context.start_loading() end
+    local function complete(...)
+      stop_progress()
+      done(...)
+    end
     inspect(function(latest, err)
       if not latest or latest.dirty ~= snapshot.dirty then
-        done(false, err or 'Worktree changed', false)
+        complete(false, err or 'Worktree changed', false)
         return
       end
 
-      if not active() then done(false, 'worktree removal request is no longer current', false); return end
+      if not active() then complete(false, 'worktree removal request is no longer current', false); return end
       Git.worktree_remove(root, latest.target.path, force and { force = true } or nil, function(ok, remove_err)
-        done(ok, remove_err, true)
+        complete(ok, remove_err, true)
       end)
     end)
   end
@@ -142,7 +152,10 @@ function M.run(root, wt, refresh, context)
     })
   end
 
-  request:set_disposer(function() if handle then handle.close() end end)
+  request:set_disposer(function()
+    stop_progress()
+    if handle then handle.close() end
+  end)
   inspect(function(snapshot, err)
     if not active() then dispose(); return end
     if not snapshot then abort(err); return end
