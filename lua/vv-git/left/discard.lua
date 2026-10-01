@@ -5,9 +5,43 @@ local State = require('vv-git.state')
 local Async = require('vv-utils.async')
 local Confirm = require('vv-utils.confirm')
 local Subrepo = require('vv-git.subrepo')
+local Fs = require('vv-utils.fs')
 
 local M = {}
 local scope = Async.scope({ cancel_previous = true })
+
+---@param name string
+---@param path string
+---@return boolean
+local function under(name, path)
+  return name == path or name:sub(1, #path + 1) == path .. '/'
+end
+
+-- discard 在磁盘上还原或删除了文件，让已打开的 buffer 跟上，否则 LSP 会继续以旧内容、已不存在的路径为准：
+--   - 文件被删掉（未跟踪文件；或还原后不存在）：关闭未修改的 buffer，服务端收到 didClose（Fs.close_stale_buffers）
+--   - 文件被还原：对未修改的 buffer checktime，autoread 重新加载，服务端收到新内容（关掉 autoread 时跳过）
+-- 已修改的 buffer 这里不关闭、不 checktime（关闭会丢失未保存内容）；Neovim 自己之后的时间戳检查仍可能对它弹 W12
+---@param root string
+---@param paths string[] 相对 root 的路径
+local function sync_buffers(root, paths)
+  for _, relpath in ipairs(paths) do
+    local path = vim.fs.normalize(root .. '/' .. relpath)
+    Fs.close_stale_buffers(path)
+
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buftype == '' and not vim.bo[buf].modified then
+        local name = vim.api.nvim_buf_get_name(buf)
+        if name ~= '' and under(vim.fs.normalize(name), path) then
+          -- 必须带 bufnr：不带参数的 checktime 检查全部 buffer，已修改且被还原的 buffer 照样会弹 W12。
+          -- 关掉 autoread 时 checktime 会弹阻塞的 W11 提示，留给 Neovim 之后自己检查
+          pcall(vim.api.nvim_buf_call, buf, function()
+            if vim.o.autoread then vim.cmd('silent! checktime ' .. buf) end
+          end)
+        end
+      end
+    end
+  end
+end
 
 ---@param state table
 ---@param groups {root:string, tracked:string[], untracked:string[]}[]
@@ -74,6 +108,9 @@ function M.confirm(state, groups, opts)
           return
         end
         operation.apply(operation.root, operation.paths, function(ok, err)
+          -- 不论成败、也不论面板是否已过期都要同步：磁盘可能已经被部分改动。
+          -- 同步出错（用户 autocmd 等）不能打断后续操作与面板刷新
+          pcall(sync_buffers, operation.root, operation.paths)
           run(index + 1, first_error or (not ok and (err or 'operation failed')) or nil)
         end)
       end
