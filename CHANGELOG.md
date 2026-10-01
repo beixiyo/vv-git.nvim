@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.20 - 2026-10-01
+
+### Fixed
+
+- **丢弃改动后 buffer 不同步**：discard 删除文件后，对应的未修改 buffer 被关闭，LSP 收到 didClose，不再把已删除的路径当成仍打开的文档；被还原文件的未修改 buffer 立即重新加载。已修改的 buffer 不动
+
 ## 0.3.19 - 2026-09-30
 
 ### Added
