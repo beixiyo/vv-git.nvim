@@ -89,6 +89,17 @@ function M.set_root(state, root)
   return true
 end
 
+--- 丢弃已加载的仓库数据（树、子仓库、index、分支），render 随即退回 "(Waiting for git status...)" 骨架
+--- 切换根仓库后、reload 完成前调用，避免面板继续显示旧仓库的标题和文件树
+---@param state table
+function M.clear_repo_data(state)
+  state.tree = nil
+  state.subrepos = {}
+  state.index = nil
+  state.repo_info = nil
+  state.branch = nil
+end
+
 function M.clear() current = nil end
 
 ---@param state table

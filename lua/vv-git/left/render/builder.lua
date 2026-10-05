@@ -14,6 +14,8 @@ local INDENT_STEP = '  '
 local ARROW_OPEN = ui_icons.fold_open.glyph
 local ARROW_CLOSE = ui_icons.fold_closed.glyph
 local ARROW_COLS = 2
+-- 折叠箭头槽宽度：loading 用 overlay 盖住标题行箭头时按此宽度补齐
+M.ARROW_COLS = ARROW_COLS
 local BRANCH_ICON = (git_icons.git_branches or {}).glyph or ''
 local BRANCH_ICON_HL = (git_icons.git_branches or {}).hl or 'VVGitPanelBranch' -- 语义色（MiniIconsOrange）
 -- nerd font 多数 2 cols；若 MiniIcons 返回 1-col 字符，pad_to_cols 会补空格
@@ -38,7 +40,7 @@ local function pad_to_cols(s, cols)
 end
 
 ---@param opts { depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, node:table, status_letter?:string, status_hl?:string, section_id?:string, selected?:boolean }
----@return string line, table[] extmarks (无 row)
+---@return string line, table[] extmarks (无 row), integer icon_col 图标槽起始字节列（stage loading 落点）
 local function build_row(opts)
   local prefix = string.rep(INDENT_STEP, opts.depth)
 
@@ -84,6 +86,7 @@ local function build_row(opts)
       opts = { end_col = col + #icon, hl_group = icon_hl },
     }
   end
+  local icon_col = col
   col = col + #icon_block
 
   extmarks[#extmarks + 1] = {
@@ -109,7 +112,7 @@ local function build_row(opts)
     }
   end
 
-  return line, extmarks
+  return line, extmarks, icon_col
 end
 
 ---@param state table  vv-git state（含 tree / folds / git_root）
@@ -243,13 +246,16 @@ function M.build(state)
     if info then
       if info.upstream then
         if info.ahead > 0 then
-          push_key_hint('p', 'Push ' .. count_label(info.ahead, 'commit', 'commits'), nil, root, indent)
+          push_key_hint('p', 'Push ' .. count_label(info.ahead, 'commit', 'commits'), nil, root, indent,
+            { root = root, action_hint = true, action = 'push' })
         end
         if info.behind > 0 then
-          push_key_hint('P', 'Pull ' .. count_label(info.behind, 'commit', 'commits'), nil, root, indent)
+          push_key_hint('P', 'Pull ' .. count_label(info.behind, 'commit', 'commits'), nil, root, indent,
+            { root = root, action_hint = true, action = 'pull' })
         end
       elseif not info.detached and not info.unborn and info.head and info.branch_name then
-        push_key_hint('u', 'Publish ' .. info.branch_name, nil, root, indent)
+        push_key_hint('u', 'Publish ' .. info.branch_name, nil, root, indent,
+          { root = root, action_hint = true, action = 'publish' })
       end
     end
     push_blank()
@@ -294,7 +300,7 @@ function M.build(state)
       row = row, col = title_col + #title + 1,
       opts = { end_col = #header, hl_group = 'VVGitPanelSectionCount' },
     }
-    id_by_line[#lines] = { section_header = section_id, base = base, root = root }
+    id_by_line[#lines] = { section_header = section_id, base = base, root = root, arrow_col = arrow_col }
 
     -- section 折叠：只保留标题行，跳过文件列表
     if collapsed then
@@ -319,7 +325,7 @@ function M.build(state)
       end
 
       local sel_key = Subrepo.sel_key(section_id, node.relpath)
-      local line, ems = build_row({
+      local line, ems, icon_col = build_row({
         depth = r.depth + 1 + indent, -- section 内再缩进一层（子仓库块再 +1）
         is_dir = node.is_dir,
         is_open = node.is_dir and not scoped_folds[node.relpath],
@@ -336,7 +342,7 @@ function M.build(state)
       for _, em in ipairs(ems) do
         extmarks[#extmarks + 1] = { row = lnum, col = em.col, opts = em.opts }
       end
-      id_by_line[#lines] = { section = section_id, base = base, root = root, node = node }
+      id_by_line[#lines] = { section = section_id, base = base, root = root, node = node, icon_col = icon_col }
     end
 
     push_blank()

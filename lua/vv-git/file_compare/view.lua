@@ -296,7 +296,7 @@ function M.new(opts)
     if not request:is_current() then return nil end
     for _, win in ipairs({ transaction.ref_win, source_win }) do
       if win == source_win then transaction.source_diff_applied = true end
-      vim.api.nvim_win_call(win, function() vim.cmd('noautocmd diffthis') end)
+      Winopts.enable_diff(win)
       if win == source_win then
         transaction.source_applied_winopts = Winopts.save(source_win)
         transaction.source_applied_winopt_stamps = Winopts.save_stamps(source_win)

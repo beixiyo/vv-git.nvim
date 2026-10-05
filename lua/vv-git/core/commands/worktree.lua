@@ -3,6 +3,7 @@
 local State = require('vv-git.state')
 local RightView = require('vv-git.right.view')
 local Discard = require('vv-git.left.discard')
+local LeftRender = require('vv-git.left.render')
 
 local M = {}
 
@@ -57,6 +58,8 @@ function M.new(context)
         state.folds = {}
         state.section_folds = {}
         state.block_folds = {}
+        State.clear_repo_data(state)
+        LeftRender.render(state)
 
         require('vv-git.loader').reload_index(state)
       end, context.config().worktree)

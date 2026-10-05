@@ -26,7 +26,7 @@ end
 ---@param layout_root string
 ---@param refresh fun()
 ---@param config table?
----@param context {is_active:fun():boolean, begin:fun():vv-utils.async.Request}
+---@param context {is_active:fun():boolean, begin:fun():vv-utils.async.Request, start_loading?:fun(label:string):fun()}
 function M.run(root, layout_root, refresh, config, context)
   local request = context.begin()
   local function current() return request:is_current() and context.is_active() end
@@ -34,8 +34,11 @@ function M.run(root, layout_root, refresh, config, context)
 
   local function add(path, base, branch)
     if not current() then return end
+    -- loading 与请求同生命周期：finish / dispose / 被顶替 / manager 关闭都会经 disposer 停止
+    if context.start_loading then request:set_disposer(context.start_loading('adding ' .. (branch or base))) end
     Git.worktree_add(root, { path = vim.fs.normalize(path), base = base, branch = branch }, function(ok, err)
-      if not current() then return end
+      -- 管理器已失效但请求未被顶替时也要终结，否则 loading 会一直挂到窗口关闭
+      if not current() then cancel(); return end
       if not ok then
         vim.notify('[vv-git] ' .. (err or 'Could not create worktree'), vim.log.levels.ERROR)
         cancel()

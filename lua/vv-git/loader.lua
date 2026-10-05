@@ -212,9 +212,14 @@ end
 ---@param after fun()?
 ---@param passive boolean?  被动刷新（auto_refresh / 保存 / gitsigns / R / commit-push）：
 ---  render 保持光标停在当前文件、不按可能滞后的 cur_path 拉走（防 j/k 导航期光标拉扯）
+---@return vv-utils.async.Request request 本次 reload；finish / 被顶替 / cancel 都会调用其 disposer，
+---  调用方可用 set_disposer 挂接与请求同生命周期的资源（after 在被顶替时不会调用）
 function M.reload_index(state, after, passive)
   local root = state.git_root
   local request = reload_scope(state):begin({ key = 'reload' })
+  -- 发起序号：stage loading 据此判断一次 reload 是否在写入完成之后发起（见 left/loading.lua）
+  state._reload_seq = (state._reload_seq or 0) + 1
+  local seq = state._reload_seq
   local add_cancel, cancel_all = new_cancel_bag()
   request:set_cancel(cancel_all)
   local done_index = false
@@ -235,12 +240,14 @@ function M.reload_index(state, after, passive)
       -- vv-statuscol 各自再跑一轮 git，等于把这次空转扩散给下游）。after 仍要调用，
       -- 否则 on_ready 之类的一次性回调会永远等不到
       if skip_render then
+        require('vv-git.left.loading').reload_settled(state, seq)
         if after then after() end
         request:finish()
         return
       end
 
       LeftRender.render(state, passive)
+      require('vv-git.left.loading').reload_settled(state, seq)
       if not active() then return end
       -- 广播 git 状态变更：stage/unstage/discard/commit/push/conflict 等所有变更操作
       -- 都汇聚到 reload_index（actions → refresh、commit/push → M.refresh），故这里发一个
@@ -328,7 +335,7 @@ function M.reload_index(state, after, passive)
   local depth = (sub and sub.depth()) or 0
   if not (depth and depth > 0) then
     proceed({})
-    return
+    return request
   end
 
   local cfg = (sub and sub.config()) or {}
@@ -345,6 +352,7 @@ function M.reload_index(state, after, passive)
   else
     proceed(Subrepo.discover(root, depth, prune, nil, cfg.scan_worktrees))
   end
+  return request
 end
 
 return M

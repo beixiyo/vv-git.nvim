@@ -18,13 +18,14 @@
 
 - [Git](https://github.com/git/git) — required for status, diff, staging, commits, branches, remotes, and worktrees
 - [vv-utils.nvim](https://github.com/beixiyo/vv-utils.nvim) — required for shared Git parsing, filesystem, and UI utilities
+- [vv-icons.nvim](https://github.com/beixiyo/vv-icons.nvim) — required for panel, help, and worktree icons
 
 ## Installation
 
 ```lua
 {
   'beixiyo/vv-git.nvim',
-  dependencies = { 'beixiyo/vv-utils.nvim' },
+  dependencies = { 'beixiyo/vv-utils.nvim', 'beixiyo/vv-icons.nvim' },
   cmd = {
     'VVGit', 'VVGitClose', 'VVGitToggle', 'VVGitTogglePanel', 'VVGitRefresh',
     'VVGitCompare', 'VVGitCompareRef', 'VVGitCompareRefs', 'VVGitCompareFile',
@@ -73,6 +74,7 @@
 | `worktree_preview` | `'buffer' \| 'snapshot' \| fun(ctx): ('buffer' \| 'snapshot')` | `'snapshot'` | Which buffer backs the right side when previewing a worktree file; see "Worktree preview" below |
 | `snapshot_promote_ms` | `integer \| false` | `400` | Swap a snapshot preview for the real buffer after the cursor rests this many milliseconds, keeping focus in the left panel; `false` swaps only when entering the right window |
 | `right_click` | `string \| false` | `'toggle_stage'` | Right-click action; `false` disables it |
+| `yank_notify` | `boolean` | `false` | Notify after `Y` (or a `yank_abs_path` right-click) copies a path; clipboard errors are always reported |
 | `diff_ratio` | `number[]` | `{ 5, 5 }` | Width ratio of a_win:b_win |
 | `conflict_result_ratio` | `number` | `0.5` | Conflict result-window height ratio (`0.1`–`0.9`) |
 | `diff_nowrap` | `boolean` | `false` | Force wrapping off in diff windows |
@@ -266,3 +268,13 @@ vim.api.nvim_exec_autocmds('User', {
   data = { root = '/path/to/dir' },
 })
 ```
+
+## Development tests
+
+```sh
+./tests/run.sh [literal-filter]
+```
+
+Requires Unix-like OS, Neovim 0.12+, Git, POSIX shell and existing `vv-utils.nvim` source. `VV_UTILS` and `NVIM_BIN` can override discovery and the executable. The full suite needs existing `vv-icons.nvim` source (`VV_ICONS` override), also a required production dependency. Git writes and publish fixtures use only isolated local repositories.
+
+The shared runner uses isolated children without personal configuration. Dependency discovery, CI checkouts and isolation are documented in the [shared test guide](https://github.com/beixiyo/vv-utils.nvim/blob/main/dev/test/README.md). Headless tests do not replace TUI verification; CI needs an outer job timeout.

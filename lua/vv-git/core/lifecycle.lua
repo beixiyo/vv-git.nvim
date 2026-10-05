@@ -11,6 +11,7 @@ local Subrepo = require('vv-git.subrepo')
 local UGit = require('vv-utils.git')
 local Async = require('vv-utils.async')
 local Discard = require('vv-git.left.discard')
+local LeftLoading = require('vv-git.left.loading')
 
 ---@param root string
 ---@return string? relpath
@@ -465,6 +466,16 @@ function L.new(deps)
     return true
   end)
 
+  -- 手动刷新（R / :VVGitRefresh）：同 refresh，另在根仓库标题行显示 loading，
+  -- 让「结果无变化跳过渲染」时也能看出按键生效。先 acquire 再 reload：新请求顶掉旧请求时
+  -- 旧请求的 release 只让计数 2→1，显示不中断
+  M._manual_refresh = State.guarded(function(state)
+    if not state.panel or not state.git_root then return end
+    local release = LeftLoading.acquire_refresh(state)
+    Loader.reload_index(state, nil, true):set_disposer(release)
+    return true
+  end)
+
   -- vv-explorer 按 `]`/`[` 切根后广播 User VVExplorerRootChanged → 这里跟随：
   --   * 面板关着：只记住目录，下次 open() 用它当候选根（见 resolve_open_context）
   --   * 面板开着：解析出仓库根，与当前 git_root 不同才切——同一仓库内部换目录不用动，
@@ -497,6 +508,8 @@ function L.new(deps)
 
       require('vv-git.compare').stop(state)
       RightView.close(state)
+      State.clear_repo_data(state)
+      LeftRender.render(state)
       Loader.reload_index(state)
     end)
     request:set_cancel(cancel)

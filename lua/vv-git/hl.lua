@@ -38,7 +38,6 @@ local function build_specs()
     VVGitPanelBranch    = { link = 'Keyword' }, -- 仓库标题行的分支名：使用主题关键字色，与橙色 icon / 蓝色仓库名分层
     VVGitPanelFile      = { link = 'Normal' },
     VVGitPanelIndent    = { link = 'Comment' },
-    VVGitPanelMatch     = { link = 'Search' },
     VVGitPanelDim       = { link = 'Comment' },
     VVGitPanelSelected  = { link = 'Visual' },
     VVGitPanelKey       = { link = 'Special' },

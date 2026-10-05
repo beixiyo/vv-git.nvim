@@ -2,17 +2,10 @@
 
 local H = {}
 
-local source = debug.getinfo(1, 'S').source:sub(2)
-local root = vim.fn.fnamemodify(source, ':p:h:h:h')
-local vendors = vim.fn.fnamemodify(root, ':h')
-vim.opt.runtimepath:prepend(vendors .. '/vv-utils.nvim')
-vim.opt.runtimepath:prepend(vendors .. '/vv-icons.nvim')
-vim.opt.runtimepath:prepend(root)
-
 H.noop = function() end
 
 function H.assert_eq(actual, expected, message)
-  assert(actual == expected, message .. ': expected ' .. vim.inspect(expected) .. ', got ' .. vim.inspect(actual))
+  assert(actual == expected, message .. ': 期望 ' .. vim.inspect(expected) .. ', 实际 ' .. vim.inspect(actual))
 end
 
 function H.create_file_compare_fixture()

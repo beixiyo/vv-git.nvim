@@ -4,6 +4,7 @@ local Git = require('vv-git.git')
 local Keys = require('vv-utils.keys')
 local Async = require('vv-utils.async')
 local State = require('vv-git.state')
+local Loading = require('vv-utils.loading')
 local Create = require('vv-git.worktree.create')
 local Remove = require('vv-git.worktree.remove')
 
@@ -239,6 +240,16 @@ function M.open_manager(state, on_select, config)
     Create.run(root, layout_root, refresh, config, {
       is_active = is_active,
       begin = function() return action_scope:begin({ key = 'action' }) end,
+      start_loading = function(label)
+        if not win or not vim.api.nvim_win_is_valid(win) then return function() end end
+        local handle = Loading.win_text({
+          win = win,
+          slot = 'title',
+          label = label,
+          format = function(frame, text) return (' Worktrees · %s %s '):format(frame, text) end,
+        })
+        return function() handle:stop() end
+      end,
     })
   end, 'add')
 
@@ -249,28 +260,21 @@ function M.open_manager(state, on_select, config)
         is_active = is_active,
         begin = function() return action_scope:begin({ key = 'action' }) end,
         start_loading = function()
-          local ns = vim.api.nvim_create_namespace('vv-git-worktree-loading')
-          local stop = require('vv-utils.loading').ticker({
-            on_frame = function(frame)
-              if not is_active() then return end
-              vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+          -- 帧贴在分支名后；列表刷新后按 path 重新定位，找不到（已被移除 / manager 失效）即隐藏
+          local handle = Loading.mark({
+            buf = buf,
+            get_pos = function()
+              if not is_active() then return nil end
               for row, item in ipairs(list) do
                 if item.path == wt.path then
                   local mark = vim.fs.normalize(item.path) == root and CUR_MARK or ' '
                   local col = #mark + 1 + (BRANCH_ICON ~= '' and #BRANCH_ICON + 1 or 0) + #ref_label(item)
-                  vim.api.nvim_buf_set_extmark(buf, ns, row - 1, col, {
-                    virt_text = { { ' ' .. frame, 'Comment' } },
-                    virt_text_pos = 'inline',
-                  })
-                  break
+                  return { row = row, col = col }
                 end
               end
             end,
           })
-          return function()
-            stop()
-            if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1) end
-          end
+          return function() handle:stop() end
         end,
       })
     end

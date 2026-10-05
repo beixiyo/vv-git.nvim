@@ -6,6 +6,7 @@ local Async = require('vv-utils.async')
 local Confirm = require('vv-utils.confirm')
 local Subrepo = require('vv-git.subrepo')
 local Fs = require('vv-utils.fs')
+local LeftLoading = require('vv-git.left.loading')
 
 local M = {}
 local scope = Async.scope({ cancel_previous = true })
@@ -32,7 +33,7 @@ local function sync_buffers(root, paths)
       if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buftype == '' and not vim.bo[buf].modified then
         local name = vim.api.nvim_buf_get_name(buf)
         if name ~= '' and under(vim.fs.normalize(name), path) then
-          -- 必须带 bufnr：不带参数的 checktime 检查全部 buffer，已修改且被还原的 buffer 照样会弹 W12。
+          -- 必须带 bufnr：不带参数的 checktime 检查全部 buffer，已修改且被还原的 buffer 照样会弹 W12
           -- 关掉 autoread 时 checktime 会弹阻塞的 W11 提示，留给 Neovim 之后自己检查
           pcall(vim.api.nvim_buf_call, buf, function()
             if vim.o.autoread then vim.cmd('silent! checktime ' .. buf) end
@@ -45,10 +46,15 @@ end
 
 ---@param state table
 ---@param groups {root:string, tracked:string[], untracked:string[]}[]
----@param opts {title:string, message:any, severity:'warn'|'danger', after:fun(), on_cancel?:fun(), owner_root?:string, owner_generation?:integer}
+---@param opts {title:string, message:any, severity:'warn'|'danger', after:fun(), on_cancel?:fun(), owner_root?:string, owner_generation?:integer, loading_items?:{root:string, base:string, relpath?:string}[]}
 function M.confirm(state, groups, opts)
   local owner_root = opts.owner_root or state.git_root
   local owner_generation = opts.owner_generation or State.root_generation(state)
+  -- 按键时预设的落点 hint 先收起、写入完成后再放回：确认浮窗抢焦点会发 BufEnter 触发 auto_refresh，
+  -- 带 hint 的渲染会在用户确认前就把光标挪到相邻文件。必须在 begin 之前取出，被顶掉的旧请求
+  -- disposer 会清空 state._action_hint
+  local hint = state._action_hint
+  state._action_hint = nil
   local request = scope:begin({ key = 'discard' })
   local handle
 
@@ -83,6 +89,8 @@ function M.confirm(state, groups, opts)
     confirm_label = 'Discard',
     on_confirm = function()
       if not current() then dispose(); return end
+      -- 确认后才显示：被丢弃项上转圈，直到写入后的 reload 渲染完成（项从面板消失）
+      local written = LeftLoading.begin_write(state, opts.loading_items or {})
       local operations = {}
       for _, group in ipairs(groups) do
         if #group.tracked > 0 then
@@ -98,17 +106,24 @@ function M.confirm(state, groups, opts)
       end
 
       local function run(index, first_error)
-        if not current() then dispose(); return end
+        if not current() then written(false); dispose(); return end
         local operation = operations[index]
         if not operation then
           if first_error then
             vim.notify('[vv-git] discard failed: ' .. tostring(first_error), vim.log.levels.ERROR)
           end
-          if request:finish() then opts.after() end
+          -- 部分失败也交给随后的 reload 清帧：成功项消失、失败项留在原处
+          local finished = request:finish()
+          written(finished)
+          if finished then
+            -- finish 会执行 disposer 清空 hint，写入完成后再放回，交给 after 的 reload 渲染落到相邻文件
+            state._action_hint = hint
+            opts.after()
+          end
           return
         end
         operation.apply(operation.root, operation.paths, function(ok, err)
-          -- 不论成败、也不论面板是否已过期都要同步：磁盘可能已经被部分改动。
+          -- 不论成败、也不论面板是否已过期都要同步：磁盘可能已经被部分改动
           -- 同步出错（用户 autocmd 等）不能打断后续操作与面板刷新
           pcall(sync_buffers, operation.root, operation.paths)
           run(index + 1, first_error or (not ok and (err or 'operation failed')) or nil)

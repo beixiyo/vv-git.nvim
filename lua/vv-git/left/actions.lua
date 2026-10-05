@@ -10,6 +10,7 @@ local Loader = require('vv-git.loader')
 local Subrepo = require('vv-git.subrepo')
 local State = require('vv-git.state')
 local Discard = require('vv-git.left.discard')
+local LeftLoading = require('vv-git.left.loading')
 
 local M = {}
 
@@ -179,6 +180,10 @@ function M.toggle_stage(state, id, after, settled)
   local fn = side == 'staged' and Git.unstage or Git.stage
   local label = side == 'staged' and 'unstage' or 'stage'
   local hint = state._action_hint
+  -- 被操作项上的 loading：分组标题整组、目录、文件分别对应标题箭头 / 图标槽
+  local written = LeftLoading.begin_write(state, {
+    { root = id.root, base = side, relpath = (not id.section_header and id.node) and id.node.relpath or nil },
+  })
 
   fn(root, paths, function(ok, err, idle)
     -- Git 回调必然执行一次（IndexQueue.complete 有 completed 去重，start 抛错也会 complete），
@@ -189,8 +194,11 @@ function M.toggle_stage(state, id, after, settled)
         or state._closing
         or state.git_root ~= owner_root
         or State.root_generation(state) ~= owner_generation then
+      written(false)
       return
     end
+    -- 成功时帧保留到写入后发起的 reload 渲染完成（文件移到另一分组），失败立即撤掉
+    written(ok)
 
     if not ok then
       notify_err(label, err)
@@ -248,18 +256,26 @@ function M.discard(state, id)
   local side, paths, root = collect(state, id)
   if not paths or #paths == 0 then return end
 
+  -- 被操作项（分组标题 / 目录 / 文件）的 loading 落点
+  local loading_items = {
+    { root = id.root, base = side, relpath = (not id.section_header and id.node) and id.node.relpath or nil },
+  }
+
   -- staged 区：d = unstage（与 VSCode 行为一致），不做 discard
   if side == 'staged' then
     local owner_root = state.git_root
     local owner_generation = State.root_generation(state)
+    local written = LeftLoading.begin_write(state, loading_items)
 
     Git.unstage(root, paths, function(ok, err)
       if not State.is_current(state)
           or state._closing
           or state.git_root ~= owner_root
           or State.root_generation(state) ~= owner_generation then
+        written(false)
         return
       end
+      written(ok)
       if not ok then notify_err('unstage', err); return end
       refresh(state)
     end, current_write_opts(state))
@@ -293,6 +309,7 @@ function M.discard(state, id)
   if #untracked > 0 then message[#message + 1] = untracked_warn(#untracked) end
 
   Discard.confirm(state, { { root = root, tracked = tracked, untracked = untracked } }, {
+    loading_items = loading_items,
     title = 'Discard changes?',
     message = message,
     severity = #untracked > 0 and 'danger' or 'warn',
@@ -347,7 +364,14 @@ function M.toggle_stage_selection(state, items)
   end
 
   if #ops == 0 then return end
-  join(ops, function() Loader.reload_index(state) end)
+  local written = LeftLoading.begin_write(state, vim.tbl_map(function(it)
+    return { root = it.root, base = it.base, relpath = it.relpath }
+  end, items))
+  join(ops, function()
+    -- 部分失败也按完成处理：随后的 reload 会把成功项移走、失败项留在原处，帧一并清除
+    written(true)
+    Loader.reload_index(state)
+  end)
 end
 
 -- 多选批量 discard：staged → unstage；unstaged → 弹一次确认框后 discard（跨仓库统一确认）
@@ -400,6 +424,9 @@ function M.discard_selection(state, items)
     if total_untracked > 0 then message[#message + 1] = untracked_warn(total_untracked) end
 
     Discard.confirm(state, groups, {
+      loading_items = vim.tbl_map(function(it)
+        return { root = it.root, base = it.base, relpath = it.relpath }
+      end, vim.tbl_filter(function(it) return it.base == 'unstaged' end, items)),
       title = 'Discard selected changes?',
       message = message,
       severity = total_untracked > 0 and 'danger' or 'warn',

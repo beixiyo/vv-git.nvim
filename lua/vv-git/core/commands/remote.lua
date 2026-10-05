@@ -2,6 +2,7 @@
 
 local State = require('vv-git.state')
 local Git = require('vv-git.git')
+local LeftLoading = require('vv-git.left.loading')
 
 local M = {}
 
@@ -10,6 +11,15 @@ local M = {}
 function M.new(context)
   local commands = {}
   local controller = context.controller
+  -- key → 最近一次请求；仍在途时忽略重复按键，避免 cancel_previous 杀掉正在跑的网络命令
+  local inflight = {}
+
+  ---@param key string
+  ---@return boolean
+  local function in_flight(key)
+    local request = inflight[key]
+    return request ~= nil and request:is_current()
+  end
 
   local git_net = State.guarded(function(state, action)
     if not state.git_root then return end
@@ -20,7 +30,12 @@ function M.new(context)
 
     if not root then return end
 
-    local request = context.request_scope:begin({ key = 'net:' .. action })
+    local key = 'net:' .. action
+    if in_flight(key) then return end
+
+    local request = context.request_scope:begin({ key = key })
+    inflight[key] = request
+    request:set_disposer(LeftLoading.remote_action(state, root, action))
     local fn = Git[action]
 
     vim.notify('[vv-git] ' .. action .. '...', vim.log.levels.INFO)
@@ -51,6 +66,7 @@ function M.new(context)
     local root = context.cursor_root(state)
 
     if not root then return end
+    if in_flight('publish') then return end
 
     local request = context.request_scope:begin({ key = 'publish' })
     local add_cancel, cancel_all = context.new_cancel_bag()
@@ -93,6 +109,9 @@ function M.new(context)
       local function publish_to(remote, remote_added)
         if not current() then return end
         vim.notify('[vv-git] Publishing ' .. info.branch_name .. ' to ' .. remote .. '...', vim.log.levels.INFO)
+        -- 只在网络阶段登记在途：前面的 select / input 若从不回调，不能让 u 永久失效
+        inflight.publish = request
+        request:set_disposer(LeftLoading.remote_action(state, root, 'publish'))
 
         add_cancel(Git.publish(root, remote, function(ok, out)
           if not request:finish()

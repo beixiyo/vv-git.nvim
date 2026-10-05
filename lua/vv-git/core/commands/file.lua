@@ -100,7 +100,7 @@ function M.new(context)
     root = Subrepo.current_root(state, root)
     if not root then return end
     local abs = vim.fs.normalize(root .. '/' .. relpath)
-    Editor.copy_path({ path = abs, title = 'vv-git' })
+    Editor.copy_path({ path = abs, title = 'vv-git', notify = context.config().yank_notify })
   end)
 
   commands._system_open = State.guarded(function(state)

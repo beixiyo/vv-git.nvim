@@ -8,6 +8,7 @@
 local api = vim.api
 local Git = require('vv-git.git')
 local RemoteEsc = require('vv-git.remote_esc')
+local Loading = require('vv-utils.loading')
 
 local M = {}
 
@@ -20,11 +21,36 @@ local function notify_cancel(owner)
   if owner.on_cancel then owner.on_cancel() end
 end
 
+-- 提交在途：footer 显示 loading、buffer 只读，防止编辑已提交出去的 message
+---@param owner table
+local function begin_submit(owner)
+  owner.submitting = true
+  if api.nvim_buf_is_valid(owner.buf) then vim.bo[owner.buf].modifiable = false end
+  if owner.win and api.nvim_win_is_valid(owner.win) then
+    owner.loading = Loading.win_text({ win = owner.win, slot = 'footer', label = 'Committing…' })
+  end
+end
+
+-- 提交失败：恢复原 footer 与可编辑状态，允许改完 message 后重试
+---@param owner table
+local function end_submit(owner)
+  owner.submitting = false
+  if owner.loading then
+    owner.loading:stop()
+    owner.loading = nil
+  end
+  if api.nvim_buf_is_valid(owner.buf) then vim.bo[owner.buf].modifiable = true end
+end
+
 ---@param owner table
 ---@param cancelled? boolean
 local function close_owner(owner, cancelled)
   if owner.closed then return end
   owner.closed = true
+  if owner.loading then
+    owner.loading:stop()
+    owner.loading = nil
+  end
   local win, buf = owner.win, owner.buf
   if win and api.nvim_win_is_valid(win) and api.nvim_get_current_win() == win then
     vim.cmd('stopinsert')
@@ -65,14 +91,14 @@ local function submit(owner, git_root, commit_all, on_success, is_current)
     vim.notify('[vv-git] Commit message cannot be empty', vim.log.levels.WARN)
     return
   end
-  owner.submitting = true
+  begin_submit(owner)
 
   local function do_commit()
     if not is_current() then return end
     Git.commit(git_root, msg, function(ok, err)
       if not is_current() then return end
       if not ok then
-        if cur == owner then cur.submitting = false end
+        if cur == owner then end_submit(owner) end
         vim.notify('[vv-git] Commit failed: ' .. (err or ''), vim.log.levels.ERROR)
         return
       end
@@ -86,7 +112,7 @@ local function submit(owner, git_root, commit_all, on_success, is_current)
     Git.stage_all(git_root, function(ok, err)
       if not is_current() then return end
       if not ok then
-        if cur == owner then cur.submitting = false end
+        if cur == owner then end_submit(owner) end
         vim.notify('[vv-git] git add -A failed: ' .. (err or ''), vim.log.levels.ERROR); return
       end
       do_commit()

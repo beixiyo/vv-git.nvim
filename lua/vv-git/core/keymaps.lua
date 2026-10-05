@@ -5,6 +5,7 @@ local RightView = require('vv-git.right.view')
 local LeftRender = require('vv-git.left.render')
 local Help = require('vv-git.help')
 local Scroll = require('vv-utils.scroll')
+local Mouse = require('vv-utils.mouse')
 local Navigation = require('vv-git.core.navigation')
 local RemoteEsc = require('vv-git.remote_esc')
 
@@ -204,7 +205,7 @@ function L.install(state, M)
     RightView.refresh_keymaps(state)
     LeftRender.render(state, true)   -- compare 模式的退出提示随之切换
   end)
-  map('R',             function() M.refresh() end,                 'refresh')
+  map('R',             function() M._manual_refresh() end,         'refresh')
   map('<CR>',          function() M._activate() end,               'open')
   map('o',             function() M._system_open() end,            'system_open')
   map('X',             function() M._execute() end,               'execute')
@@ -218,6 +219,9 @@ function L.install(state, M)
   if M._config.right_click then
     local rc_action = M._config.right_click
     map('<RightMouse>', function()
+      -- 焦点在面板时右键点别的窗口也会先进这里：交还给鼠标所在窗口，否则会对面板错误的行执行动作
+      if state.panel and state.panel.win and Mouse.redispatch_outside(state.panel.win, '<RightMouse>') then return end
+
       local pos = vim.fn.getmousepos()
       if pos.line > 0 and state.panel and state.panel.win then
         pcall(vim.api.nvim_win_set_cursor, state.panel.win, { pos.line, 0 })

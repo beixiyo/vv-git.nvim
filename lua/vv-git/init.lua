@@ -45,6 +45,7 @@ local M = {}
 ---@field worktree_preview VVGitWorktreePreview|fun(context:VVGitWorktreePreviewContext):VVGitWorktreePreview  -- 预览工作区文件时右侧用什么 buffer：'buffer' 直接加载真实文件（LSP 等立即可用）；'snapshot' 浏览时用只读磁盘快照，不触发 BufRead / LSP attach，光标进入该窗口时原地换成真实 buffer。文件已加载、焦点本就在右侧、冲突 result 窗口始终用真实 buffer；函数返回非法值按 'buffer' @default 'snapshot'
 ---@field snapshot_promote_ms integer|false  -- 快照预览在光标停留该毫秒数后自动原地换成真实 buffer（焦点留在左栏），LSP / lint 诊断随之出现；连续 j/k 期间不会触发。false = 只在光标进入右侧窗口时替换 @default 400
 ---@field right_click string|false  -- 右键触发的 action 名（如 'toggle_stage'/'yank_abs_path'），false 禁用 @default 'toggle_stage'
+---@field yank_notify boolean  -- `Y`（及配置为 yank_abs_path 的右键）复制路径成功后是否 notify；剪贴板写入失败由 Neovim 照常报错，不受影响 @default false
 ---@field diff_ratio number[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6 @default { 5, 5 }
 ---@field conflict_result_ratio number  -- 三栏冲突视图中底部 result/worktree 窗口的高度比例，范围 0.1~0.9 @default 0.5
 ---@field diff_nowrap boolean  -- 置为 true 时 diff 视图强制关闭 wrap（wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制 neovim/neovim#29518、sindrets/diffview.nvim#198） @default false
@@ -130,6 +131,7 @@ local defaults = {
   worktree_preview = 'snapshot',
   snapshot_promote_ms = 400,
   right_click = 'toggle_stage',
+  yank_notify = false,
   diff_nowrap = false,
   subrepo = {
     depth = 0,
@@ -228,6 +230,10 @@ function M.setup(opts)
   if promote_ms ~= false and not (type(promote_ms) == 'number' and promote_ms >= 0) then
     error('vv-git: snapshot_promote_ms must be false or a non-negative number')
   end
+
+  if type(configured.yank_notify) ~= 'boolean' then
+    error('vv-git: yank_notify must be a boolean')
+  end
   M._config = configured
   local panel_state = configured_state or require('vv-utils.state').register('vv-git', 'panel')
   M._config.state = panel_state
@@ -264,7 +270,7 @@ function M.setup(opts)
   ucmd('VVGitClose',        function() M.close() end)
   ucmd('VVGitToggle',       function() M.toggle() end)
   ucmd('VVGitTogglePanel',  function() M.toggle_panel() end)
-  ucmd('VVGitRefresh',      function() M.refresh() end)
+  ucmd('VVGitRefresh',      function() M._manual_refresh() end)
   ucmd('VVGitCompare',      function() M.open() M._compare_pick() end)
   ucmd('VVGitCompareRef',   function(o) M.compare_with_head(o.args) end, { nargs = 1 })
   ucmd('VVGitCompareRefs',  function(o)

@@ -24,6 +24,33 @@ local restore_listener_state = 'idle'
 local restore_listener_reconcile_scheduled = false
 local stop_restore_listeners
 local ensure_restore_listeners
+local diff_executor
+
+-- 原生 diffthis/diffoff 会沿用 Lua caller 的来源；WinClosed 中的 non-nested
+-- 显式写入还可能没有 OptionSet。私有脚本赋值为自有写入留下独立来源戳，
+-- 同值 nodiff 也能接管旧快照；原生命令仍负责全部 diff/fold 副作用
+local function set_diff(win, enabled)
+  if not diff_executor then
+    local result = vim.api.nvim_exec2([[
+function! s:set_diff(enabled) abort
+  if a:enabled
+    noautocmd diffthis
+  else
+    noautocmd diffoff
+  endif
+  noautocmd let &l:diff = a:enabled
+endfunction
+echo expand('<SID>')
+]], { output = true })
+    diff_executor = result.output .. 'set_diff'
+  end
+  vim.api.nvim_win_call(win, function() vim.fn[diff_executor](enabled) end)
+end
+
+---@param win integer
+function M.enable_diff(win)
+  set_diff(win, true)
+end
 
 ---@param win integer
 ---@return table<string, any>
@@ -343,9 +370,7 @@ function M.detach_source_diff(transaction)
       or vim.api.nvim_win_get_buf(transaction.source_win) ~= transaction.source.bufnr then
     return
   end
-  local ok = pcall(vim.api.nvim_win_call, transaction.source_win, function()
-    vim.cmd('noautocmd diffoff')
-  end)
+  local ok = pcall(set_diff, transaction.source_win, false)
   if ok then
     transaction.source_diff_detached = true
     local stamps_ok, stamps = pcall(M.save_stamps, transaction.source_win)

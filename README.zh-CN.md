@@ -18,13 +18,14 @@
 
 - [Git](https://github.com/git/git) — 必须，用于状态、diff、暂存、提交、分支、远程与 worktree 操作
 - [vv-utils.nvim](https://github.com/beixiyo/vv-utils.nvim) — 必须，提供共享 Git 解析、文件系统与 UI 工具
+- [vv-icons.nvim](https://github.com/beixiyo/vv-icons.nvim) — 必须，提供面板、帮助和 worktree 图标
 
 ## 安装
 
 ```lua
 {
   'beixiyo/vv-git.nvim',
-  dependencies = { 'beixiyo/vv-utils.nvim' },
+  dependencies = { 'beixiyo/vv-utils.nvim', 'beixiyo/vv-icons.nvim' },
   cmd = {
     'VVGit', 'VVGitClose', 'VVGitToggle', 'VVGitTogglePanel', 'VVGitRefresh',
     'VVGitCompare', 'VVGitCompareRef', 'VVGitCompareRefs', 'VVGitCompareFile',
@@ -73,6 +74,7 @@
 | `worktree_preview` | `'buffer' \| 'snapshot' \| fun(ctx): ('buffer' \| 'snapshot')` | `'snapshot'` | 预览工作区文件时右侧用什么 buffer，见下方「工作区预览」 |
 | `snapshot_promote_ms` | `integer \| false` | `400` | 快照预览停留该毫秒数后自动换成真实 buffer，焦点留在左栏；`false` 只在进入右侧窗口时替换 |
 | `right_click` | `string \| false` | `'toggle_stage'` | 右键 action；`false` 禁用 |
+| `yank_notify` | `boolean` | `false` | `Y`（或设为 `yank_abs_path` 的右键）复制路径成功后是否提示；剪贴板出错始终报错 |
 | `diff_ratio` | `number[]` | `{ 5, 5 }` | 双栏 a_win:b_win 宽度比例 |
 | `conflict_result_ratio` | `number` | `0.5` | 冲突视图 result 窗口高度比例（`0.1`~`0.9`） |
 | `diff_nowrap` | `boolean` | `false` | diff 视图强制关闭折行 |
@@ -264,3 +266,13 @@ vim.api.nvim_exec_autocmds('User', {
   data = { root = '/path/to/dir' },
 })
 ```
+
+## 开发测试
+
+```sh
+./tests/run.sh [literal-filter]
+```
+
+要求 Unix-like 系统、Neovim 0.12+、Git、POSIX shell 和已有的 `vv-utils.nvim` 源码；可用 `VV_UTILS`、`NVIM_BIN` 覆盖发现与可执行文件。完整套件需要已有的 `vv-icons.nvim` 源码（可用 `VV_ICONS` 覆盖），它也是生产必需依赖。Git 写入与发布 fixture 仅使用隔离的本地仓库。
+
+共享入口使用隔离 child，不加载个人配置。依赖发现、CI 检出与隔离契约见 [共享测试说明](https://github.com/beixiyo/vv-utils.nvim/blob/main/dev/test/README.zh-CN.md)。Headless 不替代真实 TUI 验证；CI 需设置外层 job timeout。

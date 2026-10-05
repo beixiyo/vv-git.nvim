@@ -173,12 +173,23 @@ end
 ---@param paths string[]
 ---@param cb fun(ok:boolean, stderr?:string)
 function M.discard_untracked(root, paths, cb)
+  -- 分片异步删除：大目录同步递归删除会冻结 UI（loading 帧也停住）；逐个路径删除，
+  -- 单个路径失败记下后继续其余路径，与原同步实现的语义一致
   local errors = {}
-  for _, p in ipairs(paths) do
-    local ok, err = pcall(Fs.delete, root .. '/' .. p)
-    if not ok then errors[#errors + 1] = p .. ': ' .. tostring(err) end
+  local function step(index)
+    local p = paths[index]
+    if not p then
+      if #errors > 0 then cb(false, table.concat(errors, '\n')) else cb(true) end
+      return
+    end
+    Fs.delete_async(root .. '/' .. p, {
+      on_done = function(ok, err)
+        if not ok then errors[#errors + 1] = p .. ': ' .. tostring(err) end
+        step(index + 1)
+      end,
+    })
   end
-  if #errors > 0 then cb(false, table.concat(errors, '\n')) else cb(true) end
+  step(1)
 end
 
 ---@param root string
