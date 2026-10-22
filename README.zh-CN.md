@@ -33,7 +33,7 @@
     'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
   },
   keys = { '<leader>b' },
-  ---@type VVGitConfig
+  ---@type VVGitOpts
   opts = {
     width = 30,                        -- 左栏宽度
     parent_repository = 'prompt',      -- cwd 位于祖先仓库内时提示选择（always/never）
@@ -59,7 +59,6 @@
 | 选项 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `width` | `integer` | `30` | 左栏宽度；手动调整后跨会话持久化 |
-| `state` | `VVStateHandle?` | `nil` | 可选状态容器；默认注册 `vv-git/panel` |
 | `parent_repository` | `'prompt' \| 'always' \| 'never'` | `'prompt'` | 隐式打开时如何处理 cwd/explorer 目录之外的祖先仓库；`prompt` 的选择在当前 Neovim 会话中按目录记忆 |
 | `single_col_threshold` | `integer` | `120` | 低于此窗口宽度时使用单栏 diff |
 | `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 全局切换左栏；`false` 禁用 |
@@ -207,8 +206,8 @@ end
 ```lua
 local git = require('vv-git')
 
-git.setup(opts)
-git.config()                         -- 返回配置副本
+git.setup(opts, deps?)               -- deps.state：可选的面板宽度状态句柄，默认注册 `vv-git/panel`
+git.get_config()                     -- 返回解析后配置的副本
 git.open({ root?, path?, on_ready?, on_error?, on_close? })
 git.close()
 git.toggle()

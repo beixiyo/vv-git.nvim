@@ -96,6 +96,7 @@ T['成功切换才提交目标标签目录，重载前清除旧内容'] = functi
       config = function() return {} end,
       track_panel_width = function() end,
       persist_panel_width = function() end,
+      initial_panel_width = function() return 30 end,
     })
     lifecycle._follow_external_root(external_root)
     assert(vim.wait(5000, function() return state._reloaded == true end, 10), '跟随外部根应重载新仓库')

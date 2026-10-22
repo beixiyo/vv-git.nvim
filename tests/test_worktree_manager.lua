@@ -39,7 +39,7 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     command({ 'git', '-C', repo, 'commit', '-m', 'initial' })
 
     VVGit.setup({ auto_refresh = false, preview = false, keymap_toggle_panel = false })
-    local worktree_config = VVGit.config().worktree
+    local worktree_config = VVGit.get_config().worktree
     assert(type(worktree_config.path) == 'function', 'worktree path resolver 为公开配置')
     assert(
       worktree_config.path(repo, 'feature/new-ui') == repo .. '/.worktrees/new-ui',

@@ -103,7 +103,7 @@ function L.set_init_enabled(state, M, enabled)
       desc = 'vv-git: init_repository',
     })
   else
-    local custom = M._config and M._config.mappings and M._config.mappings.i
+    local custom = M._get_config().mappings.i
     if type(custom) == 'function' then
       vim.keymap.set('n', 'i', function() custom(state) end, {
         buffer = buf, silent = true, nowait = true, desc = 'vv-git: custom: i',
@@ -130,7 +130,7 @@ function L.set_parent_enabled(state, M, enabled)
       desc = 'vv-git: open_parent_repository',
     })
   else
-    local custom = M._config and M._config.mappings and M._config.mappings.p
+    local custom = M._get_config().mappings.p
     if type(custom) == 'function' then
       vim.keymap.set('n', 'p', function() custom(state) end, {
         buffer = buf, silent = true, nowait = true, desc = 'vv-git: custom: p',
@@ -216,8 +216,9 @@ function L.install(state, M)
     if id and (id.section_header or id.block_header or (id.node and id.node.is_dir)) then M._toggle_fold() end
   end,                                                              'click_toggle')
 
-  if M._config.right_click then
-    local rc_action = M._config.right_click
+  local config = M._get_config()
+  if config.right_click then
+    local rc_action = config.right_click
     map('<RightMouse>', function()
       -- 焦点在面板时右键点别的窗口也会先进这里：交还给鼠标所在窗口，否则会对面板错误的行执行动作
       if state.panel and state.panel.win and Mouse.redispatch_outside(state.panel.win, '<RightMouse>') then return end
@@ -242,7 +243,7 @@ function L.install(state, M)
 
   map('gf',            function() M._goto_file() end,              'goto_file')
   map('Y',             function() M._yank_abs_path() end,           'yank_abs_path')
-  map(M._config.keymap_select, function() M._toggle_select() end,  'toggle_select')
+  map(config.keymap_select, function() M._toggle_select() end,  'toggle_select')
   map('h',             function() M._collapse() end,               'close_node')
   map('<Left>',        function() M._collapse() end,               'close_node')  -- ← 同 h
   map('zR',            function() M._toggle_diff_folds() end,      'toggle_diff_folds')
@@ -270,7 +271,7 @@ function L.install(state, M)
     vim.keymap.set('n', key, '<Nop>', { buffer = buf, silent = true })
   end
 
-  for lhs, action in pairs(M._config.mappings or {}) do
+  for lhs, action in pairs(config.mappings) do
     if type(action) == 'function' then
       map(lhs, function() action(state) end, 'custom: ' .. lhs)
     end

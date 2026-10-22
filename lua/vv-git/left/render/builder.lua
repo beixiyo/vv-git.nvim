@@ -40,7 +40,7 @@ local function pad_to_cols(s, cols)
 end
 
 ---@param opts { depth:integer, is_dir:boolean, is_open:boolean, has_children:boolean, display_name:string, node:table, status_letter?:string, status_hl?:string, section_id?:string, selected?:boolean }
----@return string line, table[] extmarks (无 row), integer icon_col 图标槽起始字节列（stage loading 落点）
+---@return string line, table[] extmarks, integer icon_col extmarks 不含 row；icon_col 为图标槽起始字节列（stage loading 落点）
 local function build_row(opts)
   local prefix = string.rep(INDENT_STEP, opts.depth)
 

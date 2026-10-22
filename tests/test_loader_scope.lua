@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['最新重载拥有发布权，取消物理进程并回滚构造失败'] = function()
@@ -85,6 +85,7 @@ T['最新重载拥有发布权，取消物理进程并回滚构造失败'] = fun
       config = function() return {} end,
       track_panel_width = function() end,
       persist_panel_width = function() end,
+      initial_panel_width = function() return 30 end,
     })
     lifecycle._cancel_reload_requests(state)
     assert_eq(cancels['C:index'], 1, 'close 会终止尚未完成的 index')
@@ -100,9 +101,12 @@ T['最新重载拥有发布权，取消物理进程并回滚构造失败'] = fun
       ignored_callback = callback
       return function() ignored_cancels = ignored_cancels + 1 end
     end
+    -- 子仓库配置走真实规格化入口，只覆盖本场景关心的 respect_gitignore
+    local subrepo_config = require('vv-git').get_config().subrepo
+    subrepo_config.respect_gitignore = true
     state._subrepo = {
       depth = function() return 1 end,
-      config = function() return { respect_gitignore = true } end,
+      config = function() return subrepo_config end,
     }
     Loader.reload_index(state)
     Loader.cancel_reload(state)

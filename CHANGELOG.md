@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 - 2026-10-22
+
+### Breaking
+
+- `state` 改由 `setup(opts, deps)` 的 `deps.state` 注入，`opts.state` 不再生效
+- `config()` 改名为 `get_config()`，不保留旧名
+- `mappings` 必须是表
+
+### Changed
+
+- 输入类型统一为 `VVGitOpts`，由 `VVGitConfig` 派生
+- 配置存为模块私有变量，内部模块不再经 controller 读取 `_config`
+
 ## 0.3.20 - 2026-10-04
 
 ### Added

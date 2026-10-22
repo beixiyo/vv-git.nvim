@@ -191,6 +191,7 @@ T['刷新票据隔离、外部切根与关闭后的生产者生命周期'] = fun
       config = function() return {} end,
       track_panel_width = noop,
       persist_panel_width = noop,
+      initial_panel_width = function() return 30 end,
     })
     lifecycle._follow_external_root('/repo-a')
     lifecycle._follow_external_root('/repo-b')
@@ -241,6 +242,7 @@ T['刷新票据隔离、外部切根与关闭后的生产者生命周期'] = fun
       config = function() return {} end,
       track_panel_width = noop,
       persist_panel_width = noop,
+      initial_panel_width = function() return 30 end,
     })
     state.git_root = '/repo-close'
     state.tabpage = nil

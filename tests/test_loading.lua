@@ -69,6 +69,7 @@ T['被替代刷新不清除最新请求的加载帧'] = function()
       config = function() return {} end,
       track_panel_width = function() end,
       persist_panel_width = function() end,
+      initial_panel_width = function() return 30 end,
     })
 
     Lifecycle._manual_refresh()

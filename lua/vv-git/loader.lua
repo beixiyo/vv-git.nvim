@@ -123,11 +123,11 @@ local function store_snapshot(state, roots, indexes, infos)
 end
 
 -- 由 config.subrepo.prune（数组）构造跳过的目录名集合（.git 始终跳过）
----@param cfg table
+---@param cfg VVGitSubrepoConfig
 ---@return table<string, boolean>
 local function build_pruneset(cfg)
   local p = { ['.git'] = true }
-  for _, name in ipairs(cfg.prune or {}) do p[name] = true end
+  for _, name in ipairs(cfg.prune) do p[name] = true end
   return p
 end
 
@@ -331,14 +331,16 @@ function M.reload_index(state, after, passive)
 
   -- 子仓库扫描深度/配置由 lifecycle 在 open 时以闭包注入 state._subrepo（见该处注释），
   -- 数据层不反向 require 顶层 init，依赖方向保持自顶向下
+  -- 未经 lifecycle open 注入的 state（如直接构造 state 的调用方）不扫描子仓库；
+  -- 这是运行时注入缺省，不是配置默认值
   local sub = state._subrepo
-  local depth = (sub and sub.depth()) or 0
-  if not (depth and depth > 0) then
+  local depth = sub and sub.depth() or 0
+  if depth <= 0 then
     proceed({})
     return request
   end
 
-  local cfg = (sub and sub.config()) or {}
+  local cfg = sub.config()
   local prune = build_pruneset(cfg)
 
   if cfg.respect_gitignore then

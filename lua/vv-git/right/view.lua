@@ -26,9 +26,9 @@ local Timer = require('vv-utils.timer')
 
 local M = {}
 
--- 依赖注入：由 init.setup 调 M.configure 填入，避免 view → init 的反向 require
+-- 依赖注入：由 init.setup 调 M.configure 填入，避免 view → init 的加载期反向 require
 ---@class VVGitViewHandlers
----@field get_config fun():table
+---@field get_config fun():VVGitConfig
 ---@field on_close fun()
 ---@field on_goto_file fun()
 ---@field on_yank_abs_path fun()
@@ -36,7 +36,7 @@ local M = {}
 ---@field on_next_file fun()
 ---@field on_prev_file fun()
 ---@class VVGitViewHandlerOverrides
----@field get_config? fun():table
+---@field get_config? fun():VVGitConfig
 ---@field on_close? fun()
 ---@field on_goto_file? fun()
 ---@field on_yank_abs_path? fun()
@@ -45,7 +45,9 @@ local M = {}
 ---@field on_prev_file? fun()
 ---@field on_help? fun()
 local handlers = {
-  get_config       = function() return { fold_unchanged = true } end,
+  -- 未注入时（只直接使用本模块的调用方）在调用期读取 init 已规格化的配置；
+  -- 不在加载期读取，因为 init 加载时会 require 本模块
+  get_config       = function() return require('vv-git').get_config() end,
   on_close         = function() end,
   on_goto_file     = function() end,
   on_yank_abs_path = function() end,
@@ -71,22 +73,26 @@ local function configure_runtime()
       prev_file = function() handlers.on_prev_file() end,
       help = function() handlers.on_help() end,
     },
-    next_file_key = config.keymap_next_file or false,
-    prev_file_key = config.keymap_prev_file or false,
-    revision_mappings = config.revision_mappings or {},
+    next_file_key = config.keymap_next_file,
+    prev_file_key = config.keymap_prev_file,
+    revision_mappings = config.revision_mappings,
   })
   right_options = RightOptions.new({
-    fold_unchanged = config.fold_unchanged ~= false,
-    diff_nowrap = config.diff_nowrap == true,
+    fold_unchanged = config.fold_unchanged,
+    diff_nowrap = config.diff_nowrap,
   })
-  local conflict_result_ratio = tonumber(config.conflict_result_ratio) or 0.5
   right_layout = Layout.new({
-    conflict_result_ratio = math.min(0.9, math.max(0.1, conflict_result_ratio)),
+    conflict_result_ratio = math.min(0.9, math.max(0.1, config.conflict_result_ratio)),
     on_remove_result_buffer = function(buf)
       right_keymaps.remove(buf)
       Conflict.remove_keymaps(buf)
     end,
   })
+end
+
+-- 运行时对象延迟到首次使用时构建：模块加载期不读取配置（见 handlers.get_config）
+local function ensure_runtime()
+  if not right_keymaps then configure_runtime() end
 end
 
 ---@param overrides VVGitViewHandlerOverrides
@@ -100,8 +106,6 @@ end
 local function binary_info(path)
   return FilePolicy.binary_info(path, handlers.get_config().binary)
 end
-
-configure_runtime()
 
 local IGNORE_KEY = api.nvim_replace_termcodes('<Ignore>', true, false, true)
 
@@ -158,7 +162,7 @@ end
 ---@param abspath string
 ---@return VVGitWorktreePreview
 local function worktree_mode(root, node, section, abspath)
-  local option = handlers.get_config().worktree_preview or 'buffer'
+  local option = handlers.get_config().worktree_preview
   if type(option) == 'function' then
     local stat = vim.uv.fs_stat(abspath)
     local ok, result = pcall(option, {
@@ -254,6 +258,8 @@ end
 ---@param force_single boolean?  true → 强制走单栏分支（窄终端降级用）；正常 dual diff 时为 false/nil
 ---@param root string?  节点所属仓库根（子仓库时为子仓库根）；默认父仓库根
 function M.show(state, node, section, force_single, root)
+  ensure_runtime()
+
   -- 提前 return 前清掉 _reshow_view 刚设置但尚未绑定 req 的 reshow 全局，
   -- 否则它会泄漏给下一个普通 preview 被误消费（把焦点错误地还给旧 diff 窗口）
   local function drop_unbound_reshow()
@@ -469,10 +475,10 @@ function M.show(state, node, section, force_single, root)
       local cfg = handlers.get_config()
       local opts = {
         b_win = b_win,
-        fold_unchanged = cfg.fold_unchanged ~= false,
+        fold_unchanged = cfg.fold_unchanged,
       }
 
-      local max = cfg.inline_diff_max_lines or 10000
+      local max = cfg.inline_diff_max_lines
       -- M.apply / attach_live 都返回首个 hunk 的 b 侧目标行，省得再跑一遍 vim.diff
       -- 无 hunk（罕见，理论不会进 force_single 路径）→ first 为 nil，保持光标在 1
       local first
@@ -793,6 +799,7 @@ end
 ---@param state table
 ---@return boolean promoted
 function M.promote(state)
+  ensure_runtime()
   local view = state.view
   if attaching > 0 or not view or not view.b_snapshot then return false end
   local b_win, snapshot = view.b_win, view.b_buf
@@ -816,9 +823,9 @@ function M.promote(state)
 
   if view.mode == 'single' and view._inline_a_lines then
     local cfg = handlers.get_config()
-    view._inline_cleanup = InlineDiff.attach_live(real, view._inline_a_lines, cfg.inline_diff_max_lines or 10000, {
+    view._inline_cleanup = InlineDiff.attach_live(real, view._inline_a_lines, cfg.inline_diff_max_lines, {
       b_win = b_win,
-      fold_unchanged = cfg.fold_unchanged ~= false,
+      fold_unchanged = cfg.fold_unchanged,
     })
     view._inline_a_lines = nil
   end
@@ -851,6 +858,7 @@ end
 ---@param state table
 ---@return boolean handled
 function M.toggle_all_folds(state)
+  ensure_runtime()
   return state.view and right_keymaps.toggle_all_folds(state.view) or false
 end
 
@@ -873,6 +881,7 @@ function M.close(state)
   local view = state.view
 
   if not view then return end
+  ensure_runtime()
   Conflict.reset(state)
 
   -- inline diff 的 TextChanged autocmd + extmark 在自家 namespace，关 view 必须显式拆
@@ -906,6 +915,7 @@ end
 function M.clear_b_winopts(state)
   local view = state.view
   if view and view.b_win and api.nvim_win_is_valid(view.b_win) then
+    ensure_runtime()
     right_options.restore(view.b_win)
   end
 end

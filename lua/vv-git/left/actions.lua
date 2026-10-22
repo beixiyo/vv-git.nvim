@@ -53,7 +53,7 @@ end
 -- 把一个 git 操作包成 join() 可用的 op（接收 done）：失败只提示、仍调 done 不掐断链路
 -- 注意：单键动作（toggle_stage / discard staged 分支）失败要「即返回、不刷新」，语义不同，
 -- 不走本工厂、只复用 notify_err
----@param fn fun(root:string, paths:string[], cb:fun(ok:boolean, err:string?))
+---@param fn fun(root:string, paths:string[], cb:fun(ok:boolean, err:string?), opts?:table)
 ---@param root string
 ---@param paths string[]
 ---@param label string
@@ -327,7 +327,7 @@ end
 -- 把多选 items 按所属仓库分桶，每桶再分 staged / unstaged
 ---@param state table
 ---@param items {root:string, base:string, relpath:string}[]
----@return table<string, { staged:string[], unstaged:string[] }>
+---@return table<string, { staged:string[], unstaged:string[], untracked?:string[], tracked?:string[] }>
 local function bucket_items(state, items)
   local buckets = {}
 

@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['无效宽度回退，缩放和关闭持久化最后宽度'] = function()
@@ -24,12 +24,11 @@ T['无效宽度回退，缩放和关闭持久化最后宽度'] = function()
 
     local git = require('vv-git')
     git.setup({
-      state = handle,
       width = 31,
       auto_refresh = false,
       preview = false,
       keymap_toggle_panel = false,
-    })
+    }, { state = handle })
 
     assert(git.open({ root = tmp }), 'vv-git 应在临时仓库打开')
     assert(vim.api.nvim_win_get_width(0) == 31, '无效的持久化宽度应回退到配置值')

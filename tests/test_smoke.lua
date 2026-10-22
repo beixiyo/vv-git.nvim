@@ -226,7 +226,7 @@ T['面板边界文件映射与差异驱动'] = function()
     local noop = function() end
     local toggle_diff_calls = 0
     local mock = {
-      _config = { keymap_select = '<Tab>', right_click = false, mappings = {} },
+      _get_config = function() return { keymap_select = '<Tab>', right_click = false, mappings = {} } end,
       close = noop,
       refresh = noop,
       _activate = noop,
@@ -1507,10 +1507,10 @@ T['公开面板与修订接口生命周期'] = function()
     )
     State.clear()
 
-    local config_copy = Plugin.config()
+    local config_copy = Plugin.get_config()
     local configured_width = config_copy.width
     config_copy.width = -1
-    assert_eq(Plugin.config().width, configured_width, 'config 返回隔离副本')
+    assert_eq(Plugin.get_config().width, configured_width, 'config 返回隔离副本')
 
     local depth_ok = Plugin.set_subrepo_depth(2)
     assert_true(depth_ok, '公开的 subrepo depth 接受非负整数')

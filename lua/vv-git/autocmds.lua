@@ -34,9 +34,8 @@ local function is_own_buffer(state, buf)
 end
 
 ---@param handlers { on_refresh:fun(), on_apply_layout:fun(), on_ensure_invariant:fun(), on_reshow_view:fun(), on_closed:fun(state:table), on_external_root:fun(dir:string) }
----@param config table?  vv-git 合并后的配置（读取 auto_refresh 等）
+---@param config { auto_refresh: boolean }  vv-git 已规格化的配置（只读取 auto_refresh）
 function M.setup(handlers, config)
-  config = config or {}
   local setup_request = setup_scope:begin({ key = 'setup' })
   local aug = vim.api.nvim_create_augroup('VVGit', { clear = true })
   local refresh_ticket
@@ -111,7 +110,7 @@ function M.setup(handlers, config)
   -- 不再按 buffer 类型过滤（点进 panel / diff 也要能刷新）。这两个事件触发偏频繁，尤其
   -- BufEnter 会被 diff 预览结束时的「焦点回弹到 panel」反复带起，靠 debounce 收敛：连续
   -- 浏览只在停下后刷一次。render 仅重绘左栏、不切窗口/buffer，故不会自我触发形成回环
-  if config.auto_refresh ~= false then
+  if config.auto_refresh then
     local refresh_debounced, cancel_refresh = require('vv-utils.timer').debounce(State.guarded(function(state)
       if not setup_request:is_current() then return end
       if not state.git_root then return end

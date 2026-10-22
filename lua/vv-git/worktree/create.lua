@@ -26,7 +26,7 @@ end
 ---@param layout_root string
 ---@param refresh fun()
 ---@param config table?
----@param context {is_active:fun():boolean, begin:fun():vv-utils.async.Request, start_loading?:fun(label:string):fun()}
+---@param context {is_active:fun():(boolean), begin:fun():(vv-utils.async.Request), start_loading?:fun(label:string):function}
 function M.run(root, layout_root, refresh, config, context)
   local request = context.begin()
   local function current() return request:is_current() and context.is_active() end

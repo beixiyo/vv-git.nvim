@@ -68,7 +68,7 @@ end
 M.resolve_path = resolve_index_path
 
 ---@param root string
----@param callback fun(ok:boolean, err?:string)
+---@param callback fun(ok:boolean, err?:string, index?:string)
 function M.ensure_available(root, callback)
   resolve_index_path(root, function(index, err)
     if not index then

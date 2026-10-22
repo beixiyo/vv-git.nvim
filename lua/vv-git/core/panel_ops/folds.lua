@@ -123,7 +123,7 @@ function L.new(context)
 
     if lnum and win and vim.api.nvim_win_is_valid(win) then
       local last = vim.api.nvim_buf_line_count(state.panel.buf)
-      local target = (context.config().select_move_down ~= false and lnum < last)
+      local target = (context.config().select_move_down and lnum < last)
           and lnum + 1
           or lnum
       pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })

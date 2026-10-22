@@ -23,14 +23,13 @@ local M = {}
 ---@field depth integer  扫描嵌套子仓库（独立 git 仓库 / submodule）的最大目录深度；0 = 不扫描。可用 `:VVGitSubrepoDepth <n>` 临时改（不持久化） @default 0
 ---@field respect_gitignore boolean  发现时是否跳过被父仓库 `.gitignore` 的目录。**HOME-as-repo（`~` 几乎忽略一切）务必保持 `false`**，否则所有子仓库都被屏蔽；常规项目想隐藏被忽略目录里的 vendored 仓库才开 `true`（注意 `node_modules` 等已由 `prune` 覆盖） @default false
 ---@field prune string[]  发现子仓库时**不进入扫描**的目录名列表（匹配目录 basename）。**覆盖语义**：传了就完全替换默认列表（不合并）；`.git` 始终额外跳过 @default 见下方（node_modules / .cache / .local / .cargo / .rustup 等缓存与工具链目录）
----@field scan_worktrees boolean  是否把 linked worktree 也当子仓库扫描。默认 `false`
+---@field scan_worktrees boolean  是否把 linked worktree 也当子仓库扫描 @default false
 
 ---@class VVGitWorktreeConfig
 ---@field path fun(root:string, branch:string):string  创建 worktree 的默认目录。root 是 main worktree 路径；branch 是非空有效本地分支名 @default `<root>/.worktrees/<branch-short>`，其中 `type/short-desc` 取 `short-desc`
 
 ---@class VVGitConfig
----@field width integer @default 30
----@field state VVStateHandle? 左侧面板持久状态容器；默认注册 `vv-git/panel`
+---@field width integer  左栏初始宽度；有持久化宽度时打开面板以持久化值为准，不会回写到配置 @default 30
 ---@field parent_repository 'prompt'|'always'|'never'  隐式打开子目录时如何处理工作区之外的祖先仓库：提示选择、直接打开或忽略并允许在当前目录初始化 @default 'prompt'
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
 ---@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用 @default '<leader>b'
@@ -49,17 +48,28 @@ local M = {}
 ---@field diff_ratio number[]  -- 双栏 diff 左右宽度比例，如 {4, 6} 表示 a_win:b_win = 4:6 @default { 5, 5 }
 ---@field conflict_result_ratio number  -- 三栏冲突视图中底部 result/worktree 窗口的高度比例，范围 0.1~0.9 @default 0.5
 ---@field diff_nowrap boolean  -- 置为 true 时 diff 视图强制关闭 wrap（wrap 在双栏 diff 下因行高不一致引发视觉错位，属于上游已知限制 neovim/neovim#29518、sindrets/diffview.nvim#198） @default false
----@field highlights table<string, vim.api.keyset.highlight>?  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效 @default nil
----@field before_open? fun():fun()?  创建 vv-git tab 前执行，可返回退出后的恢复函数；用于由配置层临时挂起互斥 UI，不让 vendor 直接依赖其它插件 @default nil
+---@field highlights? table<string, vim.api.keyset.highlight>  -- 覆盖任意 VVGit* 高亮组，叠在自动计算值之上；切主题后仍生效；nil 表示不覆盖 @default nil
+---@field before_open? fun():fun()?  创建 vv-git tab 前执行，可返回退出后的恢复函数；用于由配置层临时挂起互斥 UI，不让 vendor 直接依赖其它插件；nil 表示不执行 @default nil
 ---@field binary VVGitBinaryConfig
----@field keymap_select string  -- 切换当前文件选中状态的键位（默认 '<Tab>'） @default '<Tab>'
+---@field keymap_select string  -- 切换当前文件选中状态的键位 @default '<Tab>'
 ---@field keymap_next_file string|false  -- diff buffer 内切换到下一个文件；false 禁用 @default '<C-j>'
 ---@field keymap_prev_file string|false  -- diff buffer 内切换到上一个文件；false 禁用 @default '<C-k>'
 ---@field select_move_down boolean  -- 多选时切换选中后自动将光标下移一行 @default true
----@field mappings table<string, fun(state:table)>?  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增 @default {}
----@field revision_mappings table<string, fun(context:VVGitRevisionMappingContext)>?  revision/index scratch buffer 内的自定义键位；真实 worktree buffer 不安装，避免覆盖其 buffer-local 映射 @default {}
+---@field mappings table<string, fun(state:table)>  panel buffer 内的自定义键位；value 为函数（接收 state），可覆盖内置键位或新增；与默认表按键合并 @default {}
+---@field revision_mappings table<string, fun(context:VVGitRevisionMappingContext)>  revision/index scratch buffer 内的自定义键位；真实 worktree buffer 不安装，避免覆盖其 buffer-local 映射 @default {}
 ---@field subrepo VVGitSubrepoConfig  嵌套子仓库扫描
 ---@field worktree VVGitWorktreeConfig  worktree 管理器策略 @default 见 VVGitWorktreeConfig
+
+---@class (partial) VVGitBinaryOpts: VVGitBinaryConfig
+---@class (partial) VVGitSubrepoOpts: VVGitSubrepoConfig
+---@class (partial) VVGitWorktreeOpts: VVGitWorktreeConfig
+---@class (partial) VVGitOpts: VVGitConfig
+---@field binary? VVGitBinaryOpts
+---@field subrepo? VVGitSubrepoOpts
+---@field worktree? VVGitWorktreeOpts
+
+---@class VVGitDeps
+---@field state? VVStateHandle 左侧面板宽度的持久状态句柄；省略时注册 `vv-git/panel`
 
 ---@alias VVGitWorktreePreview 'buffer'|'snapshot'
 
@@ -109,7 +119,6 @@ local M = {}
 ---@type VVGitConfig
 local defaults = {
   width = 30,
-  state = nil,
   parent_repository = 'prompt',
   single_col_threshold = 120,
   keymap_toggle_panel = '<leader>b',
@@ -117,6 +126,7 @@ local defaults = {
   keymap_next_file = '<C-j>',
   keymap_prev_file = '<C-k>',
   select_move_down = true,
+  mappings = {},
   revision_mappings = {},
   fold_unchanged = true,
   fold_staged = false,
@@ -172,9 +182,20 @@ local defaults = {
   },
 }
 
+-- 已规格化的配置，只在 setup() 中整体替换；对外只经 get_config() 返回副本
 ---@type VVGitConfig
-M._config = vim.deepcopy(defaults)
+local config = vim.deepcopy(defaults)
 local panel_width = nil
+
+-- 运行时派生：打开面板时的宽度（持久化值优先，否则取 config.width），面板缩放后同步；不回写 config
+---@type integer
+local initial_width = defaults.width
+
+--- 内部模块读取当前配置（实时引用，只读，不复制）
+---@return VVGitConfig
+local function current_config()
+  return config
+end
 
 local function track_panel_width(state)
   if panel_width then panel_width.track(state) end
@@ -183,7 +204,7 @@ end
 local function persist_panel_width(state)
   if not panel_width or not state or type(state._panel_width) ~= 'number' then return end
   panel_width.persist(state)
-  M._config.width = state._panel_width
+  initial_width = state._panel_width
 end
 
 -- 子仓库扫描深度的运行时临时覆盖（`:VVGitSubrepoDepth` 设置）
@@ -195,8 +216,7 @@ M._subrepo_depth_override = nil
 ---@return integer
 function M.get_subrepo_depth()
   if M._subrepo_depth_override ~= nil then return M._subrepo_depth_override end
-  local sr = M._config and M._config.subrepo
-  return (sr and sr.depth) or 0
+  return config.subrepo.depth
 end
 
 --- 临时设置子仓库扫描深度（不写盘）
@@ -210,9 +230,10 @@ function M.set_subrepo_depth(n)
   return true
 end
 
----@param opts VVGitConfig?
-function M.setup(opts)
-  local configured_state = opts and opts.state
+--- 配置并启用 vv-git；重复调用以新配置整体替换旧配置，不返回值，读取配置用 get_config()
+---@param opts? VVGitOpts
+---@param deps? VVGitDeps 运行时依赖；lazy / pack 默认只传 opts，此时使用内置默认
+function M.setup(opts, deps)
   ---@type VVGitConfig
   local configured = vim.tbl_deep_extend('force', vim.deepcopy(defaults), opts or {})
   if configured.parent_repository ~= 'prompt'
@@ -234,26 +255,26 @@ function M.setup(opts)
   if type(configured.yank_notify) ~= 'boolean' then
     error('vv-git: yank_notify must be a boolean')
   end
-  M._config = configured
-  local panel_state = configured_state or require('vv-utils.state').register('vv-git', 'panel')
-  M._config.state = panel_state
-
-  -- subrepo.prune 用「覆盖」语义：用户传了就整体替换默认列表
-  -- tbl_deep_extend 对数组是按下标混合（传 { 'a' } 会得到 { 'a', 默认[2..] }），故显式覆盖
+  -- subrepo.prune 用「覆盖」语义：用户传了就整体替换默认列表（含空列表）
+  -- 显式保证该语义，不依赖 tbl_deep_extend 在不同 Neovim 版本对列表的处理
   if opts and opts.subrepo and opts.subrepo.prune ~= nil then
-    M._config.subrepo.prune = vim.deepcopy(opts.subrepo.prune)
+    configured.subrepo.prune = vim.deepcopy(opts.subrepo.prune)
   end
 
+  config = configured
+
+  -- 派生值：面板宽度状态句柄来自 deps，未注入时注册默认句柄；width 以持久化值为准
+  local panel_state = (deps and deps.state) or require('vv-utils.state').register('vv-git', 'panel')
   if panel_width then panel_width.close() end
   panel_width = require('vv-git.runtime.panel_width').new(panel_state)
-  M._config.width = panel_width.configure(M._config)
+  initial_width = panel_width.configure(config)
   M._track_panel_width = track_panel_width
   M._persist_panel_width = persist_panel_width
 
-  HL.setup({ highlights = M._config.highlights })
+  HL.setup({ highlights = config.highlights })
 
   RightView.configure({
-    get_config        = function() return M._config end,
+    get_config        = current_config,
     on_close          = function() M.close() end,
     on_goto_file      = function() M._goto_file() end,
     on_yank_abs_path  = function() M._yank_abs_path() end,
@@ -306,8 +327,8 @@ function M.setup(opts)
     M.refresh()
   end, { nargs = '?', desc = 'vv-git: temporarily set subrepo scan depth (not persisted)' })
 
-  if M._config.keymap_toggle_panel then
-    vim.keymap.set('n', M._config.keymap_toggle_panel, function() M.toggle_panel() end, {
+  if config.keymap_toggle_panel then
+    vim.keymap.set('n', config.keymap_toggle_panel, function() M.toggle_panel() end, {
       silent = true, desc = 'vv-git: toggle panel',
     })
   end
@@ -325,7 +346,7 @@ function M.setup(opts)
     vim.o.diffopt = table.concat(kept, ',')
   end)
   pcall(function() vim.opt.scrollopt:append('hor') end)
-  pcall(function() vim.opt.fillchars:append({ diff = M._config.diff_fill or ' ' }) end)
+  pcall(function() vim.opt.fillchars:append({ diff = config.diff_fill }) end)
 
   Autocmds.setup({
     on_refresh          = function() M.refresh() end,
@@ -342,7 +363,7 @@ function M.setup(opts)
       M._emit_closed(state)
     end,
     on_external_root    = function(dir) M._follow_external_root(dir) end,
-  }, M._config)
+  }, config)
 
   vim.api.nvim_create_autocmd('VimLeavePre', {
     group = vim.api.nvim_create_augroup('VVGitPersist', { clear = true }),
@@ -356,10 +377,14 @@ function M.setup(opts)
   })
 end
 
+--- 获取当前解析后的配置（副本，修改不影响运行中的 vv-git）
 ---@return VVGitConfig
-function M.config()
-  return vim.deepcopy(M._config)
+function M.get_config()
+  return vim.deepcopy(config)
 end
+
+--- 内部模块（如 keymaps）经 controller 读取实时配置；不进入 Public facade
+M._get_config = current_config
 
 ---@param fn function?
 ---@param ... any
@@ -512,7 +537,8 @@ end
 -- 显式组合运行时服务。每个模块自行持有并返回操作，不把入口模块作为可变注入目标
 local services = {
   controller = M,
-  config = function() return M._config end,
+  config = current_config,
+  initial_panel_width = function() return initial_width end,
   track_panel_width = track_panel_width,
   persist_panel_width = persist_panel_width,
 }
@@ -578,7 +604,7 @@ end
 
 local Public = {}
 for _, name in ipairs({
-  'setup', 'config',
+  'setup', 'get_config',
   'get_subrepo_depth', 'set_subrepo_depth',
   'open', 'close', 'toggle', 'toggle_panel', 'refresh',
   'is_open', 'get_context',

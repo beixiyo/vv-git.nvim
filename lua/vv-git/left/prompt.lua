@@ -122,7 +122,7 @@ local function submit(owner, git_root, commit_all, on_success, is_current)
   end
 end
 
----@param opts { git_root:string, has_staged:boolean, is_current?:fun():boolean, on_success:fun()?, on_cancel?:fun() }
+---@param opts { git_root:string, has_staged:boolean, is_current?:fun():(boolean), on_success?:fun(), on_cancel?:fun() }
 ---@return fun() dispose 只关闭本次 prompt 的幂等 disposer
 function M.open(opts)
   close()

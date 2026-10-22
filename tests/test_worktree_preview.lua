@@ -65,7 +65,7 @@ T['snapshot 预览不加载真实文件'] = function()
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -166,7 +166,7 @@ T['进入 b_win 原地换成真实 buffer，FileType 链生效且光标保持'] 
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -289,7 +289,7 @@ T['焦点在 b_win 时切文件直接给真实 buffer'] = function()
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -416,7 +416,7 @@ T['已加载的文件直接复用真实 buffer'] = function()
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -515,7 +515,7 @@ T['函数配置按上下文决定模式'] = function()
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -614,7 +614,7 @@ T['单栏 inline 快照换真实 buffer 后挂 live diff'] = function()
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -715,7 +715,7 @@ T['停留 snapshot_promote_ms 后自动换真实 buffer，焦点留在左栏'] =
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -818,7 +818,7 @@ T['快速连切时途经的文件不会被自动加载'] = function()
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })
@@ -920,7 +920,7 @@ T['顶部纯删除在快照、promote 与重复打开时立即可见'] = functio
     ---@param mode VVGitWorktreePreview|function
     ---@param promote_ms? integer|false
     local function use_mode(mode, promote_ms)
-      local cfg = Plugin.config()
+      local cfg = Plugin.get_config()
       cfg.worktree_preview = mode
       cfg.snapshot_promote_ms = promote_ms or false
       RightView.configure({ get_config = function() return cfg end })

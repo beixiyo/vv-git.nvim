@@ -33,7 +33,7 @@
     'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
   },
   keys = { '<leader>b' },
-  ---@type VVGitConfig
+  ---@type VVGitOpts
   opts = {
     width = 30,                        -- Left panel width
     parent_repository = 'prompt',      -- Prompt when cwd belongs to a repository above it (always/never)
@@ -59,7 +59,6 @@
 | Option | Type | Default | Description |
 |------|------|--------|------|
 | `width` | `integer` | `30` | Left-panel width; manual changes persist across sessions |
-| `state` | `VVStateHandle?` | `nil` | Optional state container; defaults to `vv-git/panel` |
 | `parent_repository` | `'prompt' \| 'always' \| 'never'` | `'prompt'` | How implicit opens handle a Git repository above the cwd/explorer directory; `prompt` remembers the choice per directory for the current Neovim session |
 | `single_col_threshold` | `integer` | `120` | Use a single-column diff below this window width |
 | `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | Toggle the left panel globally; `false` disables it |
@@ -209,8 +208,8 @@ In a conflict view, `<` / `>` in the left panel accept the whole file. The botto
 ```lua
 local git = require('vv-git')
 
-git.setup(opts)
-git.config()                         -- returns a configuration copy
+git.setup(opts, deps?)               -- deps.state: optional panel-width state handle; defaults to `vv-git/panel`
+git.get_config()                     -- returns a copy of the resolved configuration
 git.open({ root?, path?, on_ready?, on_error?, on_close? })
 git.close()
 git.toggle()

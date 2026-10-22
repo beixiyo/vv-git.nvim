@@ -26,7 +26,7 @@ T['复制路径默认静默，显式提示与非法配置拒绝'] = function()
     local Plugin = require('vv-git')
     local State = require('vv-git.state')
     -- 与 init.lua 的组合方式一致：命令模块从 config() 读取 setup 归一化后的配置
-    local Commands = require('vv-git.core.commands.file').new({ controller = {}, config = Plugin.config })
+    local Commands = require('vv-git.core.commands.file').new({ controller = {}, config = Plugin.get_config })
 
     local base_opts = { keymap_toggle_panel = false, auto_refresh = false, preview = false }
 

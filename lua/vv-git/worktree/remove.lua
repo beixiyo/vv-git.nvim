@@ -15,7 +15,7 @@ end
 ---@param root string
 ---@param wt VVGitWorktree
 ---@param refresh fun()
----@param context {is_active:fun():boolean, begin:fun():vv-utils.async.Request, start_loading?:fun():fun()}
+---@param context {is_active:fun():(boolean), begin:fun():(vv-utils.async.Request), start_loading?:fun():function}
 function M.run(root, wt, refresh, context)
   if wt.is_main or vim.fs.normalize(wt.path) == vim.fs.normalize(root) then
     vim.notify('[vv-git] The current or main worktree cannot be removed', vim.log.levels.WARN)

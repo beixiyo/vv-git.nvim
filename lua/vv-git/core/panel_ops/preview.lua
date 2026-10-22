@@ -59,7 +59,7 @@ function L.new(context)
   -- 预览防抖：单例常驻 timer，wait 每次读取最新 config
   local preview_debounced = Timer.debounce(function()
     M._preview()
-  end, function() return config().preview_debounce_ms or 0 end)
+  end, function() return config().preview_debounce_ms end)
 
   -- CursorMoved 入口：按距上次移动的间隔区分单按与按住
   --   间隔 > preview_debounce_ms：单独一次 j/k，立即预览，不白等防抖
@@ -68,7 +68,7 @@ function L.new(context)
   -- preview_debounce_ms = 0 时始终同步直刷
   local last_move_ms
   M._preview_on_move = function()
-    local wait = config().preview_debounce_ms or 0
+    local wait = config().preview_debounce_ms
     local now = vim.uv.hrtime() / 1e6
     local idle = last_move_ms == nil or now - last_move_ms > wait
     last_move_ms = now

@@ -166,6 +166,7 @@ local L = {}
 ---@class VVGitLifecycleDeps
 ---@field controller table
 ---@field config fun():table
+---@field initial_panel_width fun():integer
 ---@field track_panel_width fun(state:table)
 ---@field persist_panel_width fun(state:table)
 
@@ -285,7 +286,7 @@ function L.new(deps)
     require('vv-utils.ui_window').show_chrome(main_win)
 
     local panel_buf = Panel.create_buf()
-    Panel.open_split(panel_buf, { width = config().width })
+    Panel.open_split(panel_buf, { width = deps.initial_panel_width() })
     local panel_win = vim.api.nvim_get_current_win()
 
     local state = State.create()
@@ -304,7 +305,7 @@ function L.new(deps)
     -- （闭包读 M 的实时值：:VVGitSubrepoDepth 改 override 后下次 reload 即生效）
     state._subrepo = {
       depth = controller.get_subrepo_depth,
-      config = function() return config().subrepo or {} end,
+      config = function() return config().subrepo end,
     }
     ensure_unfolded(state, rel_path)
 
@@ -323,7 +324,7 @@ function L.new(deps)
       win = panel_win,
       main_win = main_win,
     }
-    state._panel_width = config().width
+    state._panel_width = deps.initial_panel_width()
     controller._register_on_close(state, opts.on_close)
     controller._set_on_goto_file(state, opts.on_goto_file)
 
@@ -449,7 +450,7 @@ function L.new(deps)
       state._panel_hidden = true
       Panel.close_win(win)
     else
-      Panel.open_split(state.panel.buf, { width = state._panel_width or config().width })
+      Panel.open_split(state.panel.buf, { width = state._panel_width or deps.initial_panel_width() })
       state.panel.win = vim.api.nvim_get_current_win()
       state._panel_hidden = false
       LeftRender.render(state)
