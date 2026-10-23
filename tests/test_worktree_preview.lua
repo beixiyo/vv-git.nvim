@@ -856,7 +856,7 @@ T['快速连切时途经的文件不会被自动加载'] = function()
   end)
 end
 
-T['顶部纯删除在快照、promote 与重复打开时立即可见'] = function()
+T['顶部纯删除与纯新增在快照、promote 与重复打开时立即可见'] = function()
   child.lua_func(function()
     -- worktree_preview：浏览时右侧用只读快照，进入 b_win 时原地换成真实 buffer
     --   ① snapshot 预览不加载真实文件（不触发 BufRead / LSP 链路）
@@ -966,6 +966,23 @@ T['顶部纯删除在快照、promote 与重复打开时立即可见'] = functio
       show('a.lua')
       show('i.lua')
       check('reopened')
+
+      -- 对称场景：顶部纯新增时 filler 在旧版侧，锚点不能固定用旧版侧
+      local inserted = vim.deepcopy(base)
+      table.insert(inserted, 1, '-- top insert 2')
+      table.insert(inserted, 1, '-- top insert 1')
+      vim.fn.writefile(inserted, abspath('h.lua'))
+      local function check_insert(tag)
+        local view = state.view
+        local a = vim.api.nvim_win_call(view.a_win, vim.fn.winsaveview)
+        local b = vim.api.nvim_win_call(view.b_win, vim.fn.winsaveview)
+        assert(a.topline == 1 and a.topfill >= 1 and b.topline == 1,
+          tag .. ': 顶部新增行必须立即可见: ' .. vim.inspect({ a = a, b = b }))
+      end
+      show('h.lua')
+      check_insert('insert-snapshot')
+      assert(RightView.promote(state), '快照应可 promote')
+      check_insert('insert-promoted')
   end)
 end
 

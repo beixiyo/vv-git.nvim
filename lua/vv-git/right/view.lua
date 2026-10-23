@@ -200,8 +200,13 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
     -- 旧实现把两侧全文取出来再跑一次 vim.diff（myers + linematch:60）纯属重复劳动，
     -- 大文件上是切换 diff 时最贵的一步，还得靠 inline_diff_max_lines 设限才不卡；
     -- `]c` 是 O(1) 的跳转，因此也不再需要那道行数上限
-    -- 从旧版侧定位，顶部纯删除在新版侧只有 filler，不能用右侧实体行作滚动锚点
-    local anchor = a_win
+    -- 锚点取第 1 行上方没有 filler 的一侧：在有 filler 的一侧对第 1 行 zz 会把 filler 滚出视野，
+    -- syncbind 再把另一侧对齐过去，顶部 hunk 就整段不可见
+    --   顶部纯删除：filler 在新版侧 → 用旧版侧
+    --   顶部纯新增：filler 在旧版侧 → 用新版侧
+    -- 其余情况两侧第 1 行上方都没有 filler，沿用旧版侧
+    local a_top_filler = api.nvim_win_call(a_win, function() return vim.fn.diff_filler(1) end)
+    local anchor = a_top_filler > 0 and b_win or a_win
     local first
     api.nvim_win_call(anchor, function()
       local before = api.nvim_win_get_cursor(anchor)
