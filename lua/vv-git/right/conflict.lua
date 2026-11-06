@@ -76,7 +76,7 @@ function M.set_winbar(win, state, ref, root)
     state._conflict_info_cache = cache
   end
 
-  -- root 进入缓存键，避免父仓库与子仓库的 HEAD/MERGE_HEAD 信息互相串用。
+  -- root 进入缓存键，避免父仓库与子仓库的 HEAD/MERGE_HEAD 信息互相串用
   local cache_key = root .. '\0' .. ref
   if cache[cache_key] ~= nil then
     apply(cache[cache_key] or nil)

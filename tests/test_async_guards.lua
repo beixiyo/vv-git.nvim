@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['停止与切根后拒绝迟到回调，管理器仅发布最新刷新'] = function()
@@ -42,7 +42,7 @@ T['停止与切根后拒绝迟到回调，管理器仅发布最新刷新'] = fun
     RightView.close(state)
     assert(state._show_req_id == 8, '未挂载 view 时关闭会失效待显示请求标识')
 
-    -- Worktree manager 只允许最新一次 refresh 写回。
+    -- Worktree manager 只允许最新一次 refresh 写回
     local original_worktree_list = Git.worktree_list
     local pending_lists = {}
     local list_calls = 0

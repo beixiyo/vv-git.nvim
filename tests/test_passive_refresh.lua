@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['被动刷新保持文件光标，动作提示与折叠策略优先'] = function()

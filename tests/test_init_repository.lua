@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['非仓库与祖先仓库决策、会话记忆和嵌套初始化'] = function()

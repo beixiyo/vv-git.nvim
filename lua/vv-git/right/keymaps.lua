@@ -116,7 +116,8 @@ function M.new(opts)
     local esc_enabled = RemoteEsc.enabled()
     for _, spec in ipairs(specs) do
       -- 远程会话不绑定 <Esc> 关闭（见 remote_esc.lua），只留 q
-      if spec[1] ~= '<Esc>' or esc_enabled then
+      local chunk = spec[3] == 'next_chunk' or spec[3] == 'prev_chunk'
+      if (spec[1] ~= '<Esc>' or esc_enabled) and (not chunk or vim.b[buf].vv_git_scratch) then
         vim.keymap.set('n', spec[1], spec[2], {
           buffer = buf,
           silent = true,

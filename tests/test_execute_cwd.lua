@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['执行计划采用项目目录，过期确认不启动任务'] = function()
@@ -108,7 +108,7 @@ T['执行计划采用项目目录，过期确认不启动任务'] = function()
     confirms[7].on_confirm()
     assert(#jobs == jobs_before_stale + 1, '最新的 execute 确认仍应可用')
 
-    -- 已打开确认框后子仓库从 state.subrepos 消失，不能启动旧命令。
+    -- 已打开确认框后子仓库从 state.subrepos 消失，不能启动旧命令
     local nested_root = project_root .. '/nested'
     state.subrepos = { { root = nested_root } }
     selected_root = nested_root

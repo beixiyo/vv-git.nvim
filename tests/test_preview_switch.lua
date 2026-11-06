@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['双栏切到单栏后新 view 仍是当前 show，未被 WinClosed 拆掉'] = function()

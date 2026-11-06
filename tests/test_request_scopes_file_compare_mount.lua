@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['文件比较最新请求挂载、重入与跨窗口资源所有权'] = function()
@@ -479,7 +479,7 @@ T['文件比较最新请求挂载、重入与跨窗口资源所有权'] = functi
     assert(FileCompare.open('drain-C', { bufnr = source_buf, root = '/repo' }))
     assert_eq(vim.inspect(drain_starts), vim.inspect({ 'drain-A', 'drain-C' }),
       '直接挂载 C 后 B 与重入 D 仍未启动')
-    -- 排队期间仍可有 OptionSet owner recheck；逐轮排空并保留回调错误传播。
+    -- 排队期间仍可有 OptionSet owner recheck；逐轮排空并保留回调错误传播
     local drained = 0
     while drained < #drain_schedules do
       drained = drained + 1

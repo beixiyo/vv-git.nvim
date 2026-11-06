@@ -78,7 +78,7 @@ function M.new(config)
   function instance.apply_diff(win, buf, side)
     instance.save(win)
     -- 复用 diff 窗口切 buffer 时必须先关 diff 再 set_buf 再开：Neovim 的 diff
-    -- 数据按窗口维护，set_buf 不会触发重建，否则新 buffer 会沿用旧 hunk。
+    -- 数据按窗口维护，set_buf 不会触发重建，否则新 buffer 会沿用旧 hunk
     if api.nvim_get_option_value('diff', { win = win }) then
       api.nvim_set_option_value('diff', false, { win = win, scope = 'local' })
     end
@@ -92,7 +92,7 @@ function M.new(config)
     api.nvim_set_option_value('cursorbind', true, { win = win, scope = 'local' })
 
     -- foldmethod=diff 必须覆盖 FileType/LspAttach 写入的 expr；foldlevel=0 必须覆盖
-    -- treesitter autocmd 可能在刚创建的 a_win 上写入的 99，否则默认折叠会全部展开。
+    -- treesitter autocmd 可能在刚创建的 a_win 上写入的 99，否则默认折叠会全部展开
     if config.fold_unchanged then
       api.nvim_set_option_value('foldmethod', 'diff', { win = win, scope = 'local' })
       api.nvim_set_option_value('foldlevel', 0, { win = win, scope = 'local' })

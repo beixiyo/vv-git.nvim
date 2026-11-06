@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = function()
@@ -93,7 +93,7 @@ T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = 
     discard_callback(true)
     assert(reloads == 0, '关闭后完成的 discard 不能重载旧面板')
 
-    -- 多选 discard 通过同一个生产入口批量执行，成功后只刷新一次。
+    -- 多选 discard 通过同一个生产入口批量执行，成功后只刷新一次
     state._closing = nil
     state.tree = Tree.build({
       ['/repo-a/a.txt'] = ' M',
@@ -109,7 +109,7 @@ T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = 
     discard_callback(true)
     assert(reloads == 1, '批量 discard 成功后应刷新一次')
 
-    -- staged 预处理尚未完成时切换仓库，不能再为旧仓库打开删除确认框。
+    -- staged 预处理尚未完成时切换仓库，不能再为旧仓库打开删除确认框
     local unstage_callback
     Git.unstage = function(_, _, callback) unstage_callback = callback end
     local confirms_before_root_switch = #confirms
@@ -125,7 +125,7 @@ T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = 
     State.set_root(state, '/repo-a')
     Git.unstage = original_unstage
 
-    -- 已打开确认框后子仓库从 state.subrepos 消失，不能继续触碰旧目标。
+    -- 已打开确认框后子仓库从 state.subrepos 消失，不能继续触碰旧目标
     local nested_parent = vim.fn.tempname()
     local nested_root = nested_parent .. '/nested'
     local nested_path = nested_root .. '/removed.txt'
@@ -157,7 +157,7 @@ T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = 
       ['/repo-a/b.txt'] = ' M',
     }, '/repo-a')
 
-    -- 单选 conflict accept 完成时 owner 已过期，不能刷新新上下文。
+    -- 单选 conflict accept 完成时 owner 已过期，不能刷新新上下文
     local accept_callback
     Git.accept_ours = function(_, _, callback) accept_callback = callback end
     state.tree = Tree.build({ ['/repo-a/conflict.txt'] = 'UU' }, '/repo-a')
@@ -176,7 +176,7 @@ T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = 
     Git.accept_ours = original_accept_ours
     State.set_root(state, '/repo-a')
 
-    -- Git 已经触碰目标后才失败时，既要报告错误，也要刷新以呈现真实磁盘状态。
+    -- Git 已经触碰目标后才失败时，既要报告错误，也要刷新以呈现真实磁盘状态
     local failure_message
     vim.notify = function(message) failure_message = tostring(message) end
     Actions.discard(state, id)
@@ -191,7 +191,7 @@ T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = 
     State.set_root(state, '/repo-c')
     assert(next(state.panel.id_by_line) == nil, '切换 root 后应失效旧的面板行快照')
 
-    -- 真实 tracked discard：生产 Git 实现恢复目标文件，不影响邻近文件。
+    -- 真实 tracked discard：生产 Git 实现恢复目标文件，不影响邻近文件
     local tracked_root = vim.fn.tempname()
     vim.fn.mkdir(tracked_root, 'p')
     vim.fn.system({ 'git', '-C', tracked_root, 'init', '-q' })
@@ -223,7 +223,7 @@ T['确认所有权失效阻止副作用，真实丢弃仅触碰捕获目标'] = 
       '确认的 tracked discard 应保留相邻文件')
     vim.fn.delete(tracked_root, 'rf')
 
-    -- 真实 untracked discard：确认后只删除捕获目标，不影响同目录其他文件。
+    -- 真实 untracked discard：确认后只删除捕获目标，不影响同目录其他文件
     local untracked_root = vim.fn.tempname()
     vim.fn.mkdir(untracked_root .. '/nested', 'p')
     vim.fn.system({ 'git', '-C', untracked_root, 'init', '-q' })

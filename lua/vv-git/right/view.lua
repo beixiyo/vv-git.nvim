@@ -23,6 +23,7 @@ local DirSummary = require('vv-git.right.dir_summary')
 local Layout = require('vv-git.right.layout')
 local Plan = require('vv-git.right.plan')
 local Timer = require('vv-utils.timer')
+local Async = require('vv-utils.async')
 
 local M = {}
 
@@ -119,10 +120,37 @@ local attaching = 0
 local function while_attaching(fn)
   return function(...)
     attaching = attaching + 1
-    local ok, err = pcall(fn, ...)
+    local ok, result = pcall(fn, ...)
     attaching = attaching - 1
-    if not ok then error(err, 0) end
+    if not ok then error(result, 0) end
+    return result
   end
+end
+
+-- 每次绑定捕获 view/request/root generation；promote 会为新 buffer 重新绑定
+local function inline_options(state, view)
+  local State = require('vv-git.state')
+  local generation = State.root_generation(state)
+  local req = state._show_req_id
+  local buf = view.b_buf
+  local cfg = handlers.get_config()
+  return {
+    b_win = view.b_win,
+    fold_unchanged = cfg.fold_unchanged,
+    navigation = view._inline_navigation,
+    is_user_enter = function() return attaching == 0 end,
+    is_valid = function()
+      return not state._closing and state.view == view and state._show_req_id == req
+        and State.root_generation(state) == generation and view.b_buf == buf
+        and state.tabpage and api.nvim_tabpage_is_valid(state.tabpage)
+    end,
+    on_initial_ready = function(result)
+      if not view._inline_navigation.pending or not result.first_b_line then return end
+      view._inline_navigation.pending = false
+      api.nvim_win_set_cursor(view.b_win, { result.first_b_line, 0 })
+      api.nvim_win_call(view.b_win, function() vim.cmd('normal! zz') end)
+    end,
+  }
 end
 
 -- snapshot_promote_ms：光标停留后自动把快照换成真实 buffer。单例常驻 debounce，最后一次
@@ -181,20 +209,44 @@ local function worktree_mode(root, node, section, abspath)
   return option == 'snapshot' and 'snapshot' or 'buffer'
 end
 
-local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
-  vim.schedule(function()
-    pcall(vim.cmd, 'diffupdate')
+-- state 持有一个待执行槽：新 attach 替换捕获目标，close 永久释放 handle
+-- 不按当前 tab 丢弃请求；后台 tab 的合法初始化也必须在自己的 diff 上完成
+local function schedule_diff_sync(state)
+  local view = state.view
+  local a_win, a_buf, b_win, b_buf = view.a_win, view.a_buf, view.b_win, view.b_buf
+  local c_win, c_buf = view.c_win, view.c_buf
+  local tab, req, root = state.tabpage, state._show_req_id, view.root
+
+  local State = require('vv-git.state')
+  local generation = State.root_generation(state)
+
+  local function valid_window(win, buf)
+    return win and buf and api.nvim_win_is_valid(win) and api.nvim_buf_is_valid(buf)
+      and api.nvim_win_get_tabpage(win) == tab and api.nvim_win_get_buf(win) == buf
+  end
+
+  local function is_valid()
+    return not state._closing and state.view == view and state._show_req_id == req
+      and view._show_req_id == req and State.root_generation(state) == generation
+      and view.root == root and state.tabpage == tab and tab and api.nvim_tabpage_is_valid(tab)
+      and view.a_win == a_win and view.a_buf == a_buf and view.b_win == b_win and view.b_buf == b_buf
+      and view.c_win == c_win and view.c_buf == c_buf
+      and valid_window(a_win, a_buf) and valid_window(b_win, b_buf)
+      and (not c_win or valid_window(c_win, c_buf))
+      and vim.wo[a_win].diff and vim.wo[b_win].diff
+  end
+
+  state._diff_sync_run = function()
+    if not is_valid() then return end
+    api.nvim_win_call(a_win, function() pcall(vim.cmd, 'diffupdate') end)
+
     for _, w in ipairs({ a_win, b_win }) do
-      if api.nvim_win_is_valid(w) then
-        api.nvim_win_call(w, function() pcall(vim.cmd, 'normal! zX') end)
-      end
+      -- DiffUpdated / foldexpr 等用户回调可能同步关闭或替换 owner
+      if not is_valid() then return end
+      api.nvim_win_call(w, function() pcall(vim.cmd, 'normal! zX') end)
     end
-    if not (api.nvim_win_is_valid(a_win) and api.nvim_win_is_valid(b_win)) then return end
-    -- a_buf/b_buf 是 bufhidden=wipe scratch，快速切文件时 win 仍 valid 但其 buf
-    -- 可能已被换走/wipe（旧 schedule 回调晚于新 set_buf 执行）→ 校验后再读，
-    -- 与下方 c_buf 分支的 nvim_buf_is_valid 写法对齐，避免 "Invalid buffer id"
-    if not (api.nvim_buf_is_valid(a_buf) and api.nvim_buf_is_valid(b_buf)) then return end
-    if api.nvim_win_get_buf(a_win) ~= a_buf or api.nvim_win_get_buf(b_win) ~= b_buf then return end
+
+    if not is_valid() then return end
 
     -- 定位首个 hunk 直接问原生 diff：窗口此刻已是 diff 模式，Neovim 内部刚算过一遍
     -- 旧实现把两侧全文取出来再跑一次 vim.diff（myers + linematch:60）纯属重复劳动，
@@ -208,6 +260,7 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
     local a_top_filler = api.nvim_win_call(a_win, function() return vim.fn.diff_filler(1) end)
     local anchor = a_top_filler > 0 and b_win or a_win
     local first
+
     api.nvim_win_call(anchor, function()
       local before = api.nvim_win_get_cursor(anchor)
       pcall(vim.cmd, 'normal! gg')
@@ -222,9 +275,11 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
       end
     end)
 
+    if not is_valid() then return end
     local row = first or api.nvim_win_get_cursor(anchor)[1]
     local b_max = api.nvim_buf_line_count(b_buf)
     local a_max = api.nvim_buf_line_count(a_buf)
+
     pcall(api.nvim_win_set_cursor, b_win, { math.min(row, b_max), 0 })
     pcall(api.nvim_win_set_cursor, a_win, { math.min(row, a_max), 0 })
     if c_win and c_buf then
@@ -233,10 +288,12 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
         pcall(api.nvim_win_set_cursor, c_win, { math.min(row, c_max), 0 })
       end
     end
+
     if first then
       api.nvim_win_call(anchor, function() pcall(vim.cmd, 'normal! zz') end)
     end
 
+    if not is_valid() then return end
     api.nvim_win_call(anchor, function()
       pcall(vim.cmd, 'syncbind')
       -- :syncbind 会置位 Neovim 内部的 did_syncbind，之后第一次在 scrollbind 窗口里
@@ -245,7 +302,18 @@ local function schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
       -- scrollopt=jump 补齐。这里立刻执行一个空操作 normal 命令把标志消费掉
       pcall(vim.cmd, 'normal! ' .. IGNORE_KEY)
     end)
-  end)
+  end
+
+  if not state._diff_sync then
+    state._diff_sync = Async.coalesce({
+      run = function()
+        local run = state._diff_sync_run
+        state._diff_sync_run = nil
+        if run then run() end
+      end,
+    })
+  end
+  state._diff_sync:request()
 end
 
 -- 按 section 路由：
@@ -303,6 +371,7 @@ function M.show(state, node, section, force_single, root)
   -- （bufhidden=wipe 因从未挂到窗口而不会触发）需要手动删掉防漏
   local req_id = (state._show_req_id or 0) + 1
   state._show_req_id = req_id
+  state._diff_sync_run = nil
 
   -- _reshow_restore_win 由 _reshow_view 在调用本函数前设置，仅供「这一次 reshow」
   -- 在成功 attach 后把焦点还给它捕获的窗口。把它和当次 req_id 绑定：只有持有该
@@ -469,7 +538,7 @@ function M.show(state, node, section, force_single, root)
     if vim.b[b_buf].vv_git_scratch then right_keymaps.block_insert(b_buf) end
 
     -- inline diff：worktree b_buf（unstaged，可编辑）→ 挂 live 钩子；scratch b_buf
-    -- （staged，固定）→ 一次性 apply 即可
+    -- （staged，固定）→ 一次性后台请求
     -- opts.b_win + opts.fold_unchanged：让 InlineDiff 同时给 b_win 创建 manual fold，
     -- 仿 dual mode 的 foldmethod=diff 自动折叠未改动行
     if a_lines then
@@ -477,25 +546,14 @@ function M.show(state, node, section, force_single, root)
       -- b_win 的原值，让后续 close / 切回 dual 时能精确还原用户初值
       right_options.save(b_win)
 
-      local cfg = handlers.get_config()
-      local opts = {
-        b_win = b_win,
-        fold_unchanged = cfg.fold_unchanged,
-      }
-
-      local max = cfg.inline_diff_max_lines
-      -- M.apply / attach_live 都返回首个 hunk 的 b 侧目标行，省得再跑一遍 vim.diff
-      -- 无 hunk（罕见，理论不会进 force_single 路径）→ first 为 nil，保持光标在 1
-      local first
+      local view = state.view
+      view._inline_navigation = { pending = true }
+      local opts = inline_options(state, view)
+      local max = handlers.get_config().inline_diff_max_lines
       if vim.b[b_buf].vv_git_scratch then
-        first = InlineDiff.apply(b_buf, a_lines, api.nvim_buf_get_lines(b_buf, 0, -1, false), max, opts)
+        view._inline_cleanup = InlineDiff.apply_async(b_buf, a_lines, max, opts)
       else
-        state.view._inline_cleanup, first = InlineDiff.attach_live(b_buf, a_lines, max, opts)
-      end
-
-      if first and api.nvim_win_is_valid(b_win) then
-        pcall(api.nvim_win_set_cursor, b_win, { first, 0 })
-        api.nvim_win_call(b_win, function() pcall(vim.cmd, 'normal! zz') end)
+        view._inline_cleanup = InlineDiff.attach_live(b_buf, a_lines, max, opts)
       end
     end
 
@@ -561,7 +619,7 @@ function M.show(state, node, section, force_single, root)
     Conflict.clear_winbar(a_win)
     Conflict.clear_winbar(b_win)
 
-    schedule_diff_sync(a_win, a_buf, b_win, b_buf)
+    schedule_diff_sync(state)
     focus_back_to_panel()
     if state.view.b_snapshot then schedule_promote(state, req_id) end
   end)
@@ -619,7 +677,7 @@ function M.show(state, node, section, force_single, root)
     Conflict.install_keymaps(b_buf, state)
     Conflict.install_keymaps(c_buf, state)
 
-    schedule_diff_sync(a_win, a_buf, b_win, b_buf, c_win, c_buf)
+    schedule_diff_sync(state)
     focus_back_to_panel()
   end)
 
@@ -810,42 +868,47 @@ function M.promote(state)
   local b_win, snapshot = view.b_win, view.b_buf
   if not (b_win and api.nvim_win_is_valid(b_win)) then return false end
 
-  local ok, real = pcall(Buffers.get_worktree, vim.fs.normalize(view.root .. '/' .. view.path))
-  if not ok then return false end
-  local saved = api.nvim_win_call(b_win, vim.fn.winsaveview)
-
-  -- 先改 view 再换 buffer：BufWinEnter 自检按 view.b_buf 判断 b_win 是否被外部切走
-  view.b_buf, view.b_snapshot = real, nil
-  if view.mode == 'diff2' then
-    right_options.apply_diff(b_win, real, 'b')
-  else
-    local set_ok, err = pcall(api.nvim_win_set_buf, b_win, real)
-    if not set_ok and not tostring(err):find('E828') then error(err) end
+  -- 主动进入右侧是用户接管；自动 promote 则转交同一个尚未消费的意图
+  if view._inline_navigation and api.nvim_get_current_win() == b_win then
+    view._inline_navigation.pending = false
   end
-  Buffers.ensure_highlighting(real, view.path)
-  right_keymaps.remove(snapshot)
-  right_keymaps.install(real)
+  return while_attaching(function()
+    local ok, real = pcall(Buffers.get_worktree, vim.fs.normalize(view.root .. '/' .. view.path))
+    if not ok then return false end
+    local saved = api.nvim_win_call(b_win, vim.fn.winsaveview)
+    if view._inline_cleanup then view._inline_cleanup() end
 
-  if view.mode == 'single' and view._inline_a_lines then
-    local cfg = handlers.get_config()
-    view._inline_cleanup = InlineDiff.attach_live(real, view._inline_a_lines, cfg.inline_diff_max_lines, {
-      b_win = b_win,
-      fold_unchanged = cfg.fold_unchanged,
-    })
-    view._inline_a_lines = nil
-  end
-
-  api.nvim_win_call(b_win, function()
-    if view.mode == 'diff2' then pcall(vim.cmd, 'diffupdate') end
-    vim.fn.winrestview(saved)
-    pcall(vim.cmd, 'normal! zv')
+    -- 先改 view 再换 buffer：BufWinEnter 自检按 view.b_buf 判断 b_win 是否被外部切走
+    view.b_buf, view.b_snapshot = real, nil
     if view.mode == 'diff2' then
-      pcall(vim.cmd, 'syncbind')
-      pcall(vim.cmd, 'normal! ' .. IGNORE_KEY)
+      right_options.apply_diff(b_win, real, 'b')
+    else
+      local set_ok, err = pcall(api.nvim_win_set_buf, b_win, real)
+      if not set_ok and not tostring(err):find('E828') then error(err) end
     end
-  end)
-  Buffers.wipe_scratch({ snapshot })
-  return true
+    Buffers.ensure_highlighting(real, view.path)
+    right_keymaps.remove(snapshot)
+    right_keymaps.install(real)
+
+    api.nvim_win_call(b_win, function()
+      if view.mode == 'diff2' then pcall(vim.cmd, 'diffupdate') end
+      vim.fn.winrestview(saved)
+      pcall(vim.cmd, 'normal! zv')
+      if view.mode == 'diff2' then
+        pcall(vim.cmd, 'syncbind')
+        pcall(vim.cmd, 'normal! ' .. IGNORE_KEY)
+      end
+    end)
+    if view.mode == 'single' and view._inline_a_lines then
+      local cfg = handlers.get_config()
+      view._inline_cleanup = InlineDiff.attach_live(real, view._inline_a_lines, cfg.inline_diff_max_lines,
+        inline_options(state, view))
+      view._inline_a_lines = nil
+    end
+
+    Buffers.wipe_scratch({ snapshot })
+    return true
+  end)()
 end
 
 ---当前已挂载 view 是否属于最新 show request
@@ -881,6 +944,11 @@ end
 
 ---@param state table
 function M.close(state)
+  state._diff_sync_run = nil
+  if state._diff_sync then
+    state._diff_sync:dispose()
+    state._diff_sync = nil
+  end
   -- close 也是上下文失效边界：即使当前尚未 attach view，也必须废弃所有在途 show
   state._show_req_id = (state._show_req_id or 0) + 1
   local view = state.view

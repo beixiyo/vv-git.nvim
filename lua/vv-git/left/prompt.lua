@@ -9,10 +9,24 @@ local api = vim.api
 local Git = require('vv-git.git')
 local RemoteEsc = require('vv-git.remote_esc')
 local Loading = require('vv-utils.loading')
+local Drafts = require('vv-utils.state').register('vv-git', 'commit-drafts')
 
 local M = {}
 
 local cur = nil -- { buf, win, on_cancel, cancelled }
+
+---关闭或正常退出时保存原始多行草稿；空白消息删除已有草稿
+---@param owner table
+local function save_draft(owner)
+  if not api.nvim_buf_is_valid(owner.buf) then return end
+
+  local lines = api.nvim_buf_get_lines(owner.buf, 0, -1, false)
+  if table.concat(lines, '\n'):match('^%s*$') then
+    Drafts:remove(owner.draft_key)
+  else
+    Drafts:set(owner.draft_key, lines)
+  end
+end
 
 ---@param owner table
 local function notify_cancel(owner)
@@ -47,6 +61,8 @@ end
 local function close_owner(owner, cancelled)
   if owner.closed then return end
   owner.closed = true
+  if cancelled ~= false then save_draft(owner) end
+  if owner.group then api.nvim_del_augroup_by_id(owner.group) end
   if owner.loading then
     owner.loading:stop()
     owner.loading = nil
@@ -91,6 +107,7 @@ local function submit(owner, git_root, commit_all, on_success, is_current)
     vim.notify('[vv-git] Commit message cannot be empty', vim.log.levels.WARN)
     return
   end
+  save_draft(owner)
   begin_submit(owner)
 
   local function do_commit()
@@ -102,6 +119,8 @@ local function submit(owner, git_root, commit_all, on_success, is_current)
         vim.notify('[vv-git] Commit failed: ' .. (err or ''), vim.log.levels.ERROR)
         return
       end
+      -- 只清除本次提交的快照，不覆盖其他实例后来保存的新草稿
+      Drafts:compare_and_set(owner.draft_key, lines, nil)
       if cur == owner then close_owner(owner, false) end
       vim.notify('[vv-git] Commit succeeded', vim.log.levels.INFO)
       if on_success then on_success() end
@@ -131,6 +150,7 @@ function M.open(opts)
   local buf = api.nvim_create_buf(false, true)
   local owner = {
     buf = buf,
+    draft_key = vim.fn.sha256(vim.uv.fs_realpath(opts.git_root) or vim.fs.normalize(opts.git_root)),
     on_cancel = opts.on_cancel,
     cancelled = false,
     closed = false,
@@ -141,6 +161,15 @@ function M.open(opts)
   api.nvim_set_option_value('buftype', 'nofile', { buf = buf })
   api.nvim_set_option_value('bufhidden', 'wipe', { buf = buf })
   api.nvim_set_option_value('filetype', 'gitcommit', { buf = buf })
+  local draft = Drafts:get(owner.draft_key)
+  if type(draft) == 'table' and #draft > 0 then
+    api.nvim_buf_set_lines(buf, 0, -1, false, draft)
+  end
+  owner.group = api.nvim_create_augroup('VVGitCommitDraft' .. buf, { clear = true })
+  api.nvim_create_autocmd('VimLeavePre', {
+    group = owner.group,
+    callback = function() save_draft(owner) end,
+  })
 
   local cols = vim.o.columns
   local lines = vim.o.lines
@@ -187,14 +216,10 @@ function M.open(opts)
 
   -- 浮窗被外部关闭（非 close()）时复位 cur，避免残留导致下次校验误判
   api.nvim_create_autocmd({ 'WinClosed', 'BufWipeout' }, {
+    group = owner.group,
     buffer = buf,
     once = true,
-    callback = function()
-      if cur == owner then
-        cur = nil
-        notify_cancel(owner)
-      end
-    end,
+    callback = function() close_owner(owner) end,
   })
 
   if not opts.has_staged then

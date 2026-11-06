@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = function()
@@ -92,7 +92,7 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     assert(#vim.api.nvim_buf_get_lines(manager_buf, 0, -1, false) == 1, 'manager 刷新应渲染 worktree 列表')
     vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
 
-    -- 关闭管理器后，尚未回答的创建提示不能继续访问 Git 或创建 worktree。
+    -- 关闭管理器后，尚未回答的创建提示不能继续访问 Git 或创建 worktree
     local original_select = vim.ui.select
     local original_branches = Git.branches
     local create_choice
@@ -122,7 +122,7 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     assert(added, add_err or 'worktree add 失败')
     assert(vim.fn.isdirectory(linked) == 1, 'worktree add 应创建 checkout 目录')
 
-    -- 从 linked worktree 创建时，默认布局仍锚定 main worktree，而不是嵌套到当前 checkout。
+    -- 从 linked worktree 创建时，默认布局仍锚定 main worktree，而不是嵌套到当前 checkout
     local original_input = vim.ui.input
     local suggested_path
     vim.ui.select = function(items, opts, cb)
@@ -153,7 +153,7 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     vim.ui.select, vim.ui.input = original_select, original_input
     vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
 
-    -- Manager 打开后再被外部 lock：普通 remove 失败后必须重读状态，不能提供 force 绕过。
+    -- Manager 打开后再被外部 lock：普通 remove 失败后必须重读状态，不能提供 force 绕过
     local original_confirm_open = Confirm.open
     local original_notify = vim.notify
     local lock_message
@@ -184,7 +184,7 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     Confirm.open = original_confirm_open
     vim.notify = original_notify
 
-    -- 确认框打开后 worktree 变 dirty：不删除用户刚产生改动的 checkout。
+    -- 确认框打开后 worktree 变 dirty：不删除用户刚产生改动的 checkout
     local pending_confirm
     local validation_message
     Confirm.open = function(opts)
@@ -245,7 +245,7 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     assert(vim.wait(5000, function() return vim.fn.isdirectory(linked) == 0 end, 10), '确认后脏 worktree 删除应删除 checkout')
     Confirm.open = original_confirm_open
 
-    -- clean worktree 走普通确认即可删除，不应误入 force 分支。
+    -- clean worktree 走普通确认即可删除，不应误入 force 分支
     local clean = tmp .. '/repo-clean'
     local clean_added, clean_add_err = await(function(cb)
       Git.worktree_add(repo, { path = clean, base = 'main', branch = 'clean' }, cb)

@@ -986,4 +986,109 @@ T['顶部纯删除与纯新增在快照、promote 与重复打开时立即可见
   end)
 end
 
+-- 门闩让 snapshot 的首结果必定晚于 promote；真正的 worker/显示/定时 promote 均保留
+for _, interaction in ipairs({ 'auto', 'move', 'scroll', 'move-unsent', 'scroll-unsent', 'enter', 'edit', 'root-aba' }) do
+  T['inline 异步 promote 导航意图：' .. interaction] = function()
+    child.lua_func(function(action)
+      local api = vim.api
+      vim.o.lines = 50
+      vim.opt.runtimepath:prepend(vim.env.VV_TEST_REPO .. '/tests/fixtures/inline_diff')
+      local base, changed = {}, {}
+      for i = 1, 80 do base[i], changed[i] = 'line ' .. i, 'line ' .. i end
+      changed[40] = 'changed forty'
+      local root = vim.env.VV_TEST_TMP
+      vim.fn.writefile(changed, root .. '/preview.txt')
+      require('vv-git').setup({ auto_refresh = false, preview = false,
+        worktree_preview = 'snapshot', snapshot_promote_ms = 150 })
+      require('vv-git.git').show = function(_, _, _, callback) callback(base) end
+      local Async = require('vv-utils.async')
+      local worker_task, jobs = Async.worker_task, {}
+      Async.worker_task = function(opts)
+        local i = #jobs + 1
+        local gate = root .. '/promote-gate-' .. i
+        local input, done = opts.input, opts.on_done
+        opts.worker = 'vv_git_test_inline_worker'
+        opts.input = function(index)
+          local value = input(index)
+          value.test_gate = gate
+          return value
+        end
+        opts.on_done = function(result) jobs[i].done = true; done(result) end
+        local task = worker_task(opts)
+        jobs[i] = { gate = gate }
+        return task
+      end
+      local function wait_for(fn, message) assert(vim.wait(3000, fn, 5), message) end
+      local function started(i)
+        wait_for(function() return jobs[i] and vim.uv.fs_stat(jobs[i].gate .. '.started') end,
+          '真实 worker 必须启动')
+      end
+      local function release(i)
+        vim.fn.writefile({ 'go' }, jobs[i].gate)
+        wait_for(function() return vim.uv.fs_stat(jobs[i].gate .. '.finished') end, '物理 worker 必须完成')
+        wait_for(function() return jobs[i].done end, '控制器终态必须通知')
+        vim.wait(20)
+      end
+      local main = api.nvim_get_current_win()
+      vim.cmd('leftabove vsplit')
+      local panel = api.nvim_get_current_win()
+      local state = { git_root = root, tabpage = api.nvim_get_current_tabpage(),
+        panel = { win = panel, main_win = main } }
+      local View = require('vv-git.right.view')
+      View.show(state, { relpath = 'preview.txt', xy = ' M' }, 'unstaged', true, root)
+      local view = state.view
+      assert(view and view.b_snapshot, '必须先挂载 snapshot')
+      local snapshot = view.b_buf
+      started(1)
+      if action == 'move' then
+        api.nvim_win_set_cursor(main, { 20, 0 })
+        api.nvim_exec_autocmds('CursorMoved', { buffer = snapshot })
+        api.nvim_win_set_cursor(main, { 1, 0 })
+      elseif action == 'scroll' then
+        api.nvim_win_call(main, function() vim.fn.winrestview({ lnum = 25, topline = 20 }) end)
+        api.nvim_exec_autocmds('WinScrolled', { pattern = tostring(main) })
+      elseif action == 'move-unsent' or action == 'scroll-unsent' then
+        api.nvim_win_call(main, function()
+          vim.fn.winrestview({ lnum = 25, topline = action == 'scroll-unsent' and 20 or 1 })
+        end)
+        assert(View.promote(state), '事件尚未投递时也必须检查接管意图')
+      elseif action == 'enter' then
+        api.nvim_set_current_win(main)
+        assert(View.promote(state), '主动进入必须 promote')
+      end
+      wait_for(function() return not view.b_snapshot end, '停留定时器必须自动 promote')
+      started(2)
+      assert(view.b_buf ~= snapshot and type(view._inline_cleanup) == 'function', 'promote 必须重新绑定真实 buffer')
+      if action == 'edit' then
+        api.nvim_buf_set_lines(view.b_buf, 39, 40, false, { 'edited' })
+        api.nvim_exec_autocmds('TextChanged', { buffer = view.b_buf })
+      elseif action == 'root-aba' then
+        local State = require('vv-git.state')
+        State.set_root(state, root .. '/other')
+        State.set_root(state, root)
+      end
+      release(2)
+      if action == 'auto' then
+        assert(api.nvim_win_get_cursor(main)[1] == 40, '自动 promote 必须转交首次导航意图')
+        assert(api.nvim_get_current_win() == panel, '自动 promote 必须保留左栏焦点')
+      else
+        assert(api.nvim_win_get_cursor(main)[1] ~= 40, '用户接管或根 ABA 必须阻止迟到导航')
+      end
+      local ns = api.nvim_create_namespace('vv-git-inline-diff')
+      if action == 'root-aba' or action == 'edit' then
+        assert(#api.nvim_buf_get_extmarks(view.b_buf, ns, 0, -1, {}) == 0, '失效 real 请求不能补装饰')
+      end
+      api.nvim_win_set_cursor(main, { 20, 0 })
+      release(1)
+      assert(api.nvim_win_get_cursor(main)[1] == 20, '旧 snapshot 结果不得复活导航')
+      if action == 'edit' then
+        wait_for(function() return #jobs == 3 end, '编辑后必须重算最新真实 buffer')
+        started(3); release(3)
+        assert(api.nvim_win_get_cursor(main)[1] == 20, 'live 重算不得再次首次导航')
+      end
+      View.close(state)
+    end, interaction)
+  end
+end
+
 return T

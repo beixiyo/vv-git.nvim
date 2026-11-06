@@ -1,4 +1,4 @@
--- 暂存请求的三条独立生命周期，每条都重新建立模块与面板。
+-- 暂存请求的三条独立生命周期，每条都重新建立模块与面板
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['暂存完成后的加载帧保持到写后刷新渲染'] = function()

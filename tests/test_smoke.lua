@@ -1,4 +1,4 @@
--- 收集阶段只注册场景；每个场景由独立子进程执行。
+-- 收集阶段只注册场景；每个场景由独立子进程执行
 local T, child = dofile('tests/helpers.lua').new_set()
 
 T['删除未跟踪文件'] = function()
@@ -415,7 +415,7 @@ T['单栏禁用差异折叠'] = function()
       end,
     }
 
-    InlineDiff.apply(buf, { 'one' }, { 'one', 'two', 'three', 'four', 'five' }, 1, {
+    local cleanup = InlineDiff.apply_async(buf, { 'one' }, 1, {
       b_win = win,
       fold_unchanged = false,
     })
@@ -428,6 +428,7 @@ T['单栏禁用差异折叠'] = function()
     assert_eq(vim.api.nvim_win_call(win, function() return vim.fn.foldclosed(3) end), -1,
       '单列布局禁用时清理现有折叠')
 
+    cleanup()
     package.loaded.ufo = previous_ufo
     vim.api.nvim_win_set_buf(win, previous_buf)
     vim.api.nvim_buf_delete(buf, { force = true })
