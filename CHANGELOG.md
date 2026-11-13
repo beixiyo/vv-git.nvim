@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2 - 2026-11-13
+
+### Changed
+
+- `keymap_toggle_panel` 不再是全局映射：只绑在 vv-git 的面板与 diff buffer 上，关闭 vv-git 后不存在，也不再占用 `<leader>b` 前缀
+
+### Fixed
+
+- 关闭后先执行 `before_open` 返回的恢复函数，再调用 `on_close`；此前顺序相反，`on_close` 里重开的浮窗会被随后恢复的分屏挤掉焦点关闭
+
 ## 0.5.1 - 2026-11-13
 
 ### Changed

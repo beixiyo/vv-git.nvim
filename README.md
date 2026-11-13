@@ -32,13 +32,12 @@
     'VVGitCompareStop', 'VVGitCommitShow', 'VVGitWorktree', 'VVGitPublish',
     'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
   },
-  keys = { '<leader>b' },
   ---@type VVGitOpts
   opts = {
     width = 30,                        -- Left panel width
     parent_repository = 'prompt',      -- Prompt when cwd belongs to a repository above it (always/never)
     single_col_threshold = 120,        -- Fall back to one column + inline diff below this width
-    keymap_toggle_panel = '<leader>b', -- Global mapping for toggling the left panel (false to disable)
+    keymap_toggle_panel = '<leader>b', -- Toggle the left panel, vv-git buffers only (false to disable)
     keymap_select = '<Tab>',           -- Toggle selection for the current file (multi-select)
     keymap_next_file = '<C-j>',        -- Open the next file from a diff buffer (false disables)
     keymap_prev_file = '<C-k>',        -- Open the previous file from a diff buffer (false disables)
@@ -61,7 +60,7 @@
 | `width` | `integer` | `30` | Left-panel width; manual changes persist across sessions |
 | `parent_repository` | `'prompt' \| 'always' \| 'never'` | `'prompt'` | How implicit opens handle a Git repository above the cwd/explorer directory; `prompt` remembers the choice per directory for the current Neovim session |
 | `single_col_threshold` | `integer` | `120` | Use a single-column diff below this window width |
-| `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | Toggle the left panel globally; `false` disables it |
+| `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | Toggle the left panel; only active inside vv-git's panel and diff buffers; `false` disables it |
 | `fold_unchanged` | `boolean` | `true` | Fold unchanged code by default |
 | `fold_staged` | `boolean` | `false` | Fold the parent repository's Staged Changes on open |
 | `diff_fill` | `string` | `' '` | Diff filler character |

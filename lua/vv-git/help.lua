@@ -46,6 +46,7 @@ local ACTIONS = {
   next_file     = shared('Navigate', RawUI.move_down),
   prev_file     = shared('Navigate', RawUI.move_up),
   close         = shared('View', RawUI.quit),
+  toggle_panel  = shared('View', RawUI.window),
   push          = custom('Remote', '󰁝', 'MiniIconsGreen'),
   pull          = custom('Remote', '󰁅', 'MiniIconsBlue'),
   publish       = custom('Remote', '󰁝', 'MiniIconsOrange'),

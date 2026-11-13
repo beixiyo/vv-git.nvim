@@ -32,13 +32,12 @@
     'VVGitCompareStop', 'VVGitCommitShow', 'VVGitWorktree', 'VVGitPublish',
     'VVGitShow', 'VVGitSubrepoDepth', 'VVGitLoad',
   },
-  keys = { '<leader>b' },
   ---@type VVGitOpts
   opts = {
     width = 30,                        -- 左栏宽度
     parent_repository = 'prompt',      -- cwd 位于祖先仓库内时提示选择（always/never）
     single_col_threshold = 120,        -- 窗口列数 < 此值时降级为单栏 + inline diff
-    keymap_toggle_panel = '<leader>b', -- 全局切换左栏的映射（false 禁用）
+    keymap_toggle_panel = '<leader>b', -- 切换左栏显示，仅 vv-git 内生效（false 禁用）
     keymap_select = '<Tab>',           -- 切换当前文件选中状态（多选）
     keymap_next_file = '<C-j>',        -- diff buffer 内切换到下一个文件（false 禁用）
     keymap_prev_file = '<C-k>',        -- diff buffer 内切换到上一个文件（false 禁用）
@@ -61,7 +60,7 @@
 | `width` | `integer` | `30` | 左栏宽度；手动调整后跨会话持久化 |
 | `parent_repository` | `'prompt' \| 'always' \| 'never'` | `'prompt'` | 隐式打开时如何处理 cwd/explorer 目录之外的祖先仓库；`prompt` 的选择在当前 Neovim 会话中按目录记忆 |
 | `single_col_threshold` | `integer` | `120` | 低于此窗口宽度时使用单栏 diff |
-| `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 全局切换左栏；`false` 禁用 |
+| `keymap_toggle_panel` | `string \| false` | `'<leader>b'` | 切换左栏显示，只在 vv-git 的面板与 diff buffer 内生效；`false` 禁用 |
 | `fold_unchanged` | `boolean` | `true` | 默认折叠未改动代码 |
 | `fold_staged` | `boolean` | `false` | 打开时折叠父仓库的 Staged Changes |
 | `diff_fill` | `string` | `' '` | diff 空行填充符 |

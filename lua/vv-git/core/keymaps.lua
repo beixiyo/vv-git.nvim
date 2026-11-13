@@ -208,7 +208,7 @@ function L.install(state, M)
   map('R',             function() M._manual_refresh() end,         'refresh')
   map('<CR>',          function() M._activate() end,               'open')
   map('o',             function() M._system_open() end,            'system_open')
-  map('X',             function() M._execute() end,               'execute')
+  map('X',             function() M._execute() end,                'execute')
   map('l',             function() M._activate(true) end,           'expand')
   map('<Right>',       function() M._activate(true) end,           'expand')   -- → 同 l
   map('<LeftRelease>', function()
@@ -217,6 +217,9 @@ function L.install(state, M)
   end,                                                              'click_toggle')
 
   local config = M._get_config()
+  if config.keymap_toggle_panel then
+    map(config.keymap_toggle_panel, function() M.toggle_panel() end, 'toggle_panel')
+  end
   if config.right_click then
     local rc_action = config.right_click
     map('<RightMouse>', function()

@@ -32,7 +32,7 @@ local M = {}
 ---@field width integer  左栏初始宽度；有持久化宽度时打开面板以持久化值为准，不会回写到配置 @default 30
 ---@field parent_repository 'prompt'|'always'|'never'  隐式打开子目录时如何处理工作区之外的祖先仓库：提示选择、直接打开或忽略并允许在当前目录初始化 @default 'prompt'
 ---@field single_col_threshold integer  -- 终端列数 < 此值时 diff 视图降级为单栏（仅 b 侧，无 inline diff），≥ 此值时正常 dual diff；resize 时自动迁移 @default 120
----@field keymap_toggle_panel string|false  -- 全局切换左栏的 normal 映射；false 禁用 @default '<leader>b'
+---@field keymap_toggle_panel string|false  -- 切换左栏显示的 normal 映射
 ---@field fold_unchanged boolean  -- diff 视图是否允许折叠代码；true 时默认折叠未改动代码 @default true
 ---@field fold_staged boolean  -- 打开面板时默认把父仓库的 Staged Changes section 折成标题行（仅此一层，子仓库块不受影响）；只在 open 时一次性写入，之后可手动展开/折叠 @default false
 ---@field diff_fill string  -- diff 空行填充符（Vim 默认 '-'），映射到 fillchars 的 diff:X @default ' '
@@ -281,6 +281,7 @@ function M.setup(opts, deps)
     on_next_file      = function() M._navigate_view_file(1) end,
     on_prev_file      = function() M._navigate_view_file(-1) end,
     on_help           = function() M._view_help() end,
+    on_toggle_panel   = function() M.toggle_panel() end,
   })
 
   local function ucmd(name, fn, cfg)
@@ -325,12 +326,6 @@ function M.setup(opts, deps)
     vim.notify('[vv-git] subrepo scan depth → ' .. n, vim.log.levels.INFO)
     M.refresh()
   end, { nargs = '?', desc = 'vv-git: temporarily set subrepo scan depth (not persisted)' })
-
-  if config.keymap_toggle_panel then
-    vim.keymap.set('n', config.keymap_toggle_panel, function() M.toggle_panel() end, {
-      silent = true, desc = 'vv-git: toggle panel',
-    })
-  end
 
   pcall(function()
     local parts = vim.split(vim.o.diffopt, ',', { plain = true })
@@ -441,10 +436,13 @@ function M._emit_closed(state)
   local resume = state._resume_after_close
   state._resume_after_close = nil
   local context = M._context(state)
+
+  -- 先恢复 before_open 挂起的界面，再通知调用方：on_close 常用来重开 picker 等浮窗
+  -- 若恢复排在其后，重建分屏时的窗口切换会让浮窗失焦而被自己的 BufLeave 关掉
+  M._invoke_callback(resume)
   for _, callback in ipairs(callbacks) do
     M._invoke_callback(callback, context)
   end
-  M._invoke_callback(resume)
 end
 
 ---@return boolean

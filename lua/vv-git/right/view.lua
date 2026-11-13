@@ -43,6 +43,7 @@ local M = {}
 ---@field on_next_file? fun()
 ---@field on_prev_file? fun()
 ---@field on_help? fun()
+---@field on_toggle_panel? fun()
 local handlers = {
   -- 未注入时（只直接使用本模块的调用方）在调用期读取 init 已规格化的配置；
   -- 不在加载期读取，因为 init 加载时会 require 本模块
@@ -53,6 +54,7 @@ local handlers = {
   on_next_file     = function() end,
   on_prev_file     = function() end,
   on_help          = function() end,
+  on_toggle_panel  = function() end,
 }
 
 local right_keymaps
@@ -69,7 +71,9 @@ local function configure_runtime()
       next_file = function() handlers.on_next_file() end,
       prev_file = function() handlers.on_prev_file() end,
       help = function() handlers.on_help() end,
+      toggle_panel = function() handlers.on_toggle_panel() end,
     },
+    toggle_panel_key = config.keymap_toggle_panel,
     next_file_key = config.keymap_next_file,
     prev_file_key = config.keymap_prev_file,
     revision_mappings = config.revision_mappings,

@@ -13,11 +13,13 @@ local M = {}
 ---@field next_file fun()
 ---@field prev_file fun()
 ---@field help? fun() 未提供时不安装 g?
+---@field toggle_panel? fun() 未提供时不安装切换左栏键
 
 ---@class VVGitRightKeymapOpts
 ---@field callbacks VVGitRightKeymapCallbacks
 ---@field next_file_key string|false
 ---@field prev_file_key string|false
+---@field toggle_panel_key? string|false 切换左栏显示；左栏隐藏后焦点只会在 diff buffer，必须在这里也能按
 ---@field revision_mappings table<string, fun(context:VVGitRevisionMappingContext)>
 
 -- fold 键全部包成 buffer-local 原生命令，绕过用户的全局 ufo 映射：
@@ -84,6 +86,10 @@ function M.new(opts)
 
   if callbacks.help then
     specs[#specs + 1] = { 'g?', callbacks.help, 'help' }
+  end
+
+  if opts.toggle_panel_key and callbacks.toggle_panel then
+    specs[#specs + 1] = { opts.toggle_panel_key, callbacks.toggle_panel, 'toggle_panel' }
   end
 
   if opts.next_file_key then
