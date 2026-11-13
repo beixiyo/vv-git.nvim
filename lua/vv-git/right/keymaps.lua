@@ -9,7 +9,6 @@ local M = {}
 ---@class VVGitRightKeymapCallbacks
 ---@field close fun()
 ---@field goto_file fun()
----@field yank_abs_path fun()
 ---@field toggle_stage fun()
 ---@field next_file fun()
 ---@field prev_file fun()
@@ -73,11 +72,11 @@ end
 ---@return table
 function M.new(opts)
   local callbacks = opts.callbacks
+  -- 不绑定 Y：diff buffer 是可阅读、可复制的正文，Y 保持原生的复制到行尾；复制路径在左栏
   local specs = {
     { 'q',     callbacks.close,          'close' },
     { '<Esc>', callbacks.close,          'close' },
     { 'gf',    callbacks.goto_file,      'goto_file' },
-    { 'Y',     callbacks.yank_abs_path,  'yank_abs_path' },
     { '-',     callbacks.toggle_stage,   'toggle_stage' },
     { ']c',    function() jump_diff_chunk(']') end, 'next_chunk' },
     { '[c',    function() jump_diff_chunk('[') end, 'prev_chunk' },

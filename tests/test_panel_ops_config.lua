@@ -167,6 +167,30 @@ T['注入配置驱动预览与连续暂存导航'] = function()
     assert(toggled_ids[2] and toggled_ids[2].node == next_node,
       '第二次快速 panel stage 应捕获同步推进后的文件')
 
+    -- 当前文件在 section 最底部：没有下一个文件，应预览上一个，与左栏光标落点一致
+    state.panel.id_by_line = {
+      [2] = { node = next_node, section = 'unstaged', base = 'unstaged' },
+      [3] = id,
+    }
+    state.view = {
+      node = node,
+      section = 'unstaged',
+      root = state.git_root,
+      b_buf = vim.api.nvim_get_current_buf(),
+    }
+    last_show = nil
+    state._action_hint = nil
+    operations._toggle_view_stage()
+    assert(
+      state._action_hint and state._action_hint.next_path == nil
+        and state._action_hint.prev_path == next_node.relpath,
+      '最底部文件的动作提示应只有上一个文件'
+    )
+    assert(
+      last_show and last_show.node == next_node and last_show.section == 'unstaged',
+      '最底部文件 stage 后，右侧应预览原 section 的上一个文件'
+    )
+
     state.panel.id_by_line = { [2] = id }
     state.view = {
       node = node,

@@ -32,7 +32,6 @@ local M = {}
 ---@field get_config fun():VVGitConfig
 ---@field on_close fun()
 ---@field on_goto_file fun()
----@field on_yank_abs_path fun()
 ---@field on_toggle_stage fun()
 ---@field on_next_file fun()
 ---@field on_prev_file fun()
@@ -40,7 +39,6 @@ local M = {}
 ---@field get_config? fun():VVGitConfig
 ---@field on_close? fun()
 ---@field on_goto_file? fun()
----@field on_yank_abs_path? fun()
 ---@field on_toggle_stage? fun()
 ---@field on_next_file? fun()
 ---@field on_prev_file? fun()
@@ -51,7 +49,6 @@ local handlers = {
   get_config       = function() return require('vv-git').get_config() end,
   on_close         = function() end,
   on_goto_file     = function() end,
-  on_yank_abs_path = function() end,
   on_toggle_stage  = function() end,
   on_next_file     = function() end,
   on_prev_file     = function() end,
@@ -68,7 +65,6 @@ local function configure_runtime()
     callbacks = {
       close = function() handlers.on_close() end,
       goto_file = function() handlers.on_goto_file() end,
-      yank_abs_path = function() handlers.on_yank_abs_path() end,
       toggle_stage = function() handlers.on_toggle_stage() end,
       next_file = function() handlers.on_next_file() end,
       prev_file = function() handlers.on_prev_file() end,

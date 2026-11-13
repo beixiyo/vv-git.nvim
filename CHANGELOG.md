@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 - 2026-11-13
+
+### Changed
+
+- 右侧 diff buffer 不再绑定 `Y`
+
+### Fixed
+
+- 右侧 diff 对 section 最底部的文件按 `-` 后，预览未跟随左栏光标切到上一个文件
+
 ## 0.5.0 - 2026-11-06
 
 ### Added

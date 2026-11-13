@@ -220,9 +220,11 @@ function L.new(context, toggle_fold)
       local repo = Subrepo.repo_of(state, root)
       local section, path, node
 
-      for _, candidate in ipairs({ next_path, prev_path }) do
-        local side = candidate and repo and repo.tree and repo.tree[view.section]
-        local found = side and Tree.leaf_at(side, candidate)
+      -- 与左栏 action hint 的落点一致：先下一个，没有则上一个
+      -- 不能写成 ipairs({ next_path, prev_path })：next_path 为 nil 时一个也不会遍历
+      local side = repo and repo.tree and repo.tree[view.section]
+      for _, candidate in ipairs({ next_path or false, prev_path or false }) do
+        local found = candidate and side and Tree.leaf_at(side, candidate)
         if found then
           section, path, node = view.section, candidate, found
           break

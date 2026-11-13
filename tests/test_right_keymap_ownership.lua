@@ -9,14 +9,17 @@ T['真实 buffer 的局部 hunk 映射在重复安装和释放前后身份不变
     vim.keymap.set('n', ']c', next_hunk, {buffer=b})
     vim.keymap.set('n', '[c', prev_hunk, {buffer=b})
     local k = require('vv-git.right.keymaps').new({callbacks={
-      close=function() end, goto_file=function() end, yank_abs_path=function() end,
+      close=function() end, goto_file=function() end,
       toggle_stage=function() end, next_file=function() end, prev_file=function() end,
     },next_file_key=false,prev_file_key=false,revision_mappings={}})
     local function check()
       assert(vim.fn.maparg(']c','n',false,true).callback == next_hunk, '不得覆盖或删除原 ]c')
       assert(vim.fn.maparg('[c','n',false,true).callback == prev_hunk, '不得覆盖或删除原 [c')
     end
-    k.install(b); check(); k.install(b); check(); k.remove(b); check()
+    k.install(b); check()
+    -- diff buffer 是可复制的正文：Y 保持原生的复制到行尾，不被路径复制占用
+    assert(vim.fn.maparg('Y','n',false,true).buffer ~= 1, '不得在 diff buffer 上绑定 Y')
+    k.install(b); check(); k.remove(b); check()
   end)
 end
 
@@ -28,7 +31,7 @@ T['无局部映射的真实 buffer 保留全局映射与原生命令'] = functio
     local global = function() hits = hits + 1 end
     vim.keymap.set('n', ']c', global)
     local k = require('vv-git.right.keymaps').new({callbacks={
-      close=function() end, goto_file=function() end, yank_abs_path=function() end,
+      close=function() end, goto_file=function() end,
       toggle_stage=function() end, next_file=function() end, prev_file=function() end,
     },next_file_key=false,prev_file_key=false,revision_mappings={}})
     local function check()
@@ -60,7 +63,7 @@ T['scratch diff 仍绑定并执行原生 chunk 导航'] = function()
     api.nvim_buf_set_lines(0,0,-1,false,{'one','changed','three'})
     vim.cmd('diffthis'); vim.cmd('diffupdate'); api.nvim_set_current_win(win)
     local k = require('vv-git.right.keymaps').new({callbacks={
-      close=function() end, goto_file=function() end, yank_abs_path=function() end,
+      close=function() end, goto_file=function() end,
       toggle_stage=function() end, next_file=function() end, prev_file=function() end,
     },next_file_key=false,prev_file_key=false,revision_mappings={}})
     k.install(b)
@@ -76,7 +79,7 @@ T['显式文件导航键与默认 chunk 键冲突时仍执行文件导航'] = fu
   child.lua_func(function()
     local b, hits=vim.api.nvim_get_current_buf(), 0
     local k = require('vv-git.right.keymaps').new({callbacks={
-      close=function() end, goto_file=function() end, yank_abs_path=function() end,
+      close=function() end, goto_file=function() end,
       toggle_stage=function() end, next_file=function() hits=hits+1 end, prev_file=function() end,
     },next_file_key=']c',prev_file_key=false,revision_mappings={}})
     k.install(b); vim.api.nvim_feedkeys(']c','xt',false)

@@ -180,7 +180,6 @@ These mappings are active inside the right-hand diff windows (regular diff, ours
 |------|------|
 | `q` / `<Esc>` | Close the right-hand view |
 | `gf` | Jump to the file |
-| `Y` | Yank the absolute file path |
 | `-` | Toggle stage/unstage for the current file |
 | `]c` / `[c` | Jump to the next/previous chunk and center it |
 | `<C-j>` / `<C-k>` | Move to the next/previous file in the left panel (`keymap_next_file` / `keymap_prev_file`) |

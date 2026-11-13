@@ -15,7 +15,6 @@ T['修订映射提供来源上下文且不覆盖工作树映射'] = function()
       callbacks = {
         close = function() end,
         goto_file = function() end,
-        yank_abs_path = function() end,
         toggle_stage = function() end,
         next_file = function() end,
         prev_file = function() end,

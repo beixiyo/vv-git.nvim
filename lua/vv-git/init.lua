@@ -277,7 +277,6 @@ function M.setup(opts, deps)
     get_config        = current_config,
     on_close          = function() M.close() end,
     on_goto_file      = function() M._goto_file() end,
-    on_yank_abs_path  = function() M._yank_abs_path() end,
     on_toggle_stage   = function() M._toggle_view_stage() end,
     on_next_file      = function() M._navigate_view_file(1) end,
     on_prev_file      = function() M._navigate_view_file(-1) end,
