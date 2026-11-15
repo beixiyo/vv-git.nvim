@@ -540,7 +540,7 @@ T['二进制文件属性预览'] = function()
       '二进制预览显示可执行权限')
     assert_true(buf and vim.b[buf].vv_git_binary_info == true,
       '二进制预览缓冲区暴露所有权标记')
-    assert_true(buf and vim.b[buf].vv_git_diff_source == nil,
+    assert_true(buf and vim.b[buf].vv_diff_source == nil,
       '二进制信息缓冲区不会作为文本 diff 来源暴露')
     assert_true(buf and vim.bo[buf].readonly and not vim.bo[buf].modifiable,
       '二进制信息缓冲区明确设为只读')
@@ -967,7 +967,7 @@ T['暂存与冲突滚动条来源'] = function()
     assert_eq(toggle_stage_calls, 1, '替换映射后不再调用旧处理器')
     assert_eq(reconfigured_calls, 1, '安装映射调用最新配置的处理器')
 
-    local source = ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+    local source = ready and vim.b[state.view.b_buf].vv_diff_source or nil
     assert_eq(vim.w[state.view.b_win].vv_scrollbar_always_show, true,
       'staged 右侧窗口应持续显示滚动条标记')
     assert_eq(vim.w[state.view.b_win].vv_statuscol_git_disabled, true,
@@ -989,7 +989,7 @@ T['暂存与冲突滚动条来源'] = function()
     end)
     assert_true(deletion_ready, 'staged 删除右侧缓冲区已渲染')
 
-    local deletion_source = deletion_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+    local deletion_source = deletion_ready and vim.b[state.view.b_buf].vv_diff_source or nil
     assert_eq(deletion_source and deletion_source.path, 'removed.txt', 'staged 删除项包含相对路径')
     assert_eq(deletion_source and deletion_source.side, 'old', 'staged 删除项落到 HEAD 侧')
 
@@ -1012,8 +1012,8 @@ T['暂存与冲突滚动条来源'] = function()
     end)
     assert_true(compare_ready, '已渲染 revision 对比缓冲区')
 
-    local a_source = compare_ready and vim.b[state.view.a_buf].vv_git_diff_source or nil
-    local b_source = compare_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+    local a_source = compare_ready and vim.b[state.view.a_buf].vv_diff_source or nil
+    local b_source = compare_ready and vim.b[state.view.b_buf].vv_diff_source or nil
     assert_eq(a_source and a_source.from_rev, 'HEAD^', 'compare old source 包含 from_rev')
     assert_eq(a_source and a_source.side, 'old', 'compare old source 落在旧侧')
     assert_eq(b_source and b_source.to_rev, 'HEAD', 'compare new source 包含 to_rev')
@@ -1036,7 +1036,7 @@ T['暂存与冲突滚动条来源'] = function()
         and vim.api.nvim_buf_is_valid(state.view.b_buf)
     end)
     assert_true(fallback_ready, '目标版本加载失败时 compare 回退到源版本')
-    local fallback_source = fallback_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+    local fallback_source = fallback_ready and vim.b[state.view.b_buf].vv_diff_source or nil
     assert_eq(fallback_source and fallback_source.side, 'old',
       'compare 回退时复用源版本到旧侧显示')
 
@@ -1060,7 +1060,7 @@ T['暂存与冲突滚动条来源'] = function()
         and state.view.c_win and vim.api.nvim_win_is_valid(state.view.c_win)
     end)
     assert_true(conflict_ready, '已渲染三窗冲突视图')
-    local conflict_source = conflict_ready and vim.b[state.view.b_buf].vv_git_diff_source or nil
+    local conflict_source = conflict_ready and vim.b[state.view.b_buf].vv_diff_source or nil
     assert_eq(conflict_source and conflict_source.from_index_stage, 2,
       '冲突上方右侧 diff 来源使用 ours index stage')
     assert_eq(conflict_source and conflict_source.to_index_stage, 3,
@@ -1132,7 +1132,7 @@ T['暂存与冲突滚动条来源'] = function()
     assert_true(du_ready, 'ours stage 缺失时降级为 theirs 单栏')
     assert_eq(du_ready and vim.b[state.view.b_buf].vv_git_scratch, true,
       'DU 单栏显示的是 theirs scratch')
-    assert_eq(du_ready and vim.b[state.view.b_buf].vv_git_diff_source, nil,
+    assert_eq(du_ready and vim.b[state.view.b_buf].vv_diff_source, nil,
       'ours stage 缺失时不声明必然失败的 stage-pair source')
 
     pcall(RightView.close, state)

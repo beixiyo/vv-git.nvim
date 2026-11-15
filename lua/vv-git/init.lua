@@ -327,20 +327,8 @@ function M.setup(opts, deps)
     M.refresh()
   end, { nargs = '?', desc = 'vv-git: temporarily set subrepo scan depth (not persisted)' })
 
-  pcall(function()
-    local parts = vim.split(vim.o.diffopt, ',', { plain = true })
-    local kept = {}
-    for _, p in ipairs(parts) do
-      if p ~= '' and not p:match('^linematch:') and not p:match('^inline:') then
-        kept[#kept + 1] = p
-      end
-    end
-    kept[#kept + 1] = 'linematch:60'
-    kept[#kept + 1] = 'inline:char'
-    vim.o.diffopt = table.concat(kept, ',')
-  end)
-  pcall(function() vim.opt.scrollopt:append('hor') end)
-  pcall(function() vim.opt.fillchars:append({ diff = config.diff_fill }) end)
+  -- 只在 diff 窗口存在期间接管
+  require('vv-git.diff_options').configure({ diff_fill = config.diff_fill })
 
   Autocmds.setup({
     on_refresh          = function() M.refresh() end,

@@ -49,6 +49,7 @@ end
 
 ---@param win integer
 function M.enable_diff(win)
+  require('vv-git.diff_options').acquire()
   set_diff(win, true)
 end
 

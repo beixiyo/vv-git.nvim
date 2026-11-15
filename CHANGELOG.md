@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.3 - 2026-11-15
+
+### Changed
+
+- diff buffer 的 Git 来源改经 `vv-utils.git.set_diff_source` 声明并通知，不再直接写 `b:vv_git_diff_source`，也不再调用 vv-statuscol 的内部模块
+
+### Fixed
+
+- `setup()` 不再永久改写全局的 `diffopt`、`scrollopt` 与 `fillchars`：只在存在 diff 窗口期间生效
+
 ## 0.5.2 - 2026-11-13
 
 ### Changed

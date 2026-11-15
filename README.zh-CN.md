@@ -255,7 +255,7 @@ vim.api.nvim_create_autocmd('User', {
 })
 ```
 
-仓库索引刷新后触发 `User VVGitStatusChanged`。vv-git 也监听 `User VVExplorerRootChanged`：
+仓库索引刷新后触发 `User VVGitStatusChanged`。diff buffer 经 `vv-utils.git.set_diff_source` 声明自己的 Git 来源，供状态列等插件为它计算行级标记。vv-git 也监听 `User VVExplorerRootChanged`：
 
 ```lua
 vim.api.nvim_exec_autocmds('User', {

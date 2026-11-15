@@ -464,15 +464,16 @@ function M.show(state, node, section, force_single, root)
     -- 快照内容是工作区文件，不对应任何 revision / stage，不能借 scratch 身份声明来源
     if not vim.b[buf].vv_git_scratch or vim.b[buf].vv_git_snapshot then return end
 
+    local source
     if section == 'staged' then
-      vim.b[buf].vv_git_diff_source = {
+      source = {
         root = owner,
         path = node.relpath,
         mode = 'staged',
         side = side,
       }
     elseif section == 'compare' and state.compare then
-      vim.b[buf].vv_git_diff_source = {
+      source = {
         root = owner,
         path = side == 'old' and (node.old_relpath or node.relpath) or node.relpath,
         from_rev = state.compare.from_rev,
@@ -480,7 +481,7 @@ function M.show(state, node, section, force_single, root)
         side = side,
       }
     elseif section == 'conflicts' then
-      vim.b[buf].vv_git_diff_source = {
+      source = {
         root = owner,
         path = node.relpath,
         from_index_stage = 2,
@@ -490,10 +491,8 @@ function M.show(state, node, section, force_single, root)
       }
     end
 
-    if vim.b[buf].vv_git_diff_source then
-      local ok, statuscol_git = pcall(require, 'vv-statuscol.git')
-      if ok then statuscol_git.refresh(buf) end
-    end
+    -- 声明与通知都经 vv-utils：diff buffer 是 scratch，没有 BufReadPost 可供消费方感知
+    if source then require('vv-utils.git.diff_source').set(buf, source) end
   end
 
   -- 单栏挂载：只 b_win + b_buf；不动 diff opts

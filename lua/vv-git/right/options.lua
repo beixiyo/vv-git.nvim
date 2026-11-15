@@ -1,5 +1,7 @@
 -- diff 窗口选项的保存、应用与恢复；配置在构造时归一化为具体值
 
+local DiffOptions = require('vv-git.diff_options')
+
 local api = vim.api
 
 local M = {}
@@ -77,6 +79,7 @@ function M.new(config)
   ---@param side 'a'|'b'
   function instance.apply_diff(win, buf, side)
     instance.save(win)
+    DiffOptions.acquire()
     -- 复用 diff 窗口切 buffer 时必须先关 diff 再 set_buf 再开：Neovim 的 diff
     -- 数据按窗口维护，set_buf 不会触发重建，否则新 buffer 会沿用旧 hunk
     if api.nvim_get_option_value('diff', { win = win }) then

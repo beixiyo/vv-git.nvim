@@ -64,6 +64,8 @@ local function release_transaction(transaction)
   if transaction.released then return end
   transaction.released = true
   if active_transaction == transaction then active_transaction = nil end
+  -- 结束对比时的 nodiff 写入可能发生在 WinClosed 里而没有 OptionSet，这里补一次全局选项检查
+  require('vv-git.diff_options').check()
   schedule_queued_intent()
 end
 

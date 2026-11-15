@@ -257,7 +257,7 @@ vim.api.nvim_create_autocmd('User', {
 })
 ```
 
-`User VVGitStatusChanged` is emitted after repository index refresh. vv-git also listens for `User VVExplorerRootChanged`:
+`User VVGitStatusChanged` is emitted after repository index refresh. Diff buffers declare their Git source through `vv-utils.git.set_diff_source`, so gutter plugins can compute line markers for them. vv-git also listens for `User VVExplorerRootChanged`:
 
 ```lua
 vim.api.nvim_exec_autocmds('User', {
