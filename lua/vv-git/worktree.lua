@@ -1,10 +1,14 @@
 -- worktree.lua — 管理当前仓库的 git worktree：创建、切换、删除与刷新
+--
+-- 窗口、行号与条目的对应、光标保持、页脚按键提示都交给 vv-utils.ui_view；
+-- 这里负责异步拉取列表、按内容收紧浮窗尺寸，以及各动作的业务流程
 
 local Git = require('vv-git.git')
-local Keys = require('vv-utils.keys')
 local Async = require('vv-utils.async')
 local State = require('vv-git.state')
 local Loading = require('vv-utils.loading')
+local Rows = require('vv-utils.ui_rows')
+local UIView = require('vv-utils.ui_view')
 local Create = require('vv-git.worktree.create')
 local Remove = require('vv-git.worktree.remove')
 
@@ -24,24 +28,12 @@ local CLOSE_ENTRY = RawUI.quit or {}
 local REFRESH_ICON = '󰑐'
 local CUR_MARK = '●'
 
-local DESC = 'vv-git-worktree: '
-local SWITCH_KEY = Keys.display('<CR>')
-local FOOTER_TEXT = ' ' .. SWITCH_KEY .. ' switch  a add  d remove  r refresh  ? help '
-local FOOTER = {
-  { ' ' .. SWITCH_KEY .. ' ', 'VVGitWorktreeFooterKey' },
-  { 'switch  ', 'VVGitWorktreeFooterText' },
-  { 'a ', 'VVGitWorktreeFooterKey' },
-  { 'add  ', 'VVGitWorktreeFooterText' },
-  { 'd ', 'VVGitWorktreeFooterKey' },
-  { 'remove  ', 'VVGitWorktreeFooterText' },
-  { 'r ', 'VVGitWorktreeFooterKey' },
-  { 'refresh  ', 'VVGitWorktreeFooterText' },
-  { '? ', 'VVGitWorktreeFooterKey' },
-  { 'help ', 'VVGitWorktreeFooterText' },
-}
+local DESC_PREFIX = 'vv-git-worktree'
+local TITLE = 'Worktrees'
+local MIN_WIDTH = 48
+local COLUMN_GAP = 2
 
 local M = {}
-local NS = vim.api.nvim_create_namespace('vv-git-worktree')
 
 local function ref_label(wt)
   if wt.branch then return wt.branch end
@@ -55,45 +47,73 @@ local function tilde(path)
   return path
 end
 
-local function render_line(wt, is_current, ref_w)
-  local segs = {}
-  local mark = is_current and CUR_MARK or ' '
-  local line = mark .. ' '
-  segs[#segs + 1] = { col = 0, len = #mark, hl = is_current and 'VVGitPanelBranch' or 'Comment' }
-  if BRANCH_ICON ~= '' then
-    segs[#segs + 1] = { col = #line, len = #BRANCH_ICON, hl = BRANCH_ICON_HL }
-    line = line .. BRANCH_ICON .. ' '
+---把 worktree 列表排成两列条目：当前标记 + 图标 + 分支名，路径 + 状态标签
+---@param list VVGitWorktree[]
+---@param root string 当前 worktree 的规范化路径
+---@param max_width? integer 条目内容可用的显示宽度；超出时截断路径，状态标签始终可见
+---@return VVUIViewItem[] items
+local function build_items(list, root, max_width)
+  local heads, paths, tags, ref_ends = {}, {}, {}, {}
+  local head_width = 0
+  for index, wt in ipairs(list) do
+    local is_current = vim.fs.normalize(wt.path) == root
+    local head = { { is_current and CUR_MARK or ' ', is_current and 'VVGitPanelBranch' or 'Comment' }, { ' ' } }
+    if BRANCH_ICON ~= '' then
+      head[#head + 1] = { BRANCH_ICON, BRANCH_ICON_HL }
+      head[#head + 1] = { ' ' }
+    end
+    head[#head + 1] = { ref_label(wt), wt.detached and 'WarningMsg' or (is_current and 'Title' or 'Normal') }
+
+    local ref_end = 0
+    for _, chunk in ipairs(head) do ref_end = ref_end + #chunk[1] end
+    heads[index], ref_ends[index] = head, ref_end
+    head_width = math.max(head_width, Rows.width(head))
+
+    paths[index] = { { tilde(wt.path), 'Comment' } }
+    if wt.prunable then
+      tags[index] = { { '  (prunable)', 'DiagnosticError' } }
+    elseif wt.locked then
+      tags[index] = { { '  (locked)', 'DiagnosticWarn' } }
+    else
+      tags[index] = {}
+    end
   end
-  local ref = ref_label(wt)
-  segs[#segs + 1] = { col = #line, len = #ref, hl = wt.detached and 'WarningMsg' or (is_current and 'Title' or 'Normal') }
-  line = line .. ref .. string.rep(' ', math.max(0, ref_w - vim.fn.strdisplaywidth(ref))) .. '  '
-  local path = tilde(wt.path)
-  segs[#segs + 1] = { col = #line, len = #path, hl = 'Comment' }
-  line = line .. path
-  if wt.prunable then
-    local tag = '  (prunable)'
-    segs[#segs + 1] = { col = #line, len = #tag, hl = 'DiagnosticError' }
-    line = line .. tag
-  elseif wt.locked then
-    local tag = '  (locked)'
-    segs[#segs + 1] = { col = #line, len = #tag, hl = 'DiagnosticWarn' }
-    line = line .. tag
+
+  local cells = {}
+  for index in ipairs(list) do
+    local path = paths[index]
+    if max_width then
+      -- 同一父目录下的 worktree 靠路径末尾区分，从左侧截断保留尾部
+      path = Rows.truncate(path, max_width - head_width - COLUMN_GAP - Rows.width(tags[index]), { side = 'left' })
+    end
+    cells[index] = { heads[index], vim.list_extend(path, tags[index]) }
   end
-  return line, segs
+
+  local items = {}
+  for index, chunks in ipairs(Rows.table(cells, { gap = COLUMN_GAP })) do
+    items[index] = {
+      id = list[index].path,
+      row = { chunks = chunks },
+      data = {
+        wt = list[index],
+        current = vim.fs.normalize(list[index].path) == root,
+        ref_end = ref_ends[index],
+      },
+    }
+  end
+  return items
 end
 
 ---@param state table
 ---@param on_select fun(wt: VVGitWorktree)
+---@param config table?
 function M.open_manager(state, on_select, config)
   if not state.git_root then return end
   local root = vim.fs.normalize(state.git_root)
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = 'nofile'
-  vim.bo[buf].bufhidden = 'wipe'
-  vim.bo[buf].filetype = 'vv-git-worktree'
 
-  local win
-  local list = {}
+  local view ---@type VVUIViewHandle?
+  local list = {} ---@type VVGitWorktree[]
+  local items = {} ---@type VVUIViewItem[] 最近一次重绘的条目，供删除 spinner 回查
   local layout_root = root
   local refresh_id = 0
   local action_scope = Async.scope({ cancel_previous = true })
@@ -107,8 +127,8 @@ function M.open_manager(state, on_select, config)
     if State.root_generation(state) ~= owner_generation then return false end
     -- 测试和外部调用方可能只提供 `{ git_root = ... }`；仅完整打开的 vv-git state 强制单例身份
     if state.tabpage and State.has() and not State.is_current(state) then return false end
-    return vim.api.nvim_buf_is_valid(buf)
-        and (not win or vim.api.nvim_win_is_valid(win))
+    -- 首次列表到达前浮窗尚未打开；打开后以窗口仍在为准
+    return not view or view.is_open()
   end
 
   local function close()
@@ -117,14 +137,9 @@ function M.open_manager(state, on_select, config)
     action_scope:cancel()
     for _, id in ipairs(lifecycle_ids) do pcall(vim.api.nvim_del_autocmd, id) end
     lifecycle_ids = {}
-    if win and vim.api.nvim_win_is_valid(win) then pcall(vim.api.nvim_win_close, win, true) end
+    if view then view.close() end
   end
 
-  lifecycle_ids[#lifecycle_ids + 1] = vim.api.nvim_create_autocmd('BufWipeout', {
-    buffer = buf,
-    once = true,
-    callback = close,
-  })
   if state.tabpage then
     lifecycle_ids[#lifecycle_ids + 1] = vim.api.nvim_create_autocmd('TabClosed', {
       callback = function()
@@ -133,18 +148,120 @@ function M.open_manager(state, on_select, config)
     })
   end
 
-  local render
-  local function refresh()
-    if manager_closed then return end
-    refresh_id = refresh_id + 1
-    local request = refresh_id
-    Git.worktree_list(root, function(next_list, err)
-      if request ~= refresh_id or not is_active() then return end
-      render(next_list, err)
-    end)
+  ---@return VVGitWorktree?
+  local function selected()
+    local item = view and view.item()
+    return item and item.data.wt
   end
 
-  render = function(next_list, err)
+  local refresh
+
+  local function choose()
+    local wt = selected()
+    if not wt or not is_active() then return end
+    close()
+    on_select(wt)
+  end
+
+  local function add()
+    Create.run(root, layout_root, refresh, config, {
+      is_active = is_active,
+      begin = function() return action_scope:begin({ key = 'action' }) end,
+      start_loading = function(label)
+        if not view or not view.is_open() then return function() end end
+        local handle = Loading.win_text({
+          win = view.win,
+          slot = 'title',
+          label = label,
+          format = function(frame, text) return (' %s · %s %s '):format(TITLE, frame, text) end,
+        })
+        return function() handle:stop() end
+      end,
+    })
+  end
+
+  local function remove()
+    local wt = selected()
+    if not wt or not view then return end
+    local manager = view
+    Remove.run(root, wt, refresh, {
+      is_active = is_active,
+      begin = function() return action_scope:begin({ key = 'action' }) end,
+      start_loading = function()
+        -- 帧贴在分支名后；列表刷新后按 path 重新定位，找不到（已被移除 / manager 失效）即隐藏
+        local handle = Loading.mark({
+          buf = manager.buf,
+          get_pos = function()
+            if not is_active() then return nil end
+            local line, col = manager.pos_of(wt.path)
+            if not line then return nil end
+            for _, item in ipairs(items) do
+              if item.id == wt.path then return { row = line, col = col + item.data.ref_end } end
+            end
+          end,
+        })
+        return function() handle:stop() end
+      end,
+    })
+  end
+
+  local actions = {
+    { key = { '<CR>', 'l', '<Right>' }, desc = 'Switch', run = choose },
+    { key = 'a', desc = 'Add', run = add },
+    { key = 'd', desc = 'Remove', run = remove },
+    { key = 'r', desc = 'Refresh', run = function() refresh() end },
+    { key = '?', desc = 'Help', run = function(current)
+      require('vv-utils.help_panel').open({
+        source_buf = current.buf,
+        desc_prefix = DESC_PREFIX .. ': ',
+        actions = {
+          Switch = { cat = 'Worktree', icon = BRANCH_ENTRY.glyph or '', icon_hl = BRANCH_ENTRY.hl },
+          Add = { cat = 'Worktree', icon = ADD_ENTRY.glyph or '', icon_hl = ADD_ENTRY.hl },
+          Remove = { cat = 'Worktree', icon = REMOVE_ENTRY.glyph or '', icon_hl = REMOVE_ENTRY.hl },
+          Refresh = { cat = 'View', icon = REFRESH_ICON, icon_hl = 'MiniIconsCyan' },
+          Help = { cat = 'View', icon = HELP_ENTRY.glyph or '', icon_hl = HELP_ENTRY.hl },
+          Close = { cat = 'View', icon = CLOSE_ENTRY.glyph or '', icon_hl = CLOSE_ENTRY.hl },
+        },
+        categories = { 'Worktree', 'View' }, title = 'worktree keymaps',
+        title_icon = BRANCH_ICON, title_icon_hl = BRANCH_ICON_HL, filetype = 'vv-git-worktree-help',
+      })
+    end },
+  }
+  local close_keys = require('vv-git.remote_esc').close_keys()
+
+  local function focus_current()
+    for _, item in ipairs(items) do
+      if item.data.current then return view.focus(item.id) end
+    end
+  end
+
+  local function open_view()
+    view = UIView.open({
+      title = TITLE,
+      width = 'content',
+      height = 'content',
+      min_width = MIN_WIDTH,
+      filetype = 'vv-git-worktree',
+      desc_prefix = DESC_PREFIX,
+      expand_key = false,
+      section_keys = false,
+      close_keys = close_keys,
+      actions = actions,
+      page = function(view)
+        -- 窗口宽度随内容而定，不能拿它反过来截断内容；按视图给出的上限截断路径，
+        -- 终端缩窄后状态标签仍可见
+        items = build_items(list, root, view.item_width())
+        return { sections = { { id = 'worktrees', items = items } } }
+      end,
+      on_close = close,
+    })
+    -- 首次打开落在当前 worktree 上；之后的刷新由 ui_view 按条目 id 保持光标
+    focus_current()
+  end
+
+  ---@param next_list VVGitWorktree[]?
+  ---@param err string?
+  local function render(next_list, err)
     if not is_active() then return end
     if not next_list or #next_list == 0 then
       vim.notify('[vv-git] ' .. (err or 'No worktrees'), vim.log.levels.WARN)
@@ -156,148 +273,31 @@ function M.open_manager(state, on_select, config)
       if wt.is_main and not wt.bare then layout_root = vim.fs.normalize(wt.path); break end
     end
 
-    list = vim.tbl_filter(function(wt) return not wt.bare end, next_list)
-    if #list == 0 then
+    local manageable = vim.tbl_filter(function(wt) return not wt.bare end, next_list)
+    if #manageable == 0 then
       vim.notify('[vv-git] No manageable worktree (bare repo only)', vim.log.levels.WARN)
       close()
       return
     end
 
-    local ref_w = 0
-    for _, wt in ipairs(list) do ref_w = math.max(ref_w, vim.fn.strdisplaywidth(ref_label(wt))) end
+    local previous = view and view.item()
+    list = manageable
+    if not view then return open_view() end
 
-    local lines, all_segs, current = {}, {}, 1
-
-    for i, wt in ipairs(list) do
-      local is_current = vim.fs.normalize(wt.path) == root
-      if is_current then current = i end
-      lines[i], all_segs[i] = render_line(wt, is_current, ref_w)
-    end
-
-    vim.bo[buf].modifiable = true
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.api.nvim_buf_clear_namespace(buf, NS, 0, -1)
-
-    for row, segs in ipairs(all_segs) do
-      for _, segment in ipairs(segs) do
-        pcall(vim.api.nvim_buf_set_extmark, buf, NS, row - 1, segment.col, {
-          end_col = segment.col + segment.len,
-          hl_group = segment.hl,
-        })
-      end
-    end
-    vim.bo[buf].modifiable = false
-
-    local width = math.max(48, vim.fn.strdisplaywidth(FOOTER_TEXT))
-    for _, line in ipairs(lines) do width = math.max(width, vim.fn.strdisplaywidth(line) + 2) end
-
-    width = math.min(width, math.max(1, vim.o.columns - 8))
-    local height = math.min(#lines, math.max(1, vim.o.lines - 8))
-    local window_config = {
-      relative = 'editor',
-      row = math.floor((vim.o.lines - height) / 2) - 1,
-      col = math.floor((vim.o.columns - width) / 2),
-      width = width,
-      height = height,
-    }
-
-    if not win or not vim.api.nvim_win_is_valid(win) then
-      win = vim.api.nvim_open_win(buf, true, vim.tbl_extend('force', window_config, {
-        style = 'minimal',
-        border = 'rounded',
-        title = ' Worktrees ',
-        title_pos = 'center',
-        footer = FOOTER,
-        footer_pos = 'center',
-      }))
-      require('vv-utils.ui_window').hide_chrome(win, { cursorline = true })
-      require('vv-utils.mouse').block_visual_drag(buf)
-    else
-      vim.api.nvim_win_set_config(win, window_config)
-    end
-    pcall(vim.api.nvim_win_set_cursor, win, { math.min(current, #list), 0 })
+    view.refresh()
+    -- 光标所在条目已不在列表里（如刚被删除）时回到当前 worktree，而不是列表顶部
+    if not previous or not view.line_of(previous.id) then focus_current() end
   end
 
-  local function selected()
-    if not win or not vim.api.nvim_win_is_valid(win) then return nil end
-    return list[vim.api.nvim_win_get_cursor(win)[1]]
+  refresh = function()
+    if manager_closed then return end
+    refresh_id = refresh_id + 1
+    local request = refresh_id
+    Git.worktree_list(root, function(next_list, err)
+      if request ~= refresh_id or not is_active() then return end
+      render(next_list, err)
+    end)
   end
-
-  local function choose()
-    local wt = selected()
-    if not wt or not is_active() then return end
-    close()
-    on_select(wt)
-  end
-  local function map(lhs, fn, action)
-    vim.keymap.set('n', lhs, fn, { buffer = buf, nowait = true, silent = true, desc = DESC .. action })
-  end
-
-  map('<CR>', choose, 'switch')
-  map('l', choose, 'switch')
-  map('<Right>', choose, 'switch')
-  map('a', function()
-    Create.run(root, layout_root, refresh, config, {
-      is_active = is_active,
-      begin = function() return action_scope:begin({ key = 'action' }) end,
-      start_loading = function(label)
-        if not win or not vim.api.nvim_win_is_valid(win) then return function() end end
-        local handle = Loading.win_text({
-          win = win,
-          slot = 'title',
-          label = label,
-          format = function(frame, text) return (' Worktrees · %s %s '):format(frame, text) end,
-        })
-        return function() handle:stop() end
-      end,
-    })
-  end, 'add')
-
-  map('d', function()
-    local wt = selected()
-    if wt then
-      Remove.run(root, wt, refresh, {
-        is_active = is_active,
-        begin = function() return action_scope:begin({ key = 'action' }) end,
-        start_loading = function()
-          -- 帧贴在分支名后；列表刷新后按 path 重新定位，找不到（已被移除 / manager 失效）即隐藏
-          local handle = Loading.mark({
-            buf = buf,
-            get_pos = function()
-              if not is_active() then return nil end
-              for row, item in ipairs(list) do
-                if item.path == wt.path then
-                  local mark = vim.fs.normalize(item.path) == root and CUR_MARK or ' '
-                  local col = #mark + 1 + (BRANCH_ICON ~= '' and #BRANCH_ICON + 1 or 0) + #ref_label(item)
-                  return { row = row, col = col }
-                end
-              end
-            end,
-          })
-          return function() handle:stop() end
-        end,
-      })
-    end
-  end, 'remove')
-
-  map('r', refresh, 'refresh')
-
-  map('?', function()
-    require('vv-utils.help_panel').open({
-      source_buf = buf, desc_prefix = DESC,
-      actions = {
-        switch = { cat = 'Worktree', icon = BRANCH_ENTRY.glyph or '', icon_hl = BRANCH_ENTRY.hl },
-        add = { cat = 'Worktree', icon = ADD_ENTRY.glyph or '', icon_hl = ADD_ENTRY.hl },
-        remove = { cat = 'Worktree', icon = REMOVE_ENTRY.glyph or '', icon_hl = REMOVE_ENTRY.hl },
-        refresh = { cat = 'View', icon = REFRESH_ICON, icon_hl = 'MiniIconsCyan' },
-        help = { cat = 'View', icon = HELP_ENTRY.glyph or '', icon_hl = HELP_ENTRY.hl },
-        close = { cat = 'View', icon = CLOSE_ENTRY.glyph or '', icon_hl = CLOSE_ENTRY.hl },
-      },
-      categories = { 'Worktree', 'View' }, title = 'worktree keymaps',
-      title_icon = BRANCH_ICON, title_icon_hl = BRANCH_ICON_HL, filetype = 'vv-git-worktree-help',
-    })
-  end, 'help')
-  for _, lhs in ipairs(require('vv-git.remote_esc').close_keys()) do map(lhs, close, 'close') end
 
   refresh()
 end

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.4 - 2026-11-15
+
+### Changed
+
+- worktree 管理器改用 `vv-utils.ui_view` 绘制
+
+### Removed
+
+- 高亮组 `VVGitWorktreeFooterKey`、`VVGitWorktreeFooterText`：页脚改用 vv-utils 的 `VVKeyHint` / `VVKeyHintDesc`
+
 ## 0.5.3 - 2026-11-15
 
 ### Changed

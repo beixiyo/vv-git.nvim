@@ -45,8 +45,6 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
       worktree_config.path(repo, 'feature/new-ui') == repo .. '/.worktrees/new-ui',
       '默认 worktree path 遵循 .worktrees 的分支短名约定'
     )
-    assert(vim.api.nvim_get_hl(0, { name = 'VVGitWorktreeFooterKey' }).link ~= nil, 'footer key 高亮应已注册')
-    assert(vim.api.nvim_get_hl(0, { name = 'VVGitWorktreeFooterText' }).link ~= nil, 'footer text 高亮应已注册')
     local Highlights = require('vv-git.hl')
     Highlights.setup({ highlights = { VVGitPanelBranch = { fg = '#111111' } } })
     Highlights.setup({ highlights = { VVGitPanelBranch = { fg = '#222222' } } })
@@ -83,9 +81,14 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     local mappings = vim.api.nvim_buf_get_keymap(manager_buf, 'n')
     local actions = {}
     for _, mapping in ipairs(mappings) do actions[mapping.desc or ''] = true end
-    assert(actions['vv-git-worktree: add'], 'manager 应暴露 add')
-    assert(actions['vv-git-worktree: remove'], 'manager 应暴露 remove')
-    assert(type(vim.api.nvim_win_get_config(vim.api.nvim_get_current_win()).footer) == 'table', 'footer 应使用高亮分段')
+    assert(actions['vv-git-worktree: Add'], 'manager 应暴露 add')
+    assert(actions['vv-git-worktree: Remove'], 'manager 应暴露 remove')
+    local footer = vim.api.nvim_win_get_config(vim.api.nvim_get_current_win()).footer
+    assert(type(footer) == 'table', 'footer 应使用高亮分段')
+    local footer_text = table.concat(vim.tbl_map(function(chunk) return chunk[1] end, footer))
+    for _, word in ipairs({ 'Switch', 'Add', 'Remove', 'Refresh', 'Help', 'Close' }) do
+      assert(footer_text:find(word, 1, true), 'footer 应完整列出按键提示，缺少 ' .. word .. ': ' .. footer_text)
+    end
     vim.api.nvim_feedkeys('r', 'x', false)
     vim.wait(100, function() return false end, 10)
     assert(vim.api.nvim_win_is_valid(vim.api.nvim_get_current_win()), 'manager 刷新时浮窗应保持有效')
@@ -146,6 +149,10 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     assert(vim.wait(5000, function()
       return vim.bo[vim.api.nvim_get_current_buf()].filetype == 'vv-git-worktree'
     end, 10), 'manager 应支持从 linked worktree 打开')
+    assert(vim.wait(5000, function() return #vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, -1, false) == 2 end, 10),
+      'linked 打开时应列出主与 linked 两个 worktree')
+    assert(vim.api.nvim_get_current_line():find('feature', 1, true),
+      '打开时光标应落在当前所在的 linked worktree 上: ' .. vim.api.nvim_get_current_line())
     vim.api.nvim_feedkeys('a', 'x', false)
     assert(vim.wait(5000, function() return suggested_path ~= nil end, 10), 'create 流程应到达路径提示')
     assert(suggested_path == vim.uv.fs_realpath(repo) .. '/.worktrees/new-ui',
@@ -251,17 +258,24 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
       Git.worktree_add(repo, { path = clean, base = 'main', branch = 'clean' }, cb)
     end)
     assert(clean_added, clean_add_err or 'clean worktree fixture 创建失败')
+    -- 从排在 clean 之后的 other 打开：删除光标所在的 clean 后，光标应回到当前的 other 而不是列表顶部
+    local other = tmp .. '/repo-other'
+    local other_added, other_add_err = await(function(cb)
+      Git.worktree_add(repo, { path = other, base = 'main', branch = 'other' }, cb)
+    end)
+    assert(other_added, other_add_err or 'other worktree fixture 创建失败')
     confirm_titles = {}
     Confirm.open = function(opts)
       confirm_titles[#confirm_titles + 1] = opts.title
       return original_confirm_open(opts)
     end
-    Worktree.open_manager({ git_root = repo }, function() end, worktree_config)
+    Worktree.open_manager({ git_root = vim.uv.fs_realpath(other) }, function() end, worktree_config)
     assert(vim.wait(5000, function()
       return vim.bo[vim.api.nvim_get_current_buf()].filetype == 'vv-git-worktree'
-        and #vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, -1, false) == 2
+        and #vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, -1, false) == 3
     end, 10), 'manager 应渲染 clean worktree')
     vim.api.nvim_win_set_cursor(vim.api.nvim_get_current_win(), { 2, 0 })
+    assert(vim.api.nvim_get_current_line():find('clean', 1, true), '前置：光标应在 clean 上')
     vim.api.nvim_feedkeys('d', 'x', false)
     assert(vim.wait(1000, function() return confirm_titles[1] == 'Remove worktree?' end, 10),
       'clean 删除应打开普通确认')
@@ -269,6 +283,11 @@ T['真实工作树创建与删除确认、锁定和脏目录竞态保护'] = fun
     assert(vim.wait(5000, function() return vim.fn.isdirectory(clean) == 0 end, 10),
       '确认 clean 删除应在无需 force 的情况下删除 checkout')
     assert(confirm_titles[2] == nil, 'clean 删除不应打开 force 确认')
+    assert(vim.wait(5000, function() return #vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, -1, false) == 2 end, 10),
+      '删除后列表应刷新为主与 other 两个 worktree')
+    assert(vim.api.nvim_get_current_line():find('other', 1, true),
+      '光标所在条目被删除后应回到当前 worktree: ' .. vim.api.nvim_get_current_line())
+    vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
     Confirm.open = original_confirm_open
 
     vim.fn.delete(tmp, 'rf')

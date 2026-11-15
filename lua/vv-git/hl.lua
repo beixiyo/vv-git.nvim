@@ -41,8 +41,6 @@ local function build_specs()
     VVGitPanelDim       = { link = 'Comment' },
     VVGitPanelSelected  = { link = 'Visual' },
     VVGitPanelKey       = { link = 'Special' },
-    VVGitWorktreeFooterKey = { link = 'Keyword' },
-    VVGitWorktreeFooterText = { link = 'Normal' },
 
     -- diff 折叠行：走 Comment 色，切主题自动适配
     VVGitFold           = { link = 'Comment' },
